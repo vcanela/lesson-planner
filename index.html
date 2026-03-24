@@ -1336,7 +1336,9 @@ function DataPanel(props) {
           ? React.createElement("div",null,
               React.createElement("div",{style:{fontSize:".72rem",color:"var(--success)",marginBottom:8,display:"flex",alignItems:"center",gap:6}},
                 React.createElement("span",{style:{width:8,height:8,borderRadius:"50%",background:"var(--success)",display:"inline-block"}}),
-                "Connected to Gist ",React.createElement("span",{className:"mn",style:{fontSize:".62rem",color:"var(--text-muted)"}},gistId.slice(0,12)+"\u2026")
+                "Connected to Gist:",
+                React.createElement("span",{className:"mn",onClick:function(){navigator.clipboard&&navigator.clipboard.writeText(gistId).then(function(){setSyncMsg({type:"ok",text:"Gist ID copied!"});});},style:{fontSize:".6rem",color:"var(--accent)",cursor:"pointer",textDecoration:"underline",wordBreak:"break-all"}},gistId),
+                React.createElement("span",{style:{fontSize:".55rem",color:"var(--text-muted)"}},"(tap to copy)")
               ),
               React.createElement("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
                 React.createElement("button",{className:"btn",onClick:doPushNow,style:{fontSize:".72rem"}},"\u2B06 Push"),
