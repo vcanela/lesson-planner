@@ -1423,20 +1423,22 @@ function App() {
   var [gr, setGR] = useState(0);
 
   // Sync state
-  var [syncSt, setSyncSt] = useState("idle"); // idle|syncing|synced|error
+  var [syncSt, setSyncSt] = useState("idle");
   var [lastSync, setLastSync] = useState(null);
   var syncTimer = useRef(null);
-  var ghToken = useRef(localStorage.getItem("planner-gh-token") || "");
-  var ghGistId = useRef(localStorage.getItem("planner-gist-id") || "");
-  var syncConnected = function() { return ghToken.current && ghGistId.current; };
+  var [ghToken, setGhToken] = useState(function(){ return localStorage.getItem("planner-gh-token") || ""; });
+  var [ghGistId, setGhGistId] = useState(function(){ return localStorage.getItem("planner-gist-id") || ""; });
+  var syncConnected = function() { return ghToken && ghGistId; };
 
   // Auto-push: debounced, fires 4s after last save
   var triggerSync = useCallback(function() {
-    if (!syncConnected()) return;
+    var tok = localStorage.getItem("planner-gh-token");
+    var gid = localStorage.getItem("planner-gist-id");
+    if (!tok || !gid) return;
     clearTimeout(syncTimer.current);
     syncTimer.current = setTimeout(function() {
       setSyncSt("syncing");
-      gistPush(ghToken.current, ghGistId.current, getAllData())
+      gistPush(tok, gid, getAllData())
         .then(function() {
           var t = new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"});
           setLastSync(t);
@@ -1452,12 +1454,13 @@ function App() {
 
   // Pull on load if connected
   useEffect(function() {
-    if (!syncConnected()) return;
+    var tok = localStorage.getItem("planner-gh-token");
+    var gid = localStorage.getItem("planner-gist-id");
+    if (!tok || !gid) return;
     setSyncSt("syncing");
-    gistPull(ghToken.current, ghGistId.current)
+    gistPull(tok, gid)
       .then(function(data) {
         importAllData(data);
-        // Reload meta cache
         var p = {};
         TERMS.forEach(function(term) {
           getTermWks(term).flat().filter(isSD).forEach(function(d) {
@@ -1540,14 +1543,14 @@ function App() {
   }, [triggerSync]);
 
   var onSyncConnected = useCallback(function(tok, gid) {
-    ghToken.current = tok;
-    ghGistId.current = gid;
+    setGhToken(tok);
+    setGhGistId(gid);
     triggerSync();
   }, [triggerSync]);
 
   var onSyncDisconnected = useCallback(function() {
-    ghToken.current = "";
-    ghGistId.current = "";
+    setGhToken("");
+    setGhGistId("");
     clearTimeout(syncTimer.current);
     setSyncSt("idle");
     setLastSync(null);
