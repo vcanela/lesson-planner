@@ -1,0 +1,1608 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Planner"/>
+<meta name="theme-color" content="#0d0d1c" media="(prefers-color-scheme: dark)"/>
+<meta name="theme-color" content="#f0f3fa" media="(prefers-color-scheme: light)"/>
+<link rel="manifest" href="data:application/json,%7B%22name%22%3A%22Victor's%20Lesson%20Planner%22%2C%22short_name%22%3A%22Planner%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230d0d1c%22%2C%22theme_color%22%3A%22%230d0d1c%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%253D'http%253A%252F%252Fwww.w3.org%252F2000%252Fsvg'%2520viewBox%253D'0%25200%2520512%2520512'%253E%253Crect%2520width%253D'512'%2520height%253D'512'%2520rx%253D'108'%2520fill%253D'%25230d0d1c'%252F%253E%253Ctext%2520x%253D'256'%2520y%253D'340'%2520text-anchor%253D'middle'%2520font-size%253D'280'%2520font-family%253D'system-ui'%253E%25F0%259F%2593%2585%253C%252Ftext%253E%253Ctext%2520x%253D'256'%2520y%253D'460'%2520text-anchor%253D'middle'%2520font-size%253D'80'%2520font-family%253D'system-ui%2Csans-serif'%2520font-weight%253D'800'%2520fill%253D'%25234a6ab4'%253EVP%253C%252Ftext%253E%253C%252Fsvg%253E%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%2C%22purpose%22%3A%22any%22%7D%5D%7D"/>
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='38' fill='%230d0d1c'/%3E%3Ctext x='90' y='118' text-anchor='middle' font-size='100' font-family='system-ui'%3E%F0%9F%93%85%3C/text%3E%3Ctext x='90' y='162' text-anchor='middle' font-size='30' font-family='system-ui,sans-serif' font-weight='800' fill='%234a6ab4'%3EVP%3C/text%3E%3C/svg%3E"/>
+<title>Victor's Lesson Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root,[data-theme="light"]{
+  --page:#f0f3fa;--card:#fff;--surface:#f4f7fc;--surface-open:#eaeffc;
+  --border:#ccd0e6;--border-hover:#9aa0c4;
+  --text:#1a1b3c;--text-secondary:#4c5076;--text-muted:#848aaa;
+  --today-bg:#dce8fc;--today-border:#2e60b4;
+  --dz-bg:#fef3cc;--dz-border:#b08a18;--dz-text:#7a5010;
+  --accent:#344fa4;--success:#1a5e30;--error:#881e1e;
+  --break-bg:#eaedf8;--break-text:#848aaa;
+  --input-bg:#f6f8fe;--input-border:#9aa0c4;--input-focus:#3858b8;
+  --row-open:#eaecfa;--sel-border:#8890cc;
+  --nc-bg:#d8dae8;--nc-text:#585876;
+  --mm-tutor-bg:#d0f0d0;--mm-tutor-text:#265226;
+  --mm-deans-bg:#f0e8a4;--mm-deans-text:#524410;
+  --mm-fullsch-bg:#e2d0f8;--mm-fullsch-text:#4c269e;
+  --mm-chapel-bg:#bcdaf4;--mm-chapel-text:#183c6c;
+  --flag:#c06020;--bar-empty:#b0b4cc;
+  --xp-bar:#3858b8;--xp-bar-bg:#dde0ee;--xp-glow:rgba(56,88,184,.2);
+}
+[data-theme="dark"]{
+  --page:#0d0d1c;--card:#161626;--surface:#0b0b18;--surface-open:#13132c;
+  --border:#222240;--border-hover:#363664;
+  --text:#d0d0ea;--text-secondary:#6e6e96;--text-muted:#3c3c5e;
+  --today-bg:#112040;--today-border:#2c5eb0;
+  --dz-bg:#1a1106;--dz-border:#40300c;--dz-text:#be7a24;
+  --accent:#4a6ab4;--success:#1e5c38;--error:#581c1c;
+  --break-bg:#0b0b18;--break-text:#3c3c5e;
+  --input-bg:#0b0b18;--input-border:#363664;--input-focus:#5070cc;
+  --row-open:#14142c;--sel-border:#363680;
+  --nc-bg:#242442;--nc-text:#585880;
+  --mm-tutor-bg:#182818;--mm-tutor-text:#5cba5c;
+  --mm-deans-bg:#282610;--mm-deans-text:#b6b44a;
+  --mm-fullsch-bg:#1c0e30;--mm-fullsch-text:#9a6ace;
+  --mm-chapel-bg:#0c1a28;--mm-chapel-text:#5898c4;
+  --flag:#e09040;--bar-empty:#333358;
+  --xp-bar:#5070cc;--xp-bar-bg:#1a1a34;--xp-glow:rgba(80,112,204,.25);
+}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--page);color:var(--text);transition:background .2s,color .2s;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+textarea,input,button{font-family:'Inter',system-ui,sans-serif}
+.hd{font-family:'Space Grotesk',system-ui,sans-serif}
+.mn{font-family:'JetBrains Mono',monospace}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px}
+.btn{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:5px 13px;border-radius:5px;cursor:pointer;font-size:.78rem;white-space:nowrap}
+.btn:disabled{opacity:.4;color:var(--text-muted);cursor:default}
+.inp{background:var(--input-bg);border:1px solid var(--input-border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:.81rem;width:100%;outline:none}
+.inp:focus{border-color:var(--input-focus)}
+.ta{background:var(--input-bg);border:1px solid var(--input-border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:.81rem;width:100%;max-width:100%;outline:none;resize:vertical;box-sizing:border-box}
+.ta:focus{border-color:var(--input-focus)}
+.fl{font-size:.68rem;color:var(--text-secondary);display:flex;align-items:center;margin-bottom:4px}
+.flb{font-size:.68rem;color:var(--text-secondary);display:block;margin-bottom:4px}
+.brk{padding:3px 12px;font-size:.67rem;color:var(--break-text);border-bottom:1px solid var(--border);background:var(--break-bg);display:flex;justify-content:space-between;font-style:italic}
+.pr{display:flex;align-items:center;gap:9px;padding:8px 12px;cursor:pointer;transition:background .12s}
+.pr.exp{background:var(--row-open)}
+.prd{padding:11px 14px 14px;background:var(--surface-open);border-top:1px solid var(--border)}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:200}
+.pill{display:flex;align-items:center;gap:4px;padding:5px 11px;border-radius:20px;cursor:pointer;font-size:.76rem;background:var(--surface);color:var(--text-secondary);border:1px solid var(--border);transition:all .15s}
+.vtab{padding:4px 11px;border-radius:5px;border:none;cursor:pointer;font-size:.73rem;font-weight:600;background:transparent;color:var(--text-secondary);transition:all .15s;letter-spacing:-.01em;font-family:'Space Grotesk',system-ui,sans-serif}
+.vtab.on{font-weight:700;background:#3848a8;color:#fff}
+.sl{font-size:.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;font-weight:600;font-family:'Space Grotesk',system-ui,sans-serif}
+.pb{border-radius:4px;padding:3px 6px;margin-bottom:3px;cursor:pointer;display:flex;flex-direction:column;gap:1px;min-height:38px;font-size:.62rem;font-weight:600;overflow:hidden;transition:outline .1s;justify-content:center;min-width:0}
+.pb:hover{outline:1px solid var(--accent)}
+.pb-nc{background:var(--nc-bg);color:var(--nc-text);border:1px dashed var(--bar-empty)}
+.pb-e{opacity:.55;border:1px dashed var(--bar-empty)}
+.wk-grid{display:grid;gap:2px 5px;align-items:stretch}
+.wk-grid>div{min-width:0;overflow:hidden}
+.qe{background:var(--card);border:1px solid var(--accent);border-radius:8px;padding:12px 14px;margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.cv{display:flex;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.cv:hover{background:var(--row-open)}
+.cv.empty{opacity:.55}
+.xps{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 10px;display:flex;align-items:center;gap:8px;font-size:.65rem;margin-bottom:6px}
+.xpbo{flex:1;height:6px;background:var(--xp-bar-bg);border-radius:3px;overflow:hidden;min-width:50px}
+.xpbf{height:100%;background:var(--xp-bar);border-radius:3px;transition:width .6s;box-shadow:0 0 6px var(--xp-glow)}
+.bs{display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+.bm{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font-size:.8rem;border:1px solid var(--border);cursor:default;position:relative}
+.bm.lk{opacity:.2;filter:grayscale(1)}
+.bm .bt{display:none;position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-size:.6rem;white-space:nowrap;z-index:10;color:var(--text-secondary);box-shadow:0 4px 12px rgba(0,0,0,.2)}
+.bm:hover .bt{display:block}
+.fwb{font-size:.62rem;color:var(--text-muted);display:flex;flex-wrap:wrap;gap:3px;align-items:center}
+.fw{background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-family:'JetBrains Mono',monospace;font-size:.58rem}
+@keyframes fl1{0%,100%{opacity:.9}50%{opacity:.45}}
+@keyframes fl2{0%,100%{opacity:.85}50%{opacity:.35}}
+@keyframes od{from{stroke-dashoffset:0}to{stroke-dashoffset:-12}}
+@keyframes pg{0%,100%{filter:drop-shadow(0 0 3px rgba(100,180,255,.4))}50%{filter:drop-shadow(0 0 10px rgba(100,180,255,.7))}}
+@keyframes tw{0%,100%{opacity:.15}50%{opacity:.8}}
+.ach{transition:transform .15s,box-shadow .15s}
+.ach.un:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.15)}
+@media print{
+  .np{display:none!important}
+  body{background:#fff!important;color:#000!important;font-size:11pt}
+  .card{border:1px solid #ccc!important;background:#fff!important;break-inside:avoid}
+  .brk{background:#f5f5f5!important;color:#666!important}
+  [data-theme] *{color-adjust:exact;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState, useEffect, useRef, useCallback, useMemo} = React;
+
+// ─── CONSTANTS ───────────────────────────────────────────────────────────────
+const ANCHOR = new Date(2026,2,16);
+const ANCHOR_DAY = 3;
+const ANCHOR_WK = 8;
+const HOLIDAYS = new Set(["2026-1-1","2026-1-2","2026-1-27","2026-2-6","2026-4-3","2026-4-6","2026-4-27","2026-6-1","2026-10-26","2026-12-25","2026-12-28"]);
+const DZ_DATES = new Set(["2026-1-26","2026-1-27","2026-1-28","2026-2-6","2026-2-17","2026-2-23","2026-2-24","2026-2-25","2026-2-26","2026-2-27"]);
+const TERMS = [
+  {n:1, start:new Date(2026,0,26), end:new Date(2026,3,2)},
+  {n:2, start:new Date(2026,4,4),  end:new Date(2026,6,3)},
+  {n:3, start:new Date(2026,7,20), end:new Date(2026,9,23)},
+  {n:4, start:new Date(2026,10,9), end:new Date(2026,11,11)}
+];
+
+const MMT = {
+  tutor:  {label:"Tutor",               short:"T",  icon:"\u{1F4CB}",slot1:"Tutor Time",         slot2:"Morning Tea",asm:false},
+  deans:  {label:"Dean's Assembly",     short:"DA", icon:"\u{1F3EB}",slot1:"Dean's Assembly",    slot2:"Morning Tea",asm:false},
+  fullsch:{label:"Full School Assembly",short:"FSA",icon:"\u{1F393}",slot1:"Full School Assembly",slot2:"Morning Tea",asm:true},
+  chapel: {label:"Chapel",              short:"C",  icon:"\u26EA",   slot1:"Morning Tea",         slot2:"Chapel",     asm:false}
+};
+
+const STD = {p1:{s:"08:30",e:"09:25"},p2:{s:"09:25",e:"10:20"},mt1:{s:"10:20",e:"10:45"},mt2:{s:"10:45",e:"11:10"},p3:{s:"11:10",e:"12:05"},p4:{s:"12:05",e:"12:55"},l:{s:"12:55",e:"13:50"},p5:{s:"13:50",e:"14:40"},p6:{s:"14:40",e:"15:30"}};
+const ASM = {p1:{s:"08:30",e:"09:20"},p2:{s:"09:20",e:"10:10"},mt1:{s:"10:10",e:"10:50"},mt2:{s:"10:50",e:"11:20"},p3:{s:"11:20",e:"12:10"},p4:{s:"12:10",e:"13:00"},l:{s:"13:00",e:"13:50"},p5:{s:"13:50",e:"14:40"},p6:{s:"14:40",e:"15:30"}};
+
+function bldP(mm) {
+  var m = MMT[mm] || MMT.tutor;
+  var t = m.asm ? ASM : STD;
+  return [
+    {id:"p1",label:"P1",start:t.p1.s,end:t.p1.e,brk:false},
+    {id:"p2",label:"P2",start:t.p2.s,end:t.p2.e,brk:false},
+    {id:"mt1",label:m.slot1,start:t.mt1.s,end:t.mt1.e,brk:true},
+    {id:"mt2",label:m.slot2,start:t.mt2.s,end:t.mt2.e,brk:true},
+    {id:"p3",label:"P3",start:t.p3.s,end:t.p3.e,brk:false},
+    {id:"p4",label:"P4",start:t.p4.s,end:t.p4.e,brk:false},
+    {id:"l",label:"Lunch",start:t.l.s,end:t.l.e,brk:true},
+    {id:"p5",label:"P5",start:t.p5.s,end:t.p5.e,brk:false},
+    {id:"p6",label:"P6",start:t.p6.s,end:t.p6.e,brk:false}
+  ];
+}
+
+const TT = {
+  1:{p1:"nc",p2:"11PSC7",p3:"9SCI3",p4:"7SCI8",p5:"13DPHY3",p6:"7SCI2"},
+  2:{p1:"9SCI8",p2:"7SCI8",p3:"nc",p4:"9SCI3",p5:"nc",p6:"13DPHY3"},
+  3:{p1:"13DPHY3",p2:"7SCI2",p3:"11PSC7",p4:"11PSC7",p5:"9SCI8",p6:"nc"},
+  4:{p1:"9SCI3",p2:"13DPHY3",p3:"nc",p4:"7SCI8",p5:"9SCI8",p6:"nc"},
+  5:{p1:"7SCI2",p2:"9SCI3",p3:"9SCI8",p4:"nc",p5:"11PSC7",p6:"nc"},
+  6:{p1:"7SCI2",p2:"9SCI8",p3:"13DPHY3",p4:"13DPHY3",p5:"7SCI8",p6:"11PSC7"},
+  7:{p1:"11PSC7",p2:"nc",p3:"nc",p4:"7SCI2",p5:"9SCI3",p6:"7SCI8"}
+};
+
+const CC = {
+  "7SCI2":{bg:"#f28b82",tx:"#5c1010"},
+  "7SCI8":{bg:"#ffb347",tx:"#5c2e00"},
+  "9SCI3":{bg:"#b5e853",tx:"#2a4000"},
+  "9SCI8":{bg:"#57c7a0",tx:"#0d3326"},
+  "11PSC7":{bg:"#6ab4f5",tx:"#0a2a50"},
+  "13DPHY3":{bg:"#e07ad8",tx:"#3d0040"}
+};
+const CLS = Object.keys(CC);
+const PIDS = ["p1","p2","p3","p4","p5","p6"];
+const FWORDS = ["todo","prepare","tbc","tbd","check","remind","follow up","incomplete","print","photocopy"];
+const FRE = /\b(todo|prepare|tbc|tbd|check|remind|follow.?up|incomplete|print|photocopy)\b/i;
+function hasF(t) { return FRE.test(t || ""); }
+
+// ─── STORAGE ─────────────────────────────────────────────────────────────────
+function sGet(k) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch(e) { return null; } }
+function sSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch(e) { return false; } }
+
+// ─── GIST SYNC ───────────────────────────────────────────────────────────────
+function getAllData() {
+  var data = {};
+  Object.keys(localStorage).forEach(function(k) {
+    if (k.indexOf("note:") === 0 || k.indexOf("daymeta:") === 0) data[k] = sGet(k);
+  });
+  data["_meta"] = {synced: new Date().toISOString(), version: 1};
+  return data;
+}
+
+function importAllData(data) {
+  Object.keys(data).forEach(function(k) {
+    if (k !== "_meta") sSet(k, data[k]);
+  });
+}
+
+function gistCreate(token, data) {
+  return fetch("https://api.github.com/gists", {
+    method: "POST",
+    headers: {"Authorization": "token " + token, "Content-Type": "application/json"},
+    body: JSON.stringify({description: "Lesson Planner Data", "public": false, files: {"planner-data.json": {content: JSON.stringify(data, null, 2)}}})
+  }).then(function(r) { if (!r.ok) throw new Error("Create failed"); return r.json(); })
+    .then(function(j) { return j.id; });
+}
+
+function gistPush(token, gistId, data) {
+  return fetch("https://api.github.com/gists/" + gistId, {
+    method: "PATCH",
+    headers: {"Authorization": "token " + token, "Content-Type": "application/json"},
+    body: JSON.stringify({files: {"planner-data.json": {content: JSON.stringify(data, null, 2)}}})
+  }).then(function(r) { if (!r.ok) throw new Error("Push failed"); return true; });
+}
+
+function gistPull(token, gistId) {
+  return fetch("https://api.github.com/gists/" + gistId, {
+    headers: {"Authorization": "token " + token}
+  }).then(function(r) { if (!r.ok) throw new Error("Pull failed"); return r.json(); })
+    .then(function(j) {
+      var f = j.files && j.files["planner-data.json"];
+      if (!f || !f.content) throw new Error("No data in gist");
+      return JSON.parse(f.content);
+    });
+}
+
+// ─── DATE HELPERS ────────────────────────────────────────────────────────────
+function dk(d) { return d.getFullYear()+"-"+d.getMonth()+"-"+d.getDate(); }
+function dck(d) { return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate(); }
+function fmtF(d) { return d.toLocaleDateString("en-NZ",{weekday:"long",day:"numeric",month:"long",year:"numeric"}); }
+function fmtS(d) { return d.toLocaleDateString("en-NZ",{weekday:"short",day:"numeric",month:"short"}); }
+function isWE(d) { var w=d.getDay(); return w===0||w===6; }
+function isPH(d) { return HOLIDAYS.has(dck(d)); }
+function isDZ(d) { return DZ_DATES.has(dck(d)); }
+function inT(d) { return TERMS.some(function(t){ return d>=t.start && d<=t.end; }); }
+function isSD(d) { return !isWE(d) && !isPH(d) && inT(d); }
+function isTD(d) { return isSD(d) && !isDZ(d); }
+function addD(d,n) { var r=new Date(d); r.setDate(r.getDate()+n); return r; }
+
+function getMon(d) {
+  var r=new Date(d), w=r.getDay();
+  r.setDate(r.getDate()-(w===0?6:w-1));
+  r.setHours(0,0,0,0);
+  return r;
+}
+
+function getPlanMon(d) {
+  var w=d.getDay();
+  if (w===0||w===6) {
+    var r=new Date(d);
+    r.setDate(r.getDate()+(w===0?1:2));
+    r.setHours(0,0,0,0);
+    return r;
+  }
+  return getMon(d);
+}
+
+function getWDs(b) { var m=getMon(b); return [0,1,2,3,4].map(function(i){ return addD(m,i); }); }
+function wkN(b) { return ANCHOR_WK + Math.round((getMon(b)-getMon(ANCHOR))/(7*864e5)); }
+
+function nearSD(d, dir) {
+  var x=addD(d,dir);
+  for (var i=0; i<30; i++) { if (isSD(x)) return x; x=addD(x,dir); }
+  return null;
+}
+
+function cycD(date) {
+  var t=new Date(date); t.setHours(0,0,0,0);
+  if (!isSD(t)) return null;
+  if (isDZ(t)) return 0;
+  var a=new Date(ANCHOR); a.setHours(0,0,0,0);
+  var n=0, d=new Date(a);
+  if (t>=a) {
+    while (d<t) { if (isTD(d)) n++; d.setDate(d.getDate()+1); }
+    return ((ANCHOR_DAY-1+n)%7)+1;
+  } else {
+    while (d>t) { d.setDate(d.getDate()-1); if (isTD(d)) n++; }
+    return (((ANCHOR_DAY-1-n)%7)+7)%7+1;
+  }
+}
+
+function getTermWks(term) {
+  var ts=new Date(term.start); ts.setHours(0,0,0,0);
+  var te=new Date(term.end); te.setHours(23,59,59,999);
+  var ws=[], d=getMon(ts);
+  while (d<=te) {
+    var days=[0,1,2,3,4].map(function(i){ return addD(d,i); });
+    if (days.some(function(x){ var xn=new Date(x); xn.setHours(0,0,0,0); return xn>=ts && xn<=te; })) ws.push(days);
+    d=addD(d,7);
+  }
+  return ws;
+}
+
+function clsLessons(cc, ti) {
+  var term=TERMS[ti||0]; if (!term) return [];
+  var wks=getTermWks(term), ls=[];
+  wks.flat().forEach(function(d) {
+    var cd=cycD(d); if (!cd||cd===0) return;
+    PIDS.forEach(function(pid) {
+      if (TT[cd] && TT[cd][pid]===cc) ls.push({date:new Date(d),dk:dk(d),pid:pid,cd:cd});
+    });
+  });
+  return ls;
+}
+
+function lesCtx(cc, dateKey, pid) {
+  if (!cc || cc==="nc") return null;
+  var ls=clsLessons(cc,0);
+  var idx=ls.findIndex(function(l){ return l.dk===dateKey && l.pid===pid; });
+  if (idx===-1) return null;
+  return {num:idx+1, total:ls.length, prev:ls[idx-1]||null, next:ls[idx+1]||null};
+}
+
+// ─── DATA DEFAULTS ───────────────────────────────────────────────────────────
+function eN() { return {subject:"",notes:"",resources:""}; }
+function eM() { return {mmType:"tutor",dayNotes:"",day0label:""}; }
+function nM(v) { return Object.assign({}, eM(), v||{}); }
+
+// ─── GAMIFICATION ────────────────────────────────────────────────────────────
+var LEVELS = [
+  {xp:0,title:"Lab Assistant",icon:"\u{1F9EA}"},
+  {xp:100,title:"Apprentice Scientist",icon:"\u{1F52C}"},
+  {xp:300,title:"Research Fellow",icon:"\u{1F4CA}"},
+  {xp:600,title:"Senior Researcher",icon:"\u{1F9F2}"},
+  {xp:1000,title:"Principal Investigator",icon:"\u26A1"},
+  {xp:1800,title:"Distinguished Professor",icon:"\u{1F31F}"},
+  {xp:3000,title:"Nobel Laureate",icon:"\u{1F3C6}"}
+];
+
+var ACHS = [
+  {id:"a1",title:"Newton's First",desc:"Plan your first lesson",detail:"An object at rest stays at rest... unless a teacher plans ahead",icon:"\u{1F34E}",xp:20,ck:function(s){return s.tp>=1;}},
+  {id:"a2",title:"F = ma",desc:"Plan 10 lessons",detail:"More force applied, more acceleration",icon:"\u{1F4AA}",xp:30,ck:function(s){return s.tp>=10;}},
+  {id:"a3",title:"Equal & Opposite",desc:"\u22651 lesson per class",detail:"For every class, an equal and opposite plan",icon:"\u2696\uFE0F",xp:40,ck:function(s){return CLS.every(function(c){return s.cd[c] && s.cd[c].p>0;});}},
+  {id:"a4",title:"Escape Velocity",desc:"100% planned week",detail:"Broken free of procrastination's gravitational field",icon:"\u{1F680}",xp:50,ck:function(s){return s.pw>=1;}},
+  {id:"a5",title:"Conservation of Momentum",desc:"3-week streak \u226580%",detail:"A planner in motion stays in motion",icon:"\u{1F3B1}",xp:60,ck:function(s){return s.sk>=3;}},
+  {id:"a6",title:"Superconductor",desc:"5-week streak \u226580%",detail:"Zero resistance to planning",icon:"\u26A1",xp:80,ck:function(s){return s.sk>=5;}},
+  {id:"a7",title:"Half-Life",desc:"50% term planned",detail:"Halfway through... wait, you're building UP!",icon:"\u2622\uFE0F",xp:60,ck:function(s){return s.tl>0 && s.tp>=s.tl*.5;}},
+  {id:"a8",title:"Critical Mass",desc:"75% term planned",detail:"Chain reaction of productivity imminent",icon:"\u269B\uFE0F",xp:80,ck:function(s){return s.tl>0 && s.tp>=s.tl*.75;}},
+  {id:"a9",title:"Grand Unified Theory",desc:"Every class >50%",detail:"All forces unified under one planner",icon:"\u{1F30C}",xp:100,ck:function(s){return CLS.every(function(c){var d=s.cd[c]; return d && d.p>d.t*.5;});}},
+  {id:"a10",title:"Maximum Order",desc:"100% term planned",detail:"Entropy reversed. The universe is impressed.",icon:"\u{1F3C6}",xp:200,ck:function(s){return s.tl>0 && s.tp>=s.tl;}}
+];
+
+function compGam(pwn) {
+  var wd={}, cd={}, tp=0, tl=0;
+  TERMS.forEach(function(term) {
+    getTermWks(term).flat().forEach(function(d) {
+      var c=cycD(d); if (!c||c===0) return;
+      var key=dk(d), wn=wkN(d);
+      if (!wd[wn]) wd[wn]={p:0,t:0};
+      PIDS.forEach(function(pid) {
+        var cls=TT[c] && TT[c][pid]; if (!cls||cls==="nc") return;
+        tl++; wd[wn].t++;
+        if (!cd[cls]) cd[cls]={p:0,t:0};
+        cd[cls].t++;
+        var n=sGet("note:"+key+":"+pid);
+        if (n && (n.subject||n.notes)) { tp++; wd[wn].p++; cd[cls].p++; }
+      });
+    });
+  });
+  var pw=0;
+  Object.values(wd).forEach(function(w){ if (w.t>0 && w.p===w.t) pw++; });
+  var sorted=Object.keys(wd).map(Number).filter(function(n){return n<=pwn;}).sort(function(a,b){return b-a;});
+  var sk=0;
+  for (var i=0; i<sorted.length; i++) {
+    var w=wd[sorted[i]];
+    if (w.t>0 && w.p/w.t>=.8) sk++; else break;
+  }
+  var all=Object.keys(wd).map(Number).sort(function(a,b){return a-b;});
+  var longest=0, run=0;
+  all.forEach(function(wn){ var w=wd[wn]; if (w.t>0 && w.p/w.t>=.8){run++;if(run>longest)longest=run;}else run=0; });
+  var st={tp:tp,tl:tl,pw:pw,sk:sk,ls:longest,wd:wd,cd:cd};
+  var achs=ACHS.map(function(a){return Object.assign({},a,{unlocked:a.ck(st)});});
+  var xp=tp*10+pw*50;
+  achs.forEach(function(a){if(a.unlocked)xp+=a.xp;});
+  var lev=LEVELS[0];
+  LEVELS.forEach(function(l){if(xp>=l.xp)lev=l;});
+  var li=LEVELS.indexOf(lev);
+  var nxt=LEVELS[li+1]||null;
+  var cw=wd[pwn]||{p:0,t:0};
+  return {tp:tp,tl:tl,pw:pw,sk:sk,ls:longest,wd:wd,cd:cd,achs:achs,xp:xp,lev:lev,nxt:nxt,cw:cw};
+}
+
+// ─── HOOKS ───────────────────────────────────────────────────────────────────
+function useAutoSave(storageKey, defVal, onSave) {
+  var defRef = useRef(defVal);
+  var [data, setData] = useState(function() {
+    if (!storageKey) return null;
+    var s = sGet(storageKey);
+    return Object.assign({}, defRef.current, s || {});
+  });
+  var ref = useRef(data || Object.assign({}, defVal));
+  var [ss, setSS] = useState("idle");
+  var bt = useRef(null);
+  var st = useRef(null);
+
+  useEffect(function() {
+    if (!storageKey) { setData(null); return; }
+    var s = sGet(storageKey);
+    var m = Object.assign({}, defRef.current, s || {});
+    ref.current = m;
+    setData(m);
+    setSS("idle");
+    return function() { clearTimeout(bt.current); clearTimeout(st.current); };
+  }, [storageKey]);
+
+  var save = useCallback(function() {
+    if (!storageKey) return;
+    clearTimeout(st.current);
+    setSS("saving");
+    var ok = sSet(storageKey, ref.current);
+    if (ok && onSave) onSave(Object.assign({}, ref.current));
+    if (ok && window._plannerSync) window._plannerSync();
+    setSS(ok ? "saved" : "error");
+    st.current = setTimeout(function() { setSS("idle"); }, 2000);
+  }, [storageKey, onSave]);
+
+  var updateField = useCallback(function(f, v) {
+    var u = Object.assign({}, ref.current);
+    u[f] = v;
+    ref.current = u;
+    setData(Object.assign({}, u));
+  }, []);
+
+  var hFoc = useCallback(function() { clearTimeout(bt.current); }, []);
+  var hBlr = useCallback(function() {
+    clearTimeout(bt.current);
+    bt.current = setTimeout(save, 80);
+  }, [save]);
+
+  return {data:data, updateField:updateField, ss:ss, hFoc:hFoc, hBlr:hBlr, save:save};
+}
+
+function useToday() {
+  var [today, setToday] = useState(function() { var d=new Date(); d.setHours(0,0,0,0); return d; });
+  useEffect(function() {
+    var now=new Date();
+    var tom=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1);
+    var ms=tom-now+200;
+    var t=setTimeout(function(){ var d=new Date(); d.setHours(0,0,0,0); setToday(d); }, ms);
+    return function(){clearTimeout(t);};
+  }, [today]);
+  return today;
+}
+
+// ─── SHARED UI ───────────────────────────────────────────────────────────────
+function Btn(props) {
+  return React.createElement("button", {
+    className:"btn"+(props.className?" "+props.className:""),
+    onClick:props.onClick,
+    disabled:props.disabled||false,
+    style:props.style||{}
+  }, props.children);
+}
+
+function SvH(props) {
+  if (!props.ss || props.ss==="idle") return null;
+  var map = {saving:["var(--text-muted)","saving\u2026"],saved:["var(--success)","\u2713 saved"],error:["var(--error)","\u26A0 failed"]};
+  var r = map[props.ss] || ["",""];
+  return React.createElement("span", {style:{fontSize:".61rem",color:r[0],marginLeft:6}}, r[1]);
+}
+
+function AInp(props) {
+  var tag = props.multi ? "textarea" : "input";
+  var p = {
+    className: props.multi ? "ta" : "inp",
+    value: (props.data && props.data[props.field]) || "",
+    onChange: function(e) { props.updateField(props.field, e.target.value); },
+    onFocus: props.hFoc,
+    onBlur: props.hBlr,
+    placeholder: props.ph || ""
+  };
+  if (props.multi) p.rows = props.rows || 3;
+  return React.createElement(tag, p);
+}
+
+function CBadge(props) {
+  var nc = !props.cc || props.cc==="nc";
+  var bg = nc ? "var(--nc-bg)" : CC[props.cc] && CC[props.cc].bg;
+  var tx = nc ? "var(--nc-text)" : CC[props.cc] && CC[props.cc].tx;
+  return React.createElement("span", {
+    className:"mn",
+    style: Object.assign({padding:"2px 8px",borderRadius:4,fontSize:".75rem",fontWeight:700,background:bg,color:tx,minWidth:84,textAlign:"center",flexShrink:0}, props.style||{})
+  }, nc ? "Non-contact" : props.cc);
+}
+
+function MTag(props) {
+  var m = MMT[props.mm] || MMT.tutor;
+  return React.createElement("span", {
+    style: Object.assign({padding:"1px 5px",borderRadius:3,fontSize:".57rem",display:"inline-block",background:"var(--mm-"+props.mm+"-bg)",color:"var(--mm-"+props.mm+"-text)"}, props.style||{})
+  }, m.icon+" "+m.short);
+}
+
+function XpStrip(props) {
+  var g = props.g;
+  var prog = g.nxt ? (g.xp-g.lev.xp)/(g.nxt.xp-g.lev.xp)*100 : 100;
+  return React.createElement("div", {className:"xps np"},
+    React.createElement("span", {style:{fontSize:".9rem"}}, g.lev.icon),
+    React.createElement("span", {className:"hd",style:{fontWeight:700,fontSize:".68rem",color:"var(--text)",whiteSpace:"nowrap"}}, g.lev.title),
+    React.createElement("div", {className:"xpbo"},
+      React.createElement("div", {className:"xpbf",style:{width:Math.min(100,prog)+"%"}})
+    ),
+    React.createElement("span", {className:"mn",style:{fontSize:".6rem",color:"var(--text-muted)",whiteSpace:"nowrap"}}, g.xp+" XP"),
+    g.sk > 0 && React.createElement("span", {style:{fontSize:".65rem",whiteSpace:"nowrap"}}, "\u{1F525}"+g.sk)
+  );
+}
+
+function Badges(props) {
+  return React.createElement("div", {className:"bs np"},
+    props.achs.map(function(a) {
+      return React.createElement("div", {key:a.id, className:"bm"+(a.unlocked?"":" lk"), style:a.unlocked?{background:"var(--surface)",borderColor:"var(--accent)"}:{}},
+        React.createElement("span", null, a.icon),
+        React.createElement("div", {className:"bt"},
+          React.createElement("strong", null, a.title),
+          a.unlocked ? " \u2713" : React.createElement("span", null, " \u2014 "+a.desc)
+        )
+      );
+    })
+  );
+}
+
+function FlagBank() {
+  var [open, setOpen] = useState(false);
+  return React.createElement("div", {className:"fwb"},
+    React.createElement("span", {onClick:function(){setOpen(!open);},style:{cursor:"pointer",color:"var(--flag)"}}, "\u2691 flags "+(open?"\u25B4":"\u25BE")),
+    open && FWORDS.map(function(w){ return React.createElement("span",{key:w,className:"fw"},w); })
+  );
+}
+
+// ─── CYCLE EXPLAINER ─────────────────────────────────────────────────────────
+function CycleExp(props) {
+  return React.createElement("div", {className:"card",style:{padding:16,marginBottom:14,fontSize:".78rem",color:"var(--text-secondary)",lineHeight:1.6}},
+    React.createElement("div", {style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}},
+      React.createElement("span", {className:"hd",style:{fontWeight:700,color:"var(--text)",fontSize:".88rem"}}, "\u24D8 How the 7-day cycle works"),
+      React.createElement("button", {onClick:props.onClose,style:{background:"none",border:"none",color:"var(--text-secondary)",cursor:"pointer",fontSize:"1rem"}}, "\u2715")
+    ),
+    React.createElement("p", {style:{marginBottom:8}}, "Diocesan runs a 7-day rotating timetable. Day 1 doesn't always fall on Monday \u2014 the cycle advances by one for each teaching day, then wraps from Day 7 back to Day 1."),
+    React.createElement("p", {style:{marginBottom:8}}, "Weekends, public holidays, and Day 0 events are skipped \u2014 the cycle pauses and resumes on the next teaching day."),
+    React.createElement("p", null, "This means your Tuesday might be \u201CDay 5\u201D one week and \u201CDay 6\u201D the next. The planner calculates this automatically.")
+  );
+}
+
+// ─── MID-MORNING BAR ─────────────────────────────────────────────────────────
+function MMBar(props) {
+  var mt = MMT[props.val] || MMT.tutor;
+  return React.createElement("div", {className:"card",style:{padding:"10px 14px",marginBottom:12}},
+    React.createElement("div", {className:"sl",style:{marginBottom:8}}, "Mid-morning block"),
+    React.createElement("div", {style:{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}},
+      Object.entries(MMT).map(function(e) {
+        var k=e[0], m=e[1], a=k===props.val;
+        return React.createElement("button", {
+          key:k, className:"pill", onClick:function(){props.onChange(k);},
+          style: a ? {fontWeight:700,background:"var(--mm-"+k+"-bg)",color:"var(--mm-"+k+"-text)",border:"1px solid var(--mm-"+k+"-text)"} : {}
+        }, React.createElement("span",null,m.icon), React.createElement("span",null,m.short));
+      }),
+      React.createElement("div", {style:{marginLeft:"auto",textAlign:"right"}},
+        React.createElement("div", {style:{fontSize:".7rem",color:"var(--mm-"+props.val+"-text)",fontWeight:600}}, mt.label),
+        React.createElement("div", {style:{fontSize:".62rem",color:"var(--text-muted)"}}, mt.slot1+" \u00B7 "+mt.slot2)
+      )
+    )
+  );
+}
+
+// ─── PERIOD CARD ─────────────────────────────────────────────────────────────
+function PCard(props) {
+  var p=props.period, dateKey=props.dateKey, cDay=props.cDay;
+  var cc = cDay ? ((TT[cDay]||{})[p.id] || "nc") : null;
+  var isNc = cc==="nc";
+  var [open, setOpen] = useState(props.initOpen||false);
+  var [mode, setMode] = useState(props.initOpen ? "detailed" : "quick");
+  var sk = (dateKey && cDay) ? "note:"+dateKey+":"+p.id : null;
+  var as = useAutoSave(sk, eN());
+  var data=as.data, uf=as.updateField, ss=as.ss, hFoc=as.hFoc, hBlr=as.hBlr;
+  var has = data && (data.subject||data.notes||data.resources);
+  var fl = hasF(data&&data.notes) || hasF(data&&data.subject);
+  var ctx = useMemo(function(){return lesCtx(cc,dateKey,p.id);}, [cc,dateKey,p.id]);
+
+  if (p.brk) return React.createElement("div",{className:"brk"},
+    React.createElement("span",null,p.label),
+    React.createElement("span",{className:"mn",style:{fontSize:".65rem"}},p.start+"\u2013"+p.end)
+  );
+
+  var header = React.createElement("div", {
+    className:"pr"+(open?" exp":""),
+    onClick:function(){ if(cDay) setOpen(!open); },
+    style: cDay ? {} : {cursor:"default"}
+  },
+    React.createElement("span",{className:"mn",style:{fontSize:".63rem",color:"var(--text-muted)",width:38,flexShrink:0}},p.start),
+    React.createElement(CBadge,{cc:cc}),
+    React.createElement("span",{style:{fontSize:".76rem",color:"var(--text-secondary)",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}, data&&data.subject||""),
+    React.createElement("span",{className:"hd",style:{fontSize:".67rem",color:"var(--text-muted)",flexShrink:0}},p.label),
+    fl && React.createElement("span",{style:{color:"var(--flag)",fontSize:".65rem",flexShrink:0}},"\u2691"),
+    has && !fl && React.createElement("span",{style:{width:5,height:5,borderRadius:"50%",background:"var(--success)",flexShrink:0}}),
+    cDay && React.createElement("span",{style:{color:"var(--text-muted)",fontSize:".7rem"}},open?"\u25B2":"\u25BC")
+  );
+
+  var detail = null;
+  if (open && data) {
+    var ctxEl = ctx && React.createElement("div",{style:{fontSize:".66rem",color:"var(--text-secondary)",background:"var(--surface)",padding:"4px 8px",borderRadius:4,lineHeight:1.5}},
+      "Lesson ",React.createElement("span",{className:"mn",style:{fontWeight:700}},ctx.num+"/"+ctx.total)," this term",
+      ctx.prev && React.createElement("span",null," \u00B7 prev: "+fmtS(ctx.prev.date)),
+      ctx.next && React.createElement("span",null," \u00B7 next: "+fmtS(ctx.next.date))
+    );
+
+    var modeToggle = !isNc && React.createElement("div",{style:{display:"flex",gap:4}},
+      React.createElement("button",{onClick:function(){setMode("quick");},className:"hd",style:{padding:"2px 10px",borderRadius:4,border:"none",cursor:"pointer",fontSize:".67rem",fontWeight:mode==="quick"?700:400,background:mode==="quick"?"var(--accent)":"var(--surface)",color:mode==="quick"?"#fff":"var(--text-muted)"}},"Quick"),
+      React.createElement("button",{onClick:function(){setMode("detailed");},className:"hd",style:{padding:"2px 10px",borderRadius:4,border:"none",cursor:"pointer",fontSize:".67rem",fontWeight:mode==="detailed"?700:400,background:mode==="detailed"?"var(--accent)":"var(--surface)",color:mode==="detailed"?"#fff":"var(--text-muted)"}},"Detailed")
+    );
+
+    var fields;
+    if (mode==="quick"||isNc) {
+      fields = React.createElement("div",null,
+        React.createElement("label",{className:"fl"}, isNc?"Notes":"Topic / Quick note", " ", React.createElement(SvH,{ss:ss})),
+        React.createElement(AInp,{data:data,field:isNc?"notes":"subject",updateField:uf,hFoc:hFoc,hBlr:hBlr,ph:isNc?"Meeting, marking, prep\u2026":"e.g. Newton's 3rd Law"})
+      );
+    } else {
+      fields = React.createElement(React.Fragment,null,
+        React.createElement("div",null,React.createElement("label",{className:"fl"},"Topic / Subject ",React.createElement(SvH,{ss:ss})),React.createElement(AInp,{data:data,field:"subject",updateField:uf,hFoc:hFoc,hBlr:hBlr,ph:"e.g. Newton's 3rd Law"})),
+        React.createElement("div",null,React.createElement("label",{className:"flb"},"Notes & Tasks"),React.createElement(AInp,{data:data,field:"notes",updateField:uf,hFoc:hFoc,hBlr:hBlr,ph:"Lesson plan, tasks\u2026",multi:true,rows:3})),
+        React.createElement("div",null,React.createElement("label",{className:"flb"},"Resources & Links"),React.createElement(AInp,{data:data,field:"resources",updateField:uf,hFoc:hFoc,hBlr:hBlr,ph:"URLs, file names\u2026"}))
+      );
+    }
+
+    detail = React.createElement("div",{className:"prd",onFocus:hFoc,onBlur:hBlr},
+      React.createElement("div",{style:{display:"grid",gap:9}}, ctxEl, modeToggle, fields)
+    );
+  }
+
+  return React.createElement("div",{style:{borderBottom:"1px solid var(--border)"}}, header, detail);
+}
+
+// ─── DAY VIEW ────────────────────────────────────────────────────────────────
+function DayView(props) {
+  var date=props.date, mc=props.mc, g=props.g, fp=props.fp;
+  var cd=cycD(date), dateKey=dk(date), isZ=cd===0, sch=isSD(date);
+  var prev=nearSD(date,-1), next=nearSD(date,1);
+  var hms = useCallback(function(saved){if(dateKey)props.onMS(dateKey,saved);},[dateKey]);
+  var as = useAutoSave("daymeta:"+dateKey, eM(), hms);
+  var meta=as.data, uf=as.updateField, ss=as.ss, hFoc=as.hFoc, hBlr=as.hBlr, save=as.save;
+  var mm = meta && meta.mmType || "tutor";
+  var periods = bldP(mm);
+  var hmm = function(t){uf("mmType",t);setTimeout(save,0);};
+
+  return React.createElement("div",null,
+    React.createElement(XpStrip,{g:g}),
+    React.createElement(Badges,{achs:g.achs}),
+    React.createElement("div",{style:{marginBottom:10,marginTop:10}},
+      React.createElement("div",{className:"hd",style:{fontSize:"1.25rem",fontWeight:800,color:"var(--text)",lineHeight:1.2}},fmtF(date)),
+      React.createElement("div",{className:"hd",style:{fontSize:".83rem",marginTop:3,color:isZ?"var(--dz-text)":sch?"var(--accent)":"var(--error)"}},
+        isZ?"Day 0 \u2014 no class structure":sch?"Cycle Day "+cd+" \u2014 Day "+cd+" rotation":inT(date)?"Holiday / Weekend":"School Holiday"
+      )
+    ),
+    React.createElement("div",{className:"np",style:{display:"flex",alignItems:"center",gap:7,marginBottom:14,flexWrap:"wrap"}},
+      React.createElement(Btn,{onClick:props.onBack},"\u2190 Back"),
+      React.createElement(Btn,{onClick:function(){if(prev)props.setDate(prev);},disabled:!prev},"\u2039 Prev"),
+      React.createElement(Btn,{onClick:function(){if(next)props.setDate(next);},disabled:!next},"Next \u203A"),
+      React.createElement("div",{style:{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}},
+        React.createElement(SvH,{ss:ss}),
+        React.createElement(Btn,{onClick:function(){window.print();}},"\u{1F5A8} Print")
+      )
+    ),
+    !sch ? React.createElement("div",{style:{color:"var(--text-secondary)",padding:30,textAlign:"center",fontSize:".88rem"}},"No classes scheduled.")
+    : isZ ? React.createElement("div",{className:"card",style:{padding:16,marginBottom:12,borderColor:"var(--dz-border)",background:"var(--dz-bg)"}},
+        React.createElement("div",{className:"hd",style:{fontSize:".83rem",color:"var(--dz-text)",fontWeight:600,marginBottom:12}},"Day 0 \u2014 No class structure"),
+        meta && React.createElement("div",{style:{display:"grid",gap:10},onFocus:hFoc,onBlur:hBlr},
+          React.createElement("div",null,React.createElement("label",{className:"fl"},"Label / Activity ",React.createElement(SvH,{ss:ss})),React.createElement(AInp,{data:meta,field:"day0label",updateField:uf,hFoc:hFoc,hBlr:hBlr,ph:"e.g. Orientation, EOTC\u2026"})),
+          React.createElement("div",null,React.createElement("label",{className:"flb"},"Notes"),React.createElement(AInp,{data:meta,field:"dayNotes",updateField:uf,hFoc:hFoc,hBlr:hBlr,ph:"Notes for this day\u2026",multi:true,rows:3}))
+        )
+      )
+    : React.createElement(React.Fragment,null,
+        meta && React.createElement(MMBar,{val:mm,onChange:hmm}),
+        React.createElement("div",{className:"card",style:{overflow:"hidden",marginBottom:12}},
+          periods.map(function(p){
+            if(p.brk) return React.createElement("div",{key:p.id,className:"brk"},React.createElement("span",null,p.label),React.createElement("span",{className:"mn",style:{fontSize:".65rem"}},p.start+"\u2013"+p.end));
+            return React.createElement(PCard,{key:dateKey+"-"+p.id,period:p,dateKey:dateKey,cDay:cd,initOpen:fp===p.id});
+          })
+        ),
+        React.createElement("div",{className:"card",style:{padding:12}},
+          React.createElement("label",{className:"fl"},"Day Notes / Meetings ",React.createElement(SvH,{ss:ss})),
+          meta && React.createElement(AInp,{data:meta,field:"dayNotes",updateField:uf,hFoc:hFoc,hBlr:hBlr,ph:"Meetings, reminders, duty\u2026",multi:true,rows:2})
+        )
+      )
+  );
+}
+
+// ─── TERM VIEW ───────────────────────────────────────────────────────────────
+function TermView(props) {
+  var mc=props.mc, g=props.g;
+  var term=TERMS[0];
+  var weeks=useMemo(function(){return getTermWks(term);},[]);
+  var today=useToday();
+  var ts=useMemo(function(){var d=new Date(term.start);d.setHours(0,0,0,0);return d;},[]);
+  var te=useMemo(function(){var d=new Date(term.end);d.setHours(23,59,59,999);return d;},[]);
+  var cov=useMemo(function(){
+    var c={};
+    weeks.flat().forEach(function(d){
+      var cd=cycD(d); if(!cd||cd===0) return;
+      var key=dk(d); var p=0,t=0;
+      PIDS.forEach(function(pid){ if((TT[cd]||{})[pid]==="nc")return; t++; var n=sGet("note:"+key+":"+pid); if(n&&(n.subject||n.notes))p++; });
+      c[key]={p:p,t:t};
+    });
+    return c;
+  },[]);
+
+  var header = React.createElement("div",{style:{marginBottom:14,marginTop:10}},
+    React.createElement("div",{className:"hd",style:{fontSize:"1.08rem",fontWeight:800,color:"var(--accent)"}},"Term 1 \u2014 2026"),
+    React.createElement("div",{style:{fontSize:".71rem",color:"var(--text-muted)"}},
+      term.start.toLocaleDateString("en-NZ",{day:"numeric",month:"short"})+" \u2013 "+term.end.toLocaleDateString("en-NZ",{day:"numeric",month:"short",year:"numeric"})
+    )
+  );
+
+  var dayHeaders = React.createElement("div",{style:{display:"grid",gridTemplateColumns:"58px repeat(5,1fr)",gap:3,marginBottom:4}},
+    React.createElement("div"),
+    ["Mon","Tue","Wed","Thu","Fri"].map(function(d){return React.createElement("div",{key:d,className:"hd",style:{fontSize:".66rem",color:"var(--text-muted)",textAlign:"center",fontWeight:600}},d);})
+  );
+
+  var rows = weeks.map(function(days) {
+    var wn=wkN(days[0]);
+    return React.createElement("div",{key:wn,style:{display:"grid",gridTemplateColumns:"58px repeat(5,1fr)",gap:3,marginBottom:3,alignItems:"start"}},
+      React.createElement("div",{style:{paddingTop:2}},React.createElement(Btn,{onClick:function(){props.onWk(days[0]);},style:{padding:"3px 0",fontSize:".64rem",width:"100%",textAlign:"center",borderRadius:5}},"Wk "+wn)),
+      days.map(function(d) {
+        var dn=new Date(d);dn.setHours(0,0,0,0);
+        var iT=dn>=ts&&dn<=te, sch=isSD(d), isT=dn.toDateString()===today.toDateString();
+        var cd=sch?cycD(d):null, isZ=cd===0, k=dk(d), meta=mc[k]||eM(), cv=cov[k];
+        if(!iT||!sch) return React.createElement("div",{key:k,style:{background:"var(--surface)",border:"1px solid var(--border)",borderRadius:5,minHeight:50,display:"flex",alignItems:"center",justifyContent:"center"}},iT&&React.createElement("span",{style:{fontSize:".57rem",color:"var(--text-muted)"}},"holiday"));
+        return React.createElement("div",{key:k,onClick:function(){props.onDay(d);},style:{background:isT?"var(--today-bg)":isZ?"var(--dz-bg)":"var(--card)",border:"1px solid "+(isT?"var(--today-border)":isZ?"var(--dz-border)":"var(--border)"),borderRadius:5,padding:"4px 5px",cursor:"pointer",minHeight:50}},
+          React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:2}},
+            React.createElement("span",{className:"hd",style:{fontSize:".74rem",fontWeight:700,color:isZ?"var(--dz-text)":isT?"var(--accent)":"var(--text)"}},d.getDate(),React.createElement("span",{style:{fontSize:".55rem",fontWeight:400,color:"var(--text-muted)",marginLeft:2}},d.toLocaleDateString("en-NZ",{month:"short"}))),
+            React.createElement("span",{className:"mn",style:{fontSize:".55rem",fontWeight:600,color:isZ?"var(--dz-text)":"var(--accent)"}},isZ?"D0":"D"+cd)
+          ),
+          isZ ? React.createElement("div",{style:{fontSize:".59rem",color:"var(--dz-text)",fontStyle:"italic",lineHeight:1.3,overflow:"hidden",maxHeight:26}},meta.day0label||"Day 0")
+          : React.createElement(React.Fragment,null,
+              React.createElement("div",{style:{display:"flex",gap:2,flexWrap:"wrap",marginBottom:2}},PIDS.map(function(pid){var cls=(TT[cd]||{})[pid]||"nc";var bg=cls!=="nc"&&CC[cls]?CC[cls].bg:"var(--nc-bg)";return React.createElement("div",{key:pid,style:{width:6,height:6,borderRadius:1,background:bg,flexShrink:0}});})),
+              React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+                React.createElement(MTag,{mm:meta.mmType||"tutor"}),
+                cv&&cv.t>0&&React.createElement("span",{className:"mn",style:{fontSize:".5rem",color:cv.p===cv.t?"var(--success)":"var(--text-muted)",fontWeight:700}},cv.p+"/"+cv.t)
+              )
+            )
+        );
+      })
+    );
+  });
+
+  var legend = React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:5,marginTop:14,alignItems:"center"}},
+    CLS.map(function(c){return React.createElement("span",{key:c,className:"mn",style:{background:CC[c].bg,color:CC[c].tx,padding:"2px 7px",borderRadius:3,fontSize:".63rem",fontWeight:700}},c);}),
+    React.createElement("span",{style:{fontSize:".62rem",color:"var(--text-muted)",marginLeft:4}},"dots=P1\u2192P6 \u00B7 fraction=planned/teaching")
+  );
+
+  return React.createElement("div",null, React.createElement(XpStrip,{g:g}), React.createElement(Badges,{achs:g.achs}), header, dayHeaders, rows, legend);
+}
+
+// ─── WEEK VIEW ───────────────────────────────────────────────────────────────
+function WeekView(props) {
+  var mc=props.mc, g=props.g;
+  var today=useToday();
+  var days=getWDs(props.base), wn=wkN(props.base);
+  var [spot,setSpot]=useState(null);
+  var [qe,setQE]=useState(null);
+  var [qv,setQV]=useState("");
+  var [nr,setNR]=useState(0);
+
+  var wNotes=useMemo(function(){
+    var m={};
+    days.forEach(function(d){var cd=cycD(d);if(!cd||cd===0)return;var key=dk(d);
+      PIDS.forEach(function(pid){var n=sGet("note:"+key+":"+pid);m[key+":"+pid]=Object.assign({},eN(),n||{});});
+    });
+    return m;
+  },[days.map(dk).join(","),nr]);
+
+  var sum=useMemo(function(){
+    var p=0,t=0,f=0;
+    days.forEach(function(d){var cd=cycD(d);if(!cd||cd===0)return;PIDS.forEach(function(pid){t++;var n=wNotes[dk(d)+":"+pid];if(n&&(n.subject||n.notes))p++;if(n&&(hasF(n.notes)||hasF(n.subject)))f++;});});
+    var ud=0;days.forEach(function(d){if(cycD(d)===0){var m=mc[dk(d)];if(!m||!m.day0label)ud++;}});
+    return{p:p,t:t,f:f,ud:ud};
+  },[days,wNotes,mc]);
+
+  var oQE=function(key,pid,cls,date){var n=wNotes[key+":"+pid];setQV(n&&n.subject||"");setQE({dk:key,pid:pid,cc:cls,date:date});};
+  var sQE=function(){if(!qe)return;var k="note:"+qe.dk+":"+qe.pid;var ex=sGet(k)||eN();sSet(k,Object.assign({},ex,{subject:qv}));setQE(null);setNR(function(r){return r+1;});if(window._plannerSync)window._plannerSync();};
+  var qKD=function(e){if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null);};
+
+  var wl = fmtS(days[0])+" \u2013 "+fmtS(days[4]);
+
+  var nav = React.createElement("div",{className:"np",style:{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10,marginTop:10,flexWrap:"wrap"}},
+    React.createElement("div",{style:{display:"flex",alignItems:"center",gap:7}},
+      React.createElement(Btn,{onClick:function(){props.setBase(function(d){return addD(d,-7);});},style:{padding:"4px 10px"}},"\u2039"),
+      React.createElement("div",{style:{textAlign:"center"}},
+        React.createElement("div",{style:{fontSize:".8rem",color:"var(--text-secondary)"}},wl),
+        React.createElement("div",{className:"hd",style:{fontSize:".67rem",color:"var(--accent)",fontWeight:700}},"Week "+wn)
+      ),
+      React.createElement(Btn,{onClick:function(){props.setBase(function(d){return addD(d,7);});},style:{padding:"4px 10px"}},"\u203A")
+    ),
+    React.createElement(Btn,{onClick:function(){props.setBase(getPlanMon(today));},style:{padding:"4px 10px",fontSize:".72rem"}},"Today")
+  );
+
+  var sumBar = React.createElement("div",{style:{fontSize:".7rem",color:"var(--text-secondary)",marginBottom:10,padding:"6px 10px",background:"var(--surface)",borderRadius:6,display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}},
+    React.createElement("span",null,"This week: ",React.createElement("strong",{className:"mn",style:{color:sum.p===sum.t?"var(--success)":"var(--text)"}},sum.p+"/"+sum.t)," planned"),
+    sum.f>0&&React.createElement("span",{style:{color:"var(--flag)"}},"\u2691 "+sum.f+" flagged"),
+    sum.ud>0&&React.createElement("span",{style:{color:"var(--dz-text)"}},"\u26A0 "+sum.ud+" unlabelled D0"),
+    React.createElement("span",{style:{marginLeft:"auto"}},React.createElement(FlagBank))
+  );
+
+  var chips = React.createElement("div",{className:"np",style:{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12,alignItems:"center"}},
+    CLS.map(function(c){return React.createElement("span",{key:c,className:"mn",onClick:function(){setSpot(spot===c?null:c);},style:{background:CC[c].bg,color:CC[c].tx,padding:"3px 10px",borderRadius:4,fontSize:".7rem",fontWeight:700,cursor:"pointer",outline:spot===c?"2px solid rgba(128,128,200,.6)":"none"}},c);})
+  );
+
+  var grid = (function(){
+    var dd = days.map(function(d){
+      var k=dk(d),cd=cycD(d),sch=isSD(d),isZ=cd===0;
+      var isT=d.toDateString()===today.toDateString();
+      var meta=mc[k]||eM();
+      return {d:d,k:k,cd:cd,sch:sch,isZ:isZ,isT:isT,meta:meta};
+    });
+    var cells=[];
+    var lS={display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:4};
+    var lT={fontSize:".58rem",color:"var(--text-muted)",fontWeight:700};
+    function bg(x){return x.isT?"var(--today-bg)":x.isZ?"var(--dz-bg)":x.sch?"var(--card)":"var(--surface)";}
+    function bd(x){return "1px solid "+(x.isT?"var(--today-border)":x.isZ?"var(--dz-border)":"var(--border)");}
+
+    // Header row
+    cells.push(React.createElement("div",{key:"lh"}));
+    dd.forEach(function(x,i){
+      cells.push(React.createElement("div",{key:"h"+i,style:{background:bg(x),border:bd(x),borderRadius:"8px 8px 0 0",padding:"6px 8px 4px"}},
+        React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"baseline"}},
+          React.createElement("span",{className:"hd",style:{fontSize:".76rem",fontWeight:700,color:x.sch?"var(--text)":"var(--text-muted)"}},x.d.toLocaleDateString("en-NZ",{weekday:"short"})+" "+x.d.getDate()),
+          React.createElement("span",{className:"mn",style:{fontSize:".58rem",fontWeight:700,color:x.isZ?"var(--dz-text)":x.sch?"var(--accent)":"var(--text-muted)"}},x.sch?(x.isZ?"D0":"D"+x.cd):isWE(x.d)?"\u2014":"Hol")
+        ),
+        x.sch&&!x.isZ&&React.createElement(MTag,{mm:x.meta.mmType||"tutor",style:{marginTop:2}})
+      ));
+    });
+
+    // Day notes row
+    cells.push(React.createElement("div",{key:"ln",style:lS},React.createElement("span",{className:"hd",style:lT},"\u270D")));
+    dd.forEach(function(x,i){
+      if(!x.sch){cells.push(React.createElement("div",{key:"n"+i,style:{background:"var(--surface)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",padding:4}},React.createElement("span",{style:{fontSize:".6rem",color:"var(--text-muted)"}},isWE(x.d)?"Weekend":"Holiday")));return;}
+      if(x.isZ){cells.push(React.createElement("div",{key:"n"+i,onClick:function(){props.onDet(x.d);},style:{background:bg(x),border:bd(x),padding:4,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}},React.createElement("span",{style:{fontSize:".6rem",color:"var(--dz-text)",fontStyle:"italic"}},x.meta.day0label||"Day 0 \u2014 tap")));return;}
+      var val=x.meta.dayNotes||"";
+      cells.push(React.createElement("div",{key:"n"+i,style:{background:bg(x),border:bd(x),padding:"3px 4px",display:"flex",alignItems:"stretch"}},
+        React.createElement("textarea",{className:"ta",value:val,onChange:function(e){props.uM(x.k,{dayNotes:e.target.value});},placeholder:"Day notes\u2026",rows:1,style:{fontSize:".6rem",padding:"2px 4px",borderRadius:3,background:val?"var(--surface-open)":"transparent",borderColor:val?"var(--accent)":"var(--border)",minHeight:28,lineHeight:1.3,boxSizing:"border-box",width:"100%",maxWidth:"100%"}})
+      ));
+    });
+
+    // Period rows P1-P6
+    PIDS.forEach(function(pid,pi){
+      var lastP=pi===5;
+      cells.push(React.createElement("div",{key:"l"+pid,style:lS},React.createElement("span",{className:"hd",style:lT},"P"+(pi+1))));
+      dd.forEach(function(x,i){
+        var ck=pid+"-"+i;
+        if(!x.sch||x.isZ){cells.push(React.createElement("div",{key:ck,style:{background:bg(x),border:bd(x),borderRadius:lastP?"0 0 8px 8px":"0"}}));return;}
+        var cls=(TT[x.cd]||{})[pid]||"nc",isNc=cls==="nc",clr=isNc?null:CC[cls];
+        var nk=x.k+":"+pid,n=wNotes[nk];
+        var filled=n&&(n.subject||n.notes),fl=n&&(hasF(n.notes)||hasF(n.subject));
+        cells.push(React.createElement("div",{key:ck,style:{background:bg(x),border:bd(x),padding:"0 4px",borderRadius:lastP?"0 0 8px 8px":"0",paddingBottom:lastP?4:0}},
+          React.createElement("div",{className:"pb"+(isNc?" pb-nc":"")+(!isNc&&!filled?" pb-e":""),
+            style:isNc?{}:{background:clr?clr.bg:"",color:clr?clr.tx:""},
+            onClick:function(e){e.stopPropagation();oQE(x.k,pid,cls,x.d);}
+          },
+            React.createElement("div",{style:{display:"flex",alignItems:"center",gap:4,width:"100%"}},
+              React.createElement("span",{className:"mn",style:{fontSize:".58rem",fontWeight:700,flexShrink:0}},isNc?"NC":cls),
+              React.createElement("span",{style:{flex:1}}),
+              fl&&React.createElement("span",{style:{color:isNc?"var(--flag)":clr&&clr.tx,fontSize:".6rem",flexShrink:0}},"\u2691"),
+              filled&&!fl&&React.createElement("span",{style:{width:5,height:5,borderRadius:"50%",background:isNc?"var(--success)":clr&&clr.tx,opacity:.6,flexShrink:0}})
+            ),
+            React.createElement("div",{style:{fontSize:".57rem",fontWeight:400,opacity:filled?.8:.4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",width:"100%"}},n&&n.subject||"\u2014")
+          )
+        ));
+      });
+    });
+
+    return React.createElement("div",{className:"wk-grid",style:{gridTemplateColumns:"30px repeat(5,1fr)",marginBottom:10}},cells);
+  })();
+
+  var qeEl = qe && React.createElement("div",{className:"qe"},
+    React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}},
+      React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8}},
+        React.createElement(CBadge,{cc:qe.cc,style:{fontSize:".7rem",padding:"2px 6px",minWidth:0}}),
+        React.createElement("span",{style:{fontSize:".72rem",color:"var(--text-secondary)"}},qe.pid.toUpperCase()+" \u00B7 "+fmtS(qe.date))
+      ),
+      React.createElement("div",{style:{display:"flex",gap:6}},
+        React.createElement("button",{onMouseDown:function(e){e.preventDefault();props.onDet(qe.date,qe.pid);},style:{background:"none",border:"none",color:"var(--accent)",cursor:"pointer",fontSize:".7rem",fontFamily:"'Space Grotesk'"}},"Full detail \u2192"),
+        React.createElement("button",{onMouseDown:function(e){e.preventDefault();setQE(null);},style:{background:"none",border:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:".9rem"}},"\u2715")
+      )
+    ),
+    React.createElement("input",{className:"inp",value:qv,onChange:function(e){setQV(e.target.value);},onKeyDown:qKD,onBlur:sQE,autoFocus:true,placeholder:"Topic \u2014 type and press Enter"})
+  );
+
+  var mmPanel = React.createElement("div",{className:"card np",style:{padding:"10px 14px",marginTop:10}},
+    React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:props.mmO?8:0}},
+      React.createElement("div",{className:"sl"},"Mid-morning setup \u2014 week "+wn),
+      React.createElement(Btn,{onClick:function(){props.setMmO(function(o){return!o;});},style:{padding:"2px 8px",fontSize:".66rem"}},props.mmO?"collapse \u25B2":"expand \u25BC")
+    ),
+    props.mmO && React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6}},
+      days.map(function(d){
+        var sch=isSD(d),isZ=sch&&isDZ(d),k=dk(d);
+        if(!sch) return React.createElement("div",{key:k,style:{opacity:.2,textAlign:"center",fontSize:".62rem",color:"var(--text-muted)",paddingTop:4}},d.toLocaleDateString("en-NZ",{weekday:"short"}));
+        if(isZ) return React.createElement("div",{key:k,style:{textAlign:"center",opacity:.5}},
+          React.createElement("div",{style:{fontSize:".62rem",color:"var(--text-muted)",marginBottom:4}},d.toLocaleDateString("en-NZ",{weekday:"short"})+" "+d.getDate()),
+          React.createElement("div",{style:{fontSize:".58rem",color:"var(--dz-text)",fontStyle:"italic",padding:"3px 4px",borderRadius:4,border:"1px solid var(--dz-border)",background:"var(--dz-bg)"}},"D0")
+        );
+        var mmt=(mc[k]||eM()).mmType;
+        return React.createElement("div",{key:k,style:{textAlign:"center"}},
+          React.createElement("div",{style:{fontSize:".62rem",color:"var(--text-secondary)",marginBottom:4}},d.toLocaleDateString("en-NZ",{weekday:"short"})+" "+d.getDate()),
+          React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:3}},
+            Object.entries(MMT).map(function(e){
+              var mK=e[0],mt=e[1],a=mK===mmt;
+              return React.createElement("button",{key:mK,onClick:function(){props.uM(k,{mmType:mK});},style:{padding:"3px 0",borderRadius:4,cursor:"pointer",fontSize:".65rem",fontWeight:a?700:400,background:a?"var(--mm-"+mK+"-bg)":"var(--surface)",color:a?"var(--mm-"+mK+"-text)":"var(--text-muted)",border:a?"1px solid var(--mm-"+mK+"-text)":"1px solid var(--border)"}},mt.icon+" "+mt.short);
+            })
+          )
+        );
+      })
+    )
+  );
+
+  var spotEl = spot && React.createElement("div",{className:"overlay",onClick:function(){setSpot(null);}},
+    React.createElement("div",{onClick:function(e){e.stopPropagation();},style:{background:"var(--card)",border:"2px solid "+CC[spot].bg,borderRadius:10,padding:20,minWidth:280,maxWidth:360,boxShadow:"0 8px 40px rgba(0,0,0,.4)"}},
+      React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}},
+        React.createElement("span",{className:"mn",style:{background:CC[spot].bg,color:CC[spot].tx,padding:"4px 12px",borderRadius:6,fontWeight:700,fontSize:".98rem"}},spot),
+        React.createElement("button",{onClick:function(){setSpot(null);},style:{background:"none",border:"none",color:"var(--text-secondary)",fontSize:"1.2rem",cursor:"pointer"}},"\u2715")
+      ),
+      (function(){
+        var hits=[];
+        days.forEach(function(d){var cd=cycD(d);if(!cd||cd===0)return;PIDS.forEach(function(pid){if((TT[cd]||{})[pid]===spot){var per=bldP("tutor").find(function(p){return p.id===pid;});hits.push({d:d,per:per,cd:cd});}});});
+        if(hits.length===0) return React.createElement("div",{style:{color:"var(--text-muted)",fontSize:".83rem",padding:"10px 0"}},"No lessons this week.");
+        return hits.map(function(h,i){
+          return React.createElement("div",{key:i,style:{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:"1px solid var(--border)"}},
+            React.createElement("div",{style:{background:CC[spot].bg,color:CC[spot].tx,borderRadius:4,padding:"2px 8px",fontSize:".73rem",fontWeight:700}},h.per&&h.per.label),
+            React.createElement("div",null,
+              React.createElement("div",{style:{fontSize:".83rem",color:"var(--text)",fontWeight:600}},fmtS(h.d)),
+              React.createElement("div",{className:"mn",style:{fontSize:".65rem",color:"var(--text-secondary)"}},h.per&&(h.per.start+"\u2013"+h.per.end)+" \u00B7 Day "+h.cd)
+            )
+          );
+        });
+      })()
+    )
+  );
+
+  return React.createElement("div",null,
+    React.createElement(XpStrip,{g:g}),
+    React.createElement(Badges,{achs:g.achs}),
+    nav, sumBar, chips, grid, qeEl, mmPanel,
+    // Flagged items
+    (function(){
+      var flags=[];
+      days.forEach(function(d){
+        var cd=cycD(d); if(!cd||cd===0) return;
+        var key=dk(d);
+        PIDS.forEach(function(pid){
+          var n=wNotes[key+":"+pid];
+          if(n && (hasF(n.notes)||hasF(n.subject))){
+            var cls=(TT[cd]||{})[pid]||"nc";
+            flags.push({date:d,pid:pid,cls:cls,subject:n.subject||"",notes:n.notes||""});
+          }
+        });
+      });
+      if(flags.length===0) return null;
+      return React.createElement("div",{className:"card",style:{padding:"10px 14px",marginBottom:10}},
+        React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}},
+          React.createElement("div",{className:"sl"},"\u2691 Flagged Items \u00B7 ",React.createElement("span",{className:"mn"},flags.length))
+        ),
+        flags.map(function(f,i){
+          var clr=f.cls!=="nc"&&CC[f.cls];
+          return React.createElement("div",{key:i,onClick:function(){props.onDet(f.date,f.pid);},style:{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:i>0?"1px solid var(--border)":"none",cursor:"pointer"}},
+            React.createElement("span",{className:"mn",style:{fontSize:".62rem",fontWeight:700,padding:"1px 6px",borderRadius:3,background:clr?clr.bg:"var(--nc-bg)",color:clr?clr.tx:"var(--nc-text)",flexShrink:0}},f.cls==="nc"?"NC":f.cls),
+            React.createElement("span",{style:{fontSize:".65rem",color:"var(--text-muted)",flexShrink:0}},fmtS(f.date)+" "+f.pid.toUpperCase()),
+            React.createElement("span",{style:{fontSize:".68rem",color:"var(--text)",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},f.subject||f.notes),
+            React.createElement("span",{style:{color:"var(--flag)",fontSize:".65rem",flexShrink:0}},"\u2691")
+          );
+        })
+      );
+    })(),
+    React.createElement("div",{className:"np",style:{fontSize:".66rem",color:"var(--text-muted)",textAlign:"center",marginTop:10}},"Click any period bar to quick-edit"),
+    spotEl
+  );
+}
+
+// ─── CLASS VIEW ──────────────────────────────────────────────────────────────
+function ClassView(props) {
+  var g=props.g;
+  var [sel,setSel]=useState(CLS[0]);
+  var today=useToday();
+  var [qe,setQE]=useState(null);
+  var [qv,setQV]=useState("");
+  var [nr,setNR]=useState(0);
+
+  var lessons=useMemo(function(){
+    return clsLessons(sel,0).map(function(l){
+      var n=sGet("note:"+l.dk+":"+l.pid);
+      return Object.assign({},l,{notes:Object.assign({},eN(),n||{})});
+    });
+  },[sel,nr]);
+
+  var planned=lessons.filter(function(l){return l.notes.subject||l.notes.notes;}).length;
+  var flagged=lessons.filter(function(l){return hasF(l.notes.notes)||hasF(l.notes.subject);}).length;
+  var nxtI=lessons.findIndex(function(l){var ld=new Date(l.date);ld.setHours(0,0,0,0);return ld>=today;});
+  var clr=CC[sel]||{bg:"var(--nc-bg)",tx:"var(--nc-text)"};
+
+  var oQE=function(i,l){setQV(l.notes.subject||"");setQE({i:i,dk:l.dk,pid:l.pid,date:l.date});};
+  var sQE=function(){if(!qe)return;var k="note:"+qe.dk+":"+qe.pid;var ex=sGet(k)||eN();sSet(k,Object.assign({},ex,{subject:qv}));setQE(null);setNR(function(r){return r+1;});if(window._plannerSync)window._plannerSync();};
+  var qKD=function(e){if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null);};
+
+  return React.createElement("div",null,
+    React.createElement(XpStrip,{g:g}),
+    React.createElement(Badges,{achs:g.achs}),
+    React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14,marginTop:10}},
+      CLS.map(function(c){var a=c===sel;return React.createElement("span",{key:c,className:"mn",onClick:function(){setSel(c);setQE(null);},style:{background:CC[c].bg,color:CC[c].tx,padding:"4px 12px",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer",outline:a?"2px solid var(--accent)":"none",outlineOffset:2}},c);})
+    ),
+    React.createElement("div",{style:{marginBottom:14}},
+      React.createElement("div",{className:"hd",style:{fontSize:"1.05rem",fontWeight:800,color:clr.tx}},React.createElement("span",{style:{background:clr.bg,padding:"2px 10px",borderRadius:5}},sel)),
+      React.createElement("div",{style:{fontSize:".73rem",color:"var(--text-secondary)",marginTop:6}},
+        lessons.length+" lessons in Term 1 \u00B7 ",
+        React.createElement("strong",{className:"mn",style:{color:planned===lessons.length?"var(--success)":"var(--text)"}},planned+" planned"),
+        " \u00B7 "+(lessons.length-planned)+" empty",
+        flagged>0&&React.createElement("span",{style:{color:"var(--flag)",marginLeft:6}},"\u2691 "+flagged)
+      )
+    ),
+    React.createElement("div",{className:"card",style:{overflow:"hidden"}},
+      lessons.map(function(l,i){
+        var ld=new Date(l.date);ld.setHours(0,0,0,0);
+        var isT=ld.toDateString()===today.toDateString(), isPast=ld<today;
+        var empty=!l.notes.subject&&!l.notes.notes;
+        var fl=hasF(l.notes.notes)||hasF(l.notes.subject);
+        var isN=i===nxtI&&!isT;
+        var per=bldP("tutor").find(function(p){return p.id===l.pid;});
+        var isEd=qe&&qe.i===i;
+
+        var row=React.createElement("div",{key:"r"+i,className:"cv"+(empty?" empty":""),onClick:function(){oQE(i,l);},
+          style:{background:isT?"var(--today-bg)":isN?"var(--surface-open)":"transparent",borderLeft:isT?"3px solid var(--today-border)":isN?"3px solid var(--accent)":"3px solid transparent"}},
+          React.createElement("div",{style:{minWidth:40,textAlign:"center",flexShrink:0}},
+            React.createElement("div",{className:"hd",style:{fontSize:".83rem",fontWeight:700,color:isPast&&!isT?"var(--text-muted)":"var(--text)"}},l.date.getDate()),
+            React.createElement("div",{style:{fontSize:".57rem",color:"var(--text-muted)"}},l.date.toLocaleDateString("en-NZ",{month:"short"}))
+          ),
+          React.createElement("div",{style:{flex:1,minWidth:0}},
+            React.createElement("div",{style:{display:"flex",alignItems:"center",gap:6,marginBottom:2}},
+              React.createElement("span",{className:"mn",style:{fontSize:".63rem",color:"var(--text-secondary)",fontWeight:600}},l.date.toLocaleDateString("en-NZ",{weekday:"short"})+" \u00B7 "+(per&&per.label)+" \u00B7 D"+l.cd),
+              React.createElement("span",{className:"mn",style:{fontSize:".56rem",color:"var(--text-muted)"}},per&&(per.start+"\u2013"+per.end)),
+              isT&&React.createElement("span",{className:"hd",style:{fontSize:".55rem",background:"var(--today-border)",color:"#fff",padding:"1px 5px",borderRadius:3,fontWeight:700}},"TODAY"),
+              isN&&React.createElement("span",{className:"hd",style:{fontSize:".55rem",background:"var(--accent)",color:"#fff",padding:"1px 5px",borderRadius:3,fontWeight:700}},"NEXT")
+            ),
+            empty ? React.createElement("div",{style:{fontSize:".72rem",color:"var(--text-muted)",fontStyle:"italic"}},isPast?"No notes recorded":"Click to plan")
+            : React.createElement("div",null,
+                React.createElement("div",{style:{fontSize:".78rem",color:"var(--text)",fontWeight:600}},l.notes.subject||"(no topic)"),
+                l.notes.notes&&React.createElement("div",{style:{fontSize:".67rem",color:"var(--text-secondary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginTop:1}},l.notes.notes)
+              )
+          ),
+          React.createElement("div",{style:{flexShrink:0,display:"flex",alignItems:"center",gap:4}},
+            fl&&React.createElement("span",{style:{color:"var(--flag)",fontSize:".72rem"}},"\u2691"),
+            React.createElement("span",{className:"mn",style:{fontSize:".56rem",color:"var(--text-muted)"}},"#"+(i+1))
+          )
+        );
+
+        var edit=isEd&&React.createElement("div",{key:"e"+i,style:{padding:"8px 12px",background:"var(--surface-open)",borderBottom:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:6}},
+          React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}},
+            React.createElement("span",{style:{fontSize:".7rem",color:"var(--text-secondary)"}},(per&&per.label)+" \u00B7 "+fmtS(l.date)+" \u00B7 #"+(i+1)),
+            React.createElement("div",{style:{display:"flex",gap:6}},
+              React.createElement("button",{onMouseDown:function(e){e.preventDefault();props.onDet(l.date,l.pid);},style:{background:"none",border:"none",color:"var(--accent)",cursor:"pointer",fontSize:".7rem",fontFamily:"'Space Grotesk'"}},"Full detail \u2192"),
+              React.createElement("button",{onMouseDown:function(e){e.preventDefault();setQE(null);},style:{background:"none",border:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:".9rem"}},"\u2715")
+            )
+          ),
+          React.createElement("input",{className:"inp",value:qv,onChange:function(e){setQV(e.target.value);},onKeyDown:qKD,onBlur:sQE,autoFocus:true,placeholder:"Topic \u2014 type and press Enter"})
+        );
+
+        return React.createElement(React.Fragment,{key:i},row,edit);
+      })
+    ),
+    React.createElement("div",{style:{fontSize:".66rem",color:"var(--text-muted)",textAlign:"center",marginTop:10}},"Click any lesson to quick-edit")
+  );
+}
+
+// ─── ROCKET ──────────────────────────────────────────────────────────────────
+function Rocket(props) {
+  var p=Math.min(100,Math.max(0,props.pct));
+  var rY=320-(p/100)*290;
+  var fH=8+(p/100)*30;
+  var stars=useMemo(function(){return Array.from({length:24},function(_,i){return{x:12+(i*47+i*i*17)%226,y:6+(i*31+i*i*13)%180,r:.6+(i%4)*.5,del:(i*.4)%3};});},[]);
+  var ms=[{y:345,e:"\u{1F333}",l:"Launch Pad",pc:0},{y:268,e:"\u2601\uFE0F",l:"Through the Clouds",pc:25},{y:190,e:"\u2708\uFE0F",l:"Stratosphere",pc:50},{y:112,e:"\u{1F30D}",l:"Edge of Space",pc:75},{y:38,e:"\u{1F6F8}",l:"Orbit Achieved!",pc:100}];
+
+  var svgContent = '<defs>'
+    + '<linearGradient id="sg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#020208"/><stop offset="25%" stop-color="#060818"/><stop offset="55%" stop-color="#0c2040"/><stop offset="85%" stop-color="#1a4a7a"/><stop offset="100%" stop-color="#3a7ab8"/></linearGradient>'
+    + '<linearGradient id="bg" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#b0b0c0"/><stop offset="35%" stop-color="#e8e8f0"/><stop offset="65%" stop-color="#e0e0ea"/><stop offset="100%" stop-color="#9898a8"/></linearGradient>'
+    + '<radialGradient id="wg"><stop offset="0%" stop-color="#88ddff"/><stop offset="100%" stop-color="#2266aa"/></radialGradient>'
+    + '<linearGradient id="fg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffdd33"/><stop offset="40%" stop-color="#ff8800"/><stop offset="100%" stop-color="#ff330055"/></linearGradient>'
+    + '</defs>'
+    + '<rect width="250" height="400" fill="url(#sg)" rx="10"/>';
+
+  stars.forEach(function(s,i) {
+    if(p>15) svgContent += '<circle cx="'+s.x+'" cy="'+s.y+'" r="'+s.r+'" fill="#fff" opacity=".1" style="animation:tw '+(2+s.del)+'s ease-in-out '+s.del+'s infinite"/>';
+  });
+
+  ms.forEach(function(m) {
+    var op=p>=m.pc?1:.12;
+    svgContent += '<g opacity="'+op+'"><text x="15" y="'+(m.y+5)+'" font-size="14">'+m.e+'</text><text x="36" y="'+(m.y+4)+'" font-size="8.5" fill="'+(p>=m.pc?'rgba(255,255,255,.7)':'rgba(255,255,255,.3)')+'" font-weight="'+(p>=m.pc?700:400)+'" font-family="Space Grotesk">'+m.l+'</text></g>';
+  });
+
+  svgContent += '<rect x="0" y="350" width="250" height="50" fill="#1a3a12"/><rect x="0" y="350" width="250" height="4" fill="#2a5a22"/><rect x="116" y="343" width="18" height="12" fill="#555" rx="2"/>';
+
+  svgContent += '<g style="transform:translateY('+rY+'px);transition:transform 1.2s cubic-bezier(.4,0,.2,1)">';
+  if(p>0) {
+    svgContent += '<ellipse cx="125" cy="'+(56+fH*.3)+'" rx="'+(5+(p/100)*4)+'" ry="'+(fH*.5)+'" fill="#ff550030"/>';
+    svgContent += '<polygon fill="url(#fg)" style="animation:fl1 .25s infinite"><animate attributeName="points" values="116,52 134,52 125,'+(52+fH)+';118,52 132,52 125,'+(52+fH-4)+';116,52 134,52 125,'+(52+fH)+'" dur=".25s" repeatCount="indefinite"/></polygon>';
+    svgContent += '<polygon fill="#ffee55" opacity=".8" style="animation:fl2 .18s infinite alternate"><animate attributeName="points" values="120,52 130,52 125,'+(52+fH*.55)+';121,52 129,52 125,'+(52+fH*.5)+';120,52 130,52 125,'+(52+fH*.55)+'" dur=".18s" repeatCount="indefinite"/></polygon>';
+  }
+  svgContent += '<rect x="115" y="10" width="20" height="42" fill="url(#bg)" rx="3"/>';
+  svgContent += '<polygon points="115,10 135,10 125,-8" fill="#cc2222"/>';
+  svgContent += '<circle cx="125" cy="24" r="6" fill="url(#wg)" stroke="#445" stroke-width=".7"/>';
+  svgContent += '<circle cx="123.5" cy="22.5" r="2" fill="rgba(255,255,255,.3)"/>';
+  svgContent += '<polygon points="115,46 105,58 115,52" fill="#cc2222"/><polygon points="135,46 145,58 135,52" fill="#cc2222"/>';
+  svgContent += '<rect x="115" y="36" width="20" height="2" fill="#2255aa" opacity=".4"/>';
+  svgContent += '<rect x="112" y="60" width="26" height="11" fill="rgba(0,0,0,.3)" rx="2"/>';
+  svgContent += '<text x="125" y="68.5" text-anchor="middle" font-size="7.5" fill="rgba(255,255,255,.85)" font-weight="700" font-family="JetBrains Mono">NZ-V1</text>';
+  svgContent += '</g>';
+
+  if(p>=100) {
+    svgContent += '<ellipse cx="125" cy="42" rx="65" ry="14" fill="none" stroke="rgba(130,200,255,.4)" stroke-width="1.5" stroke-dasharray="4,5" style="animation:od 2s linear infinite"/>';
+  }
+
+  svgContent += '<text x="235" y="388" text-anchor="end" font-size="30" font-weight="800" fill="white" opacity=".9" font-family="Space Grotesk">'+Math.round(p)+'%</text>';
+  svgContent += '<text x="235" y="398" text-anchor="end" font-size="7" fill="rgba(255,255,255,.4)" font-family="Space Grotesk" font-weight="600">WEEKLY THRUST</text>';
+
+  return React.createElement("div", {
+    style:{width:"100%",maxWidth:250,margin:"0 auto"},
+    dangerouslySetInnerHTML:{__html:'<svg viewBox="0 0 250 400" xmlns="http://www.w3.org/2000/svg">'+svgContent+'</svg>'}
+  });
+}
+
+// ─── LAB VIEW ────────────────────────────────────────────────────────────────
+function LabView(props) {
+  var g=props.g;
+  var tPct=g.tl>0?Math.round(g.tp/g.tl*100):0;
+  var cwPct=g.cw.t>0?Math.round(g.cw.p/g.cw.t*100):0;
+  var xpProg=g.nxt?(g.xp-g.lev.xp)/(g.nxt.xp-g.lev.xp)*100:100;
+  var uCnt=g.achs.filter(function(a){return a.unlocked;}).length;
+
+  return React.createElement("div",null,
+    React.createElement("div",{style:{marginBottom:14}},
+      React.createElement("div",{className:"hd",style:{fontSize:"1.08rem",fontWeight:800,color:"var(--accent)"}},"\u{1F52C} Planning Lab"),
+      React.createElement("div",{style:{fontSize:".71rem",color:"var(--text-muted)"}},"Where lesson planning meets physics")
+    ),
+    React.createElement("div",{style:{display:"flex",gap:14,marginBottom:20,flexWrap:"wrap",alignItems:"start"}},
+      React.createElement("div",{className:"card",style:{flex:"0 0 260px",padding:"14px 12px",textAlign:"center"}},
+        React.createElement("div",{className:"hd",style:{fontSize:".78rem",color:"var(--text-secondary)",marginBottom:4,fontWeight:700}},"\u{1F680} This Week's Launch"),
+        React.createElement(Rocket,{pct:cwPct}),
+        React.createElement("div",{className:"mn",style:{fontSize:".88rem",fontWeight:700,color:cwPct>=100?"var(--success)":"var(--text)",marginTop:8}},g.cw.p+"/"+g.cw.t+" periods fuelled"),
+        React.createElement("div",{style:{fontSize:".65rem",color:"var(--text-muted)",marginTop:3}},cwPct>=100?"Orbit achieved! \u{1F389}":cwPct>=75?"Almost there \u2014 edge of space!":cwPct>=50?"Through the stratosphere...":cwPct>=25?"Cleared the clouds!":"Ignition sequence started...")
+      ),
+      React.createElement("div",{style:{flex:1,minWidth:220}},
+        React.createElement("div",{className:"card",style:{padding:14,marginBottom:10}},
+          React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:8}},
+            React.createElement("span",{style:{fontSize:"2.2rem"}},g.lev.icon),
+            React.createElement("div",{style:{flex:1}},
+              React.createElement("div",{className:"hd",style:{fontSize:"1rem",fontWeight:800,color:"var(--text)"}},g.lev.title),
+              React.createElement("div",{className:"mn",style:{fontSize:".65rem",color:"var(--text-muted)"}},g.xp+" XP"+(g.nxt?" \u00B7 "+(g.nxt.xp-g.xp)+" XP to "+g.nxt.title:" \u00B7 Maximum level!"))
+            )
+          ),
+          g.nxt&&React.createElement("div",{style:{height:8,background:"var(--xp-bar-bg)",borderRadius:4,overflow:"hidden"}},React.createElement("div",{style:{height:"100%",width:Math.min(100,xpProg)+"%",background:"var(--xp-bar)",borderRadius:4,transition:"width .6s",boxShadow:"0 0 8px var(--xp-glow)"}})),
+          React.createElement("div",{style:{fontSize:".6rem",color:"var(--text-muted)",marginTop:6}},"+10 XP per planned \u00B7 +50 XP per perfect week \u00B7 bonus from achievements")
+        ),
+        React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}},
+          [{v:g.tp,l:"lessons planned",c:null},{v:tPct+"%",l:"term coverage",c:tPct>=75?"var(--success)":null},{v:g.sk,l:"week streak"+(g.sk>0?" \u{1F525}":""),c:g.sk>=3?"var(--success)":null,sub:g.ls>g.sk?"best: "+g.ls:null},{v:g.pw,l:"perfect weeks",c:g.pw>0?"var(--success)":null}].map(function(s,i){
+            return React.createElement("div",{key:i,className:"card",style:{padding:10,textAlign:"center"}},
+              React.createElement("div",{className:"hd",style:{fontSize:"1.4rem",fontWeight:800,color:s.c||"var(--text)"}},s.v),
+              React.createElement("div",{style:{fontSize:".6rem",color:"var(--text-muted)"}},s.l),
+              s.sub&&React.createElement("div",{style:{fontSize:".55rem",color:"var(--text-muted)",marginTop:1}},s.sub)
+            );
+          })
+        ),
+        React.createElement("div",{className:"card",style:{padding:12,marginTop:10}},
+          React.createElement("div",{className:"sl",style:{marginBottom:8}},"Coverage by class"),
+          CLS.map(function(c){
+            var d=g.cd[c]||{p:0,t:0};var pct=d.t>0?Math.round(d.p/d.t*100):0;
+            return React.createElement("div",{key:c,style:{marginBottom:6}},
+              React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}},
+                React.createElement("span",{className:"mn",style:{fontSize:".68rem",fontWeight:700,color:CC[c].tx,background:CC[c].bg,padding:"1px 6px",borderRadius:3}},c),
+                React.createElement("span",{className:"mn",style:{fontSize:".6rem",color:"var(--text-muted)"}},d.p+"/"+d.t+" \u00B7 "+pct+"%")
+              ),
+              React.createElement("div",{style:{height:5,background:"var(--xp-bar-bg)",borderRadius:3,overflow:"hidden"}},
+                React.createElement("div",{style:{height:"100%",width:pct+"%",background:CC[c].bg,borderRadius:3,transition:"width .5s",opacity:.8}})
+              )
+            );
+          })
+        )
+      )
+    ),
+    React.createElement("div",{style:{marginBottom:10}},React.createElement("div",{className:"sl"},"Achievements \u2014 ",React.createElement("span",{className:"mn"},uCnt+"/"+g.achs.length)," unlocked")),
+    React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8}},
+      g.achs.map(function(a){
+        return React.createElement("div",{key:a.id,className:"card ach"+(a.unlocked?" un":""),style:{padding:12,opacity:a.unlocked?1:.35}},
+          React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:4}},
+            React.createElement("span",{style:{fontSize:"1.5rem",filter:a.unlocked?"none":"grayscale(1)"}},a.icon),
+            React.createElement("div",{style:{flex:1}},
+              React.createElement("div",{className:"hd",style:{fontSize:".82rem",fontWeight:700,color:a.unlocked?"var(--text)":"var(--text-muted)"}},a.title),
+              React.createElement("div",{style:{fontSize:".62rem",color:a.unlocked?"var(--accent)":"var(--text-muted)"}},a.unlocked?"\u2713 Unlocked \u00B7 +"+a.xp+" XP":a.desc)
+            )
+          ),
+          React.createElement("div",{style:{fontSize:".65rem",color:"var(--text-secondary)"}},a.desc),
+          a.unlocked&&React.createElement("div",{style:{fontSize:".6rem",color:"var(--text-muted)",fontStyle:"italic",marginTop:5,lineHeight:1.4,borderTop:"1px solid var(--border)",paddingTop:5}},'"'+a.detail+'"')
+        );
+      })
+    )
+  );
+}
+
+// ─── DATA PANEL ──────────────────────────────────────────────────────────────
+function DataPanel(props) {
+  var [iSt, setISt] = useState(null);
+  var [iData, setIData] = useState(null);
+  var [iStats, setIStats] = useState(null);
+  var fRef = useRef(null);
+
+  // Sync state
+  var [token, setToken] = useState(function() { return localStorage.getItem("planner-gh-token") || ""; });
+  var [gistId, setGistId] = useState(function() { return localStorage.getItem("planner-gist-id") || ""; });
+  var [showToken, setShowToken] = useState(false);
+  var [syncMsg, setSyncMsg] = useState(null);
+
+  var connected = token && gistId;
+
+  var doExport = function() {
+    var data = getAllData();
+    var blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "planner-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  var handleFile = function(e) {
+    var file = e.target.files && e.target.files[0]; if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      try {
+        var parsed = JSON.parse(ev.target.result);
+        var keys = Object.keys(parsed).filter(function(k) { return k !== "_meta"; });
+        if (keys.length === 0) throw new Error("empty");
+        setIData(parsed);
+        setIStats({n: keys.filter(function(k){return k.indexOf("note:")===0;}).length, m: keys.filter(function(k){return k.indexOf("daymeta:")===0;}).length, t: keys.length});
+        setISt("confirm");
+      } catch(err) { setISt("error"); setIData(null); setIStats(null); }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  var doImport = function() {
+    if (!iData) return;
+    var count = 0;
+    Object.keys(iData).forEach(function(k) { if (k !== "_meta") { sSet(k, iData[k]); count++; } });
+    setISt("done");
+    setIStats(function(s) { return Object.assign({}, s, {imported: count}); });
+    props.onImported();
+  };
+
+  // Sync: connect
+  var doConnect = function() {
+    if (!token) { setSyncMsg({type:"error",text:"Enter a GitHub token first"}); return; }
+    setSyncMsg({type:"info",text:"Connecting\u2026"});
+    if (gistId) {
+      // Verify existing gist
+      gistPull(token, gistId)
+        .then(function() {
+          localStorage.setItem("planner-gh-token", token);
+          localStorage.setItem("planner-gist-id", gistId);
+          setSyncMsg({type:"ok",text:"Connected to existing Gist"});
+          if (props.onSyncConnected) props.onSyncConnected(token, gistId);
+        })
+        .catch(function() { setSyncMsg({type:"error",text:"Could not access that Gist. Check token and ID."}); });
+    } else {
+      // Create new gist
+      var data = getAllData();
+      gistCreate(token, data)
+        .then(function(newId) {
+          setGistId(newId);
+          localStorage.setItem("planner-gh-token", token);
+          localStorage.setItem("planner-gist-id", newId);
+          setSyncMsg({type:"ok",text:"Created new Gist: " + newId.slice(0,8) + "\u2026"});
+          if (props.onSyncConnected) props.onSyncConnected(token, newId);
+        })
+        .catch(function() { setSyncMsg({type:"error",text:"Failed to create Gist. Check your token has 'gist' scope."}); });
+    }
+  };
+
+  var doDisconnect = function() {
+    setToken(""); setGistId("");
+    localStorage.removeItem("planner-gh-token");
+    localStorage.removeItem("planner-gist-id");
+    setSyncMsg({type:"info",text:"Disconnected. Data remains in this browser."});
+    if (props.onSyncDisconnected) props.onSyncDisconnected();
+  };
+
+  var doPullNow = function() {
+    if (!token || !gistId) return;
+    setSyncMsg({type:"info",text:"Pulling\u2026"});
+    gistPull(token, gistId)
+      .then(function(data) {
+        importAllData(data);
+        props.onImported();
+        setSyncMsg({type:"ok",text:"Pulled " + Object.keys(data).filter(function(k){return k!=="_meta";}).length + " entries"});
+      })
+      .catch(function() { setSyncMsg({type:"error",text:"Pull failed"}); });
+  };
+
+  var doPushNow = function() {
+    if (!token || !gistId) return;
+    setSyncMsg({type:"info",text:"Pushing\u2026"});
+    gistPush(token, gistId, getAllData())
+      .then(function() { setSyncMsg({type:"ok",text:"Pushed \u2713"}); })
+      .catch(function() { setSyncMsg({type:"error",text:"Push failed"}); });
+  };
+
+  var ck = Object.keys(localStorage);
+  var cn = ck.filter(function(k){return k.indexOf("note:")===0;}).length;
+  var cm = ck.filter(function(k){return k.indexOf("daymeta:")===0;}).length;
+  var syncMsgColor = syncMsg ? (syncMsg.type==="ok"?"var(--success)":syncMsg.type==="error"?"var(--error)":"var(--text-muted)") : "";
+
+  return React.createElement("div", {className:"overlay",onClick:props.onClose},
+    React.createElement("div", {onClick:function(e){e.stopPropagation();}, style:{background:"var(--card)",border:"1px solid var(--border)",borderRadius:10,padding:20,minWidth:300,maxWidth:460,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,.4)"}},
+      // Title
+      React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}},
+        React.createElement("span",{className:"hd",style:{fontWeight:700,color:"var(--text)",fontSize:".95rem"}},"\u2699\uFE0F Data & Sync"),
+        React.createElement("button",{onClick:props.onClose,style:{background:"none",border:"none",color:"var(--text-secondary)",fontSize:"1.2rem",cursor:"pointer"}},"\u2715")
+      ),
+      // Current data
+      React.createElement("div",{style:{fontSize:".72rem",color:"var(--text-secondary)",marginBottom:14,padding:"8px 10px",background:"var(--surface)",borderRadius:6}},
+        React.createElement("div",{style:{marginBottom:4,fontWeight:600,color:"var(--text)"}},"Current data"),
+        React.createElement("span",{className:"mn"},cn)," period notes \u00B7 ",React.createElement("span",{className:"mn"},cm)," day settings"
+      ),
+
+      // ── Cloud Sync section ──
+      React.createElement("div",{style:{marginBottom:16}},
+        React.createElement("div",{className:"sl",style:{marginBottom:8}},"\u2601\uFE0F Cloud Sync"),
+        connected
+          ? React.createElement("div",null,
+              React.createElement("div",{style:{fontSize:".72rem",color:"var(--success)",marginBottom:8,display:"flex",alignItems:"center",gap:6}},
+                React.createElement("span",{style:{width:8,height:8,borderRadius:"50%",background:"var(--success)",display:"inline-block"}}),
+                "Connected to Gist ",React.createElement("span",{className:"mn",style:{fontSize:".62rem",color:"var(--text-muted)"}},gistId.slice(0,12)+"\u2026")
+              ),
+              React.createElement("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
+                React.createElement("button",{className:"btn",onClick:doPushNow,style:{fontSize:".72rem"}},"\u2B06 Push"),
+                React.createElement("button",{className:"btn",onClick:doPullNow,style:{fontSize:".72rem"}},"\u2B07 Pull"),
+                React.createElement("button",{className:"btn",onClick:doDisconnect,style:{fontSize:".72rem",color:"var(--error)"}},"\u2715 Disconnect")
+              ),
+              props.lastSync && React.createElement("div",{style:{fontSize:".6rem",color:"var(--text-muted)",marginTop:6}},"Last auto-sync: "+props.lastSync)
+            )
+          : React.createElement("div",null,
+              React.createElement("div",{style:{fontSize:".72rem",color:"var(--text-secondary)",marginBottom:8,lineHeight:1.5}},
+                "Connect to a GitHub Gist to sync across devices. ",
+                React.createElement("a",{href:"https://github.com/settings/tokens/new?scopes=gist&description=Lesson+Planner",target:"_blank",rel:"noopener",style:{color:"var(--accent)"}},"Create a token with gist scope \u2197")
+              ),
+              React.createElement("div",{style:{marginBottom:6}},
+                React.createElement("label",{className:"fl"},"GitHub Token"),
+                React.createElement("div",{style:{display:"flex",gap:4}},
+                  React.createElement("input",{className:"inp",type:showToken?"text":"password",value:token,onChange:function(e){setToken(e.target.value);},placeholder:"ghp_xxxx\u2026",style:{fontSize:".72rem",flex:1}}),
+                  React.createElement("button",{className:"btn",onClick:function(){setShowToken(!showToken);},style:{padding:"4px 8px",fontSize:".65rem"}},showToken?"\u{1F441}":"\u2022\u2022\u2022")
+                )
+              ),
+              React.createElement("div",{style:{marginBottom:8}},
+                React.createElement("label",{className:"fl"},"Gist ID ",React.createElement("span",{style:{fontWeight:400,color:"var(--text-muted)"}},"(leave blank to create new)")),
+                React.createElement("input",{className:"inp",value:gistId,onChange:function(e){setGistId(e.target.value);},placeholder:"Leave empty for new gist",style:{fontSize:".72rem"}})
+              ),
+              React.createElement("button",{className:"btn",onClick:doConnect,style:{background:"var(--accent)",color:"#fff",border:"none",padding:"8px 16px",fontSize:".78rem",borderRadius:6,fontWeight:600}},"\u{1F517} Connect")
+            ),
+        syncMsg && React.createElement("div",{style:{fontSize:".68rem",color:syncMsgColor,marginTop:8,padding:"4px 8px",background:"var(--surface)",borderRadius:4}},syncMsg.text)
+      ),
+
+      // ── Export section ──
+      React.createElement("div",{style:{marginBottom:16}},
+        React.createElement("div",{className:"sl",style:{marginBottom:8}},"Export"),
+        React.createElement("div",{style:{fontSize:".72rem",color:"var(--text-secondary)",marginBottom:8}},"Download a local backup as JSON."),
+        React.createElement("button",{className:"btn",onClick:doExport,style:{background:"var(--accent)",color:"#fff",border:"none",padding:"8px 16px",fontSize:".78rem",borderRadius:6,cursor:"pointer",fontWeight:600}},"\u{1F4E5} Download Backup")
+      ),
+
+      // ── Import section ──
+      React.createElement("div",null,
+        React.createElement("div",{className:"sl",style:{marginBottom:8}},"Import"),
+        React.createElement("div",{style:{fontSize:".72rem",color:"var(--text-secondary)",marginBottom:8}},"Load a JSON backup. Matching keys will be overwritten."),
+        React.createElement("input",{ref:fRef,type:"file",accept:".json",onChange:handleFile,style:{display:"none"}}),
+        iSt===null && React.createElement("button",{className:"btn",onClick:function(){fRef.current&&fRef.current.click();},style:{padding:"8px 16px",fontSize:".78rem",borderRadius:6,fontWeight:600}},"\u{1F4E4} Choose File"),
+        iSt==="confirm"&&iStats && React.createElement("div",{style:{padding:10,background:"var(--surface)",borderRadius:6,border:"1px solid var(--accent)"}},
+          React.createElement("div",{style:{fontSize:".78rem",color:"var(--text)",fontWeight:600,marginBottom:6}},"Ready to import:"),
+          React.createElement("div",{style:{fontSize:".7rem",color:"var(--text-secondary)",marginBottom:8}},React.createElement("span",{className:"mn"},iStats.n)," notes \u00B7 ",React.createElement("span",{className:"mn"},iStats.m)," day settings"),
+          React.createElement("div",{style:{display:"flex",gap:8}},
+            React.createElement("button",{className:"btn",onClick:doImport,style:{background:"var(--accent)",color:"#fff",border:"none",padding:"6px 14px",fontWeight:600}},"\u2713 Confirm"),
+            React.createElement("button",{className:"btn",onClick:function(){setISt(null);setIData(null);setIStats(null);},style:{padding:"6px 14px"}},"Cancel")
+          )
+        ),
+        iSt==="done"&&iStats && React.createElement("div",{style:{padding:10,background:"var(--surface)",borderRadius:6,border:"1px solid var(--success)"}},
+          React.createElement("div",{style:{fontSize:".78rem",color:"var(--success)",fontWeight:600}},"\u2713 Import complete"),
+          React.createElement("div",{style:{fontSize:".7rem",color:"var(--text-secondary)",marginTop:4}},React.createElement("span",{className:"mn"},iStats.imported)," entries loaded."),
+          React.createElement("button",{className:"btn",onClick:props.onClose,style:{marginTop:8,padding:"6px 14px"}},"Close")
+        ),
+        iSt==="error" && React.createElement("div",{style:{padding:10,background:"var(--surface)",borderRadius:6,border:"1px solid var(--error)"}},
+          React.createElement("div",{style:{fontSize:".78rem",color:"var(--error)",fontWeight:600}},"\u26A0 Invalid file"),
+          React.createElement("button",{className:"btn",onClick:function(){setISt(null);fRef.current&&fRef.current.click();},style:{marginTop:8,padding:"6px 14px"}},"Try another")
+        )
+      )
+    )
+  );
+}
+
+// ─── APP ─────────────────────────────────────────────────────────────────────
+function App() {
+  var [isDark, setIsDark] = useState(function() { return localStorage.getItem("planner-theme") !== "light"; });
+  var today = useToday();
+  var planMon = useMemo(function() { return getPlanMon(today); }, [today]);
+  var planWN = wkN(planMon);
+
+  var [view, setView] = useState("week");
+  var [base, setBase] = useState(planMon);
+  var [detDate, setDetDate] = useState(null);
+  var [prevV, setPrevV] = useState("week");
+  var [fp, setFP] = useState(null);
+  var [mmO, setMmO] = useState(false);
+  var [mc, setMC] = useState({});
+  var mcR = useRef({});
+  var [showExp, setShowExp] = useState(false);
+  var [showDP, setShowDP] = useState(false);
+  var [gr, setGR] = useState(0);
+
+  // Sync state
+  var [syncSt, setSyncSt] = useState("idle"); // idle|syncing|synced|error
+  var [lastSync, setLastSync] = useState(null);
+  var syncTimer = useRef(null);
+  var ghToken = useRef(localStorage.getItem("planner-gh-token") || "");
+  var ghGistId = useRef(localStorage.getItem("planner-gist-id") || "");
+  var syncConnected = function() { return ghToken.current && ghGistId.current; };
+
+  // Auto-push: debounced, fires 4s after last save
+  var triggerSync = useCallback(function() {
+    if (!syncConnected()) return;
+    clearTimeout(syncTimer.current);
+    syncTimer.current = setTimeout(function() {
+      setSyncSt("syncing");
+      gistPush(ghToken.current, ghGistId.current, getAllData())
+        .then(function() {
+          var t = new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"});
+          setLastSync(t);
+          setSyncSt("synced");
+          setTimeout(function(){ setSyncSt("idle"); }, 3000);
+        })
+        .catch(function() {
+          setSyncSt("error");
+          setTimeout(function(){ setSyncSt("idle"); }, 5000);
+        });
+    }, 4000);
+  }, []);
+
+  // Pull on load if connected
+  useEffect(function() {
+    if (!syncConnected()) return;
+    setSyncSt("syncing");
+    gistPull(ghToken.current, ghGistId.current)
+      .then(function(data) {
+        importAllData(data);
+        // Reload meta cache
+        var p = {};
+        TERMS.forEach(function(term) {
+          getTermWks(term).flat().filter(isSD).forEach(function(d) {
+            var k = dk(d), v = sGet("daymeta:" + k);
+            if (v) p[k] = nM(v);
+          });
+        });
+        mcR.current = p;
+        setMC(p);
+        setGR(function(r) { return r+1; });
+        var t = new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"});
+        setLastSync(t);
+        setSyncSt("synced");
+        setTimeout(function(){ setSyncSt("idle"); }, 3000);
+      })
+      .catch(function() {
+        setSyncSt("error");
+        setTimeout(function(){ setSyncSt("idle"); }, 5000);
+      });
+  }, []);
+
+  useEffect(function() { mcR.current = mc; }, [mc]);
+  useEffect(function() {
+    document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
+    localStorage.setItem("planner-theme", isDark ? "dark" : "light");
+  }, [isDark]);
+
+  useEffect(function() {
+    var p = {};
+    TERMS.forEach(function(term) {
+      getTermWks(term).flat().filter(isSD).forEach(function(d) {
+        var k = dk(d), v = sGet("daymeta:" + k);
+        if (v) p[k] = nM(v);
+      });
+    });
+    mcR.current = Object.assign({}, mcR.current, p);
+    setMC(function(c) { return Object.assign({}, c, p); });
+  }, []);
+
+  var gam = useMemo(function() { return compGam(planWN); }, [gr, view, planWN]);
+
+  var uM = useCallback(function(key, ch) {
+    var cur = mcR.current[key] || eM();
+    var u = Object.assign({}, cur, ch);
+    mcR.current = Object.assign({}, mcR.current); mcR.current[key] = u;
+    setMC(function(c) { var n = Object.assign({}, c); n[key] = u; return n; });
+    sSet("daymeta:" + key, u);
+    triggerSync();
+  }, [triggerSync]);
+
+  var onMS = useCallback(function(key, m) {
+    mcR.current = Object.assign({}, mcR.current); mcR.current[key] = m;
+    setMC(function(c) { var n = Object.assign({}, c); n[key] = m; return n; });
+    triggerSync();
+  }, [triggerSync]);
+
+  var goDay = function(d, pid) { setPrevV(view); setDetDate(d); setFP(pid || null); setView("day"); };
+  var goWk = function(d) { setBase(d); setView("week"); };
+  var goDayTab = function() {
+    if (!detDate) {
+      var target = view === "week" ? getMon(base) : planMon;
+      if (!isSD(target)) target = nearSD(target, 1) || target;
+      setDetDate(target);
+    }
+    setFP(null); setPrevV(view); setView("day");
+  };
+
+  var handleImport = useCallback(function() {
+    var p = {};
+    TERMS.forEach(function(term) {
+      getTermWks(term).flat().filter(isSD).forEach(function(d) {
+        var k = dk(d), v = sGet("daymeta:" + k);
+        if (v) p[k] = nM(v);
+      });
+    });
+    mcR.current = p;
+    setMC(p);
+    setGR(function(r) { return r + 1; });
+    triggerSync();
+  }, [triggerSync]);
+
+  var onSyncConnected = useCallback(function(tok, gid) {
+    ghToken.current = tok;
+    ghGistId.current = gid;
+    triggerSync();
+  }, [triggerSync]);
+
+  var onSyncDisconnected = useCallback(function() {
+    ghToken.current = "";
+    ghGistId.current = "";
+    clearTimeout(syncTimer.current);
+    setSyncSt("idle");
+    setLastSync(null);
+  }, []);
+
+  // Expose triggerSync globally for useAutoSave
+  useEffect(function() {
+    window._plannerSync = triggerSync;
+    return function() { window._plannerSync = null; };
+  }, [triggerSync]);
+
+  var onWE = isWE(today);
+
+  // Header
+  var header = React.createElement("div", {className:"np",style:{marginBottom:16,borderBottom:"1px solid var(--border)",paddingBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}},
+    React.createElement("div", null,
+      React.createElement("div", {className:"hd",style:{fontSize:"1.22rem",fontWeight:800,color:"var(--accent)",letterSpacing:"-.5px"}},
+        "\u{1F4C5} Victor's Lesson Planner ",
+        React.createElement("span", {style:{fontSize:".72rem",fontWeight:400,color:"var(--text-muted)",marginLeft:4}}, gam.lev.icon+" "+gam.lev.title)
+      ),
+      React.createElement("div", {style:{fontSize:".7rem",color:"var(--text-muted)"}},
+        "Diocesan School \u00B7 7-Day Cycle ",
+        React.createElement("button", {onClick:function(){setShowExp(!showExp);},style:{background:"none",border:"none",color:"var(--accent)",cursor:"pointer",fontSize:".72rem",marginLeft:4}}, "\u24D8"),
+        gam.sk > 0 && React.createElement("span", {style:{color:"var(--success)",marginLeft:8}}, "\u{1F525} "+gam.sk+"wk streak"),
+        onWE && React.createElement("span", {style:{color:"var(--accent)",marginLeft:8,fontStyle:"italic"}}, "Weekend mode \u2014 showing next week")
+      )
+    ),
+    React.createElement("div", {style:{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}},
+      React.createElement("div", {style:{display:"flex",gap:3,background:"var(--surface)",border:"1px solid var(--border)",borderRadius:7,padding:3}},
+        [["term","\u{1F4C5} Term"],["week","\u{1F5D3} Week"],["day","\u{1F4CB} Day"],["class","\u{1F4DA} Class"],["lab","\u{1F52C} Lab"]].map(function(v) {
+          var k=v[0], lbl=v[1], a=view===k;
+          return React.createElement("button", {key:k, className:"vtab"+(a?" on":""), onClick:function() {
+            if (k==="day") goDayTab();
+            else { setView(k); setGR(function(r){return r+1;}); }
+          }}, lbl);
+        })
+      ),
+      React.createElement("button", {onClick:function(){setShowDP(true);},title:"Data",style:{background:"var(--surface)",border:"1px solid var(--border)",color:"var(--text)",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:"1rem",lineHeight:1}}, "\u2699\uFE0F"),
+      React.createElement("button", {onClick:function(){setIsDark(!isDark);},title:isDark?"Light":"Dark",style:{background:"var(--surface)",border:"1px solid var(--border)",color:"var(--text)",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:"1rem",lineHeight:1}}, isDark?"\u2600\uFE0F":"\u{1F319}")
+    )
+  );
+
+  return React.createElement("div", {style:{minHeight:"100vh",padding:16}},
+    React.createElement("div", {style:{maxWidth:720,margin:"0 auto"}},
+      header,
+      showExp && React.createElement(CycleExp, {onClose:function(){setShowExp(false);}}),
+      showDP && React.createElement(DataPanel, {onClose:function(){setShowDP(false);}, onImported:handleImport, onSyncConnected:onSyncConnected, onSyncDisconnected:onSyncDisconnected, lastSync:lastSync}),
+      view === "term" && React.createElement(TermView, {onDay:goDay, onWk:goWk, mc:mc, g:gam}),
+      view === "week" && React.createElement(WeekView, {base:base, setBase:setBase, onDet:function(d,pid){goDay(d,pid);}, mc:mc, uM:uM, mmO:mmO, setMmO:setMmO, g:gam}),
+      view === "day" && detDate && React.createElement(DayView, {date:detDate, setDate:function(d){setDetDate(d);setFP(null);setView("day");}, onBack:function(){setFP(null);setGR(function(r){return r+1;});setView(prevV==="day"?"week":prevV);}, mc:mc, onMS:onMS, fp:fp, g:gam}),
+      view === "class" && React.createElement(ClassView, {onDet:function(d,pid){goDay(d,pid);}, g:gam}),
+      view === "lab" && React.createElement(LabView, {g:gam})
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
