@@ -1209,9 +1209,11 @@ function DataPanel(props) {
   var [iStats, setIStats] = useState(null);
   var fRef = useRef(null);
 
-  // Sync state
-  var [token, setToken] = useState(function() { return localStorage.getItem("planner-gh-token") || ""; });
-  var [gistId, setGistId] = useState(function() { return localStorage.getItem("planner-gist-id") || ""; });
+  // Token and gistId come from App via props — single source of truth
+  var token = props.token;
+  var gistId = props.gistId;
+  var setToken = props.setToken;
+  var setGistId = props.setGistId;
   var [showToken, setShowToken] = useState(false);
   var [syncMsg, setSyncMsg] = useState(null);
 
@@ -1259,23 +1261,17 @@ function DataPanel(props) {
     if (!token) { setSyncMsg({type:"error",text:"Enter a GitHub token first"}); return; }
     setSyncMsg({type:"info",text:"Connecting\u2026"});
     if (gistId) {
-      // Verify existing gist
       gistPull(token, gistId)
         .then(function() {
-          localStorage.setItem("planner-gh-token", token);
-          localStorage.setItem("planner-gist-id", gistId);
           setSyncMsg({type:"ok",text:"Connected to existing Gist"});
           if (props.onSyncConnected) props.onSyncConnected(token, gistId);
         })
         .catch(function() { setSyncMsg({type:"error",text:"Could not access that Gist. Check token and ID."}); });
     } else {
-      // Create new gist
       var data = getAllData();
       gistCreate(token, data)
         .then(function(newId) {
           setGistId(newId);
-          localStorage.setItem("planner-gh-token", token);
-          localStorage.setItem("planner-gist-id", newId);
           setSyncMsg({type:"ok",text:"Created new Gist: " + newId.slice(0,8) + "\u2026"});
           if (props.onSyncConnected) props.onSyncConnected(token, newId);
         })
@@ -1284,9 +1280,8 @@ function DataPanel(props) {
   };
 
   var doDisconnect = function() {
-    setToken(""); setGistId("");
-    localStorage.removeItem("planner-gh-token");
-    localStorage.removeItem("planner-gist-id");
+    setToken("");
+    setGistId("");
     setSyncMsg({type:"info",text:"Disconnected. Data remains in this browser."});
     if (props.onSyncDisconnected) props.onSyncDisconnected();
   };
@@ -1429,6 +1424,16 @@ function App() {
   var [ghToken, setGhToken] = useState(function(){ return localStorage.getItem("planner-gh-token") || ""; });
   var [ghGistId, setGhGistId] = useState(function(){ return localStorage.getItem("planner-gist-id") || ""; });
   var syncConnected = function() { return ghToken && ghGistId; };
+
+  // Persist token and gist ID to localStorage whenever they change
+  useEffect(function() {
+    if (ghToken) localStorage.setItem("planner-gh-token", ghToken);
+    else localStorage.removeItem("planner-gh-token");
+  }, [ghToken]);
+  useEffect(function() {
+    if (ghGistId) localStorage.setItem("planner-gist-id", ghGistId);
+    else localStorage.removeItem("planner-gist-id");
+  }, [ghGistId]);
 
   // Auto-push: debounced, fires 4s after last save
   var triggerSync = useCallback(function() {
@@ -1597,7 +1602,7 @@ function App() {
     React.createElement("div", {style:{maxWidth:720,margin:"0 auto"}},
       header,
       showExp && React.createElement(CycleExp, {onClose:function(){setShowExp(false);}}),
-      showDP && React.createElement(DataPanel, {onClose:function(){setShowDP(false);}, onImported:handleImport, onSyncConnected:onSyncConnected, onSyncDisconnected:onSyncDisconnected, lastSync:lastSync}),
+      showDP && React.createElement(DataPanel, {onClose:function(){setShowDP(false);}, onImported:handleImport, onSyncConnected:onSyncConnected, onSyncDisconnected:onSyncDisconnected, lastSync:lastSync, token:ghToken, gistId:ghGistId, setToken:setGhToken, setGistId:setGhGistId}),
       view === "term" && React.createElement(TermView, {onDay:goDay, onWk:goWk, mc:mc, g:gam}),
       view === "week" && React.createElement(WeekView, {base:base, setBase:setBase, onDet:function(d,pid){goDay(d,pid);}, mc:mc, uM:uM, mmO:mmO, setMmO:setMmO, g:gam}),
       view === "day" && detDate && React.createElement(DayView, {date:detDate, setDate:function(d){setDetDate(d);setFP(null);setView("day");}, onBack:function(){setFP(null);setGR(function(r){return r+1;});setView(prevV==="day"?"week":prevV);}, mc:mc, onMS:onMS, fp:fp, g:gam}),
