@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson Planner — User Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Lora:wght@400;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:#FFFFFF;--surface:#F5F3F0;--card:#FFFFFF;
+  --text:#1A1A1A;--text-secondary:#555;--text-muted:#888;
+  --border:#CCCCCC;--border-light:#DDD;
+  --accent:#0072A8;--accent-light:#0072A810;
+  --code-bg:#F0EEED;--code-text:#1A1A1A;
+  --radius:8px;--radius-sm:4px;
+  --success:#2E7D32;
+}
+
+html{font-size:16px;scroll-behavior:smooth}
+body{
+  font-family:'Inter',system-ui,sans-serif;
+  background:var(--bg);color:var(--text);
+  line-height:1.65;
+}
+
+/* ── NAV SIDEBAR ── */
+.layout{display:flex;min-height:100vh}
+.sidebar{
+  position:fixed;top:0;left:0;bottom:0;width:260px;
+  background:var(--surface);border-right:1px solid var(--border-light);
+  padding:24px 0;overflow-y:auto;z-index:10;
+  display:flex;flex-direction:column;
+}
+.sidebar-title{
+  font-family:'Lora',serif;font-size:1.1rem;font-weight:600;
+  color:var(--accent);padding:0 20px 4px;
+}
+.sidebar-sub{
+  font-size:.72rem;color:var(--text-muted);padding:0 20px 20px;
+  border-bottom:1px solid var(--border-light);margin-bottom:12px;
+}
+.nav-list{list-style:none;flex:1}
+.nav-item{
+  display:block;padding:8px 20px;
+  font-size:.8rem;color:var(--text-secondary);
+  text-decoration:none;cursor:pointer;
+  border-left:3px solid transparent;
+  transition:background .15s,color .15s,border-color .15s;
+}
+.nav-item:hover{background:var(--accent-light);color:var(--text)}
+.nav-item.active{
+  color:var(--accent);font-weight:600;
+  border-left-color:var(--accent);background:var(--accent-light);
+}
+
+/* ── MAIN CONTENT ── */
+.main{margin-left:260px;flex:1;padding:40px 48px 80px;max-width:800px}
+.section{display:none}
+.section.active{display:block}
+
+h1{
+  font-family:'Lora',serif;font-size:1.6rem;font-weight:600;
+  color:var(--accent);margin-bottom:8px;letter-spacing:-.3px;
+}
+.section-intro{
+  font-size:.85rem;color:var(--text-muted);margin-bottom:28px;
+  padding-bottom:16px;border-bottom:1px solid var(--border-light);
+}
+h2{
+  font-family:'Lora',serif;font-size:1.15rem;font-weight:600;
+  color:var(--text);margin:32px 0 10px;
+}
+h3{
+  font-size:.9rem;font-weight:600;color:var(--text);
+  margin:20px 0 8px;
+}
+p{margin-bottom:12px;font-size:.88rem}
+ul,ol{margin:0 0 14px 20px;font-size:.88rem}
+li{margin-bottom:6px}
+li ul,li ol{margin-top:6px;margin-bottom:6px}
+strong{font-weight:600}
+code{
+  font-family:'JetBrains Mono',monospace;font-size:.8rem;
+  background:var(--code-bg);color:var(--code-text);
+  padding:2px 6px;border-radius:var(--radius-sm);
+}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+.callout{
+  background:var(--accent-light);border-left:3px solid var(--accent);
+  padding:12px 16px;border-radius:0 var(--radius) var(--radius) 0;
+  margin:16px 0;font-size:.84rem;
+}
+.callout p{margin-bottom:0}
+
+.step-grid{
+  display:grid;gap:14px;margin:16px 0;
+}
+.step-card{
+  background:var(--surface);border:1px solid var(--border-light);
+  border-radius:var(--radius);padding:14px 18px;
+}
+.step-card h3{margin:0 0 6px;font-size:.88rem;color:var(--accent)}
+.step-card p,.step-card ul{font-size:.84rem}
+.step-card ul{margin-bottom:0}
+
+.flag-list{
+  display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 14px;
+}
+.flag-tag{
+  background:var(--code-bg);border:1px solid var(--border-light);
+  border-radius:var(--radius-sm);padding:3px 10px;
+  font-family:'JetBrains Mono',monospace;font-size:.75rem;
+}
+
+.glossary-item{margin-bottom:14px}
+.glossary-item dt{font-weight:600;font-size:.88rem;color:var(--accent);margin-bottom:2px}
+.glossary-item dd{font-size:.84rem;margin-left:0}
+
+/* ── PREV/NEXT NAV ── */
+.page-nav{
+  display:flex;justify-content:space-between;
+  margin-top:40px;padding-top:20px;
+  border-top:1px solid var(--border-light);
+}
+.page-nav-btn{
+  font-size:.8rem;color:var(--accent);cursor:pointer;
+  background:none;border:none;font-family:inherit;
+  padding:6px 0;
+}
+.page-nav-btn:hover{text-decoration:underline}
+.page-nav-btn:disabled{color:var(--text-muted);cursor:default;text-decoration:none}
+
+/* ── MOBILE HAMBURGER ── */
+.menu-toggle{
+  display:none;position:fixed;top:12px;left:12px;z-index:20;
+  background:var(--surface);border:1px solid var(--border-light);
+  border-radius:var(--radius-sm);padding:8px 10px;cursor:pointer;
+  font-size:1.1rem;line-height:1;color:var(--text);
+}
+
+@media(max-width:720px){
+  .sidebar{transform:translateX(-100%);transition:transform .25s ease;width:280px}
+  .sidebar.open{transform:translateX(0)}
+  .main{margin-left:0;padding:24px 20px 60px}
+  .menu-toggle{display:block}
+  .overlay-bg{
+    display:none;position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:9;
+  }
+  .overlay-bg.open{display:block}
+}
+</style>
+</head>
+<body>
+
+<button class="menu-toggle" id="menuBtn">&#9776;</button>
+<div class="overlay-bg" id="overlayBg"></div>
+
+<div class="layout">
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-title">&#128197; Lesson Planner</div>
+  <div class="sidebar-sub">User Manual for Dio Staff</div>
+  <ul class="nav-list" id="navList">
+    <li><a class="nav-item active" data-section="welcome">1. Welcome and Overview</a></li>
+    <li><a class="nav-item" data-section="getting-started">2. Getting Started</a></li>
+    <li><a class="nav-item" data-section="core-views">3. Core Views</a></li>
+    <li><a class="nav-item" data-section="planning">4. Planning Your Lessons</a></li>
+    <li><a class="nav-item" data-section="lab">5. The Planning Lab</a></li>
+    <li><a class="nav-item" data-section="exporting">6. Exporting and Sharing</a></li>
+    <li><a class="nav-item" data-section="data">7. Your Data</a></li>
+    <li><a class="nav-item" data-section="setup">8. Customising the Setup</a></li>
+    <li><a class="nav-item" data-section="tips">9. Tips and Common Questions</a></li>
+  </ul>
+</nav>
+
+<main class="main" id="mainContent">
+
+<!-- ══════ 1. WELCOME ══════ -->
+<div class="section active" id="welcome">
+<h1>Welcome and Overview</h1>
+<p class="section-intro">What the planner is, who it's for, and how to access it.</p>
+
+<h2>What is this?</h2>
+<p>A lesson planner built specifically for Dio. It runs entirely in your browser — no logins, no accounts, no apps to install. Open it, set up your classes and timetable once, and you've got a planning tool that understands our rotating 7-day cycle, our terms, our holidays, and our Day 0 events.</p>
+<p>It was built by Victor Canela, a colleague who wanted something better than spreadsheets.</p>
+
+<h2>Who is it for?</h2>
+<p>Any teacher, any subject, any year level. If you have a timetable at Dio, this is for you.</p>
+
+<h2>How to access it</h2>
+<p>Open this link in your browser:</p>
+<div class="callout"><p><a href="https://vcanela.github.io/lesson-planner" target="_blank">vcanela.github.io/lesson-planner</a></p></div>
+<p>That's it. Bookmark it. Everything runs locally on your device.</p>
+
+<h3>Adding it to your home screen</h3>
+<p>You can save it to your home screen so it opens like a standalone app and works even without internet.</p>
+
+<p><strong>On a laptop (Chrome or Edge):</strong></p>
+<ol>
+  <li>Open the link above</li>
+  <li>Look for the install icon in the address bar (a small monitor with a down arrow, or a "+" symbol)</li>
+  <li>Click it and confirm</li>
+</ol>
+
+<p><strong>On an iPhone or iPad (Safari):</strong></p>
+<ol>
+  <li>Open the link in Safari</li>
+  <li>Tap the Share button (the square with an arrow pointing up)</li>
+  <li>Scroll down and tap "Add to Home Screen"</li>
+  <li>Tap "Add"</li>
+</ol>
+
+<p><strong>On an Android phone (Chrome):</strong></p>
+<ol>
+  <li>Open the link in Chrome</li>
+  <li>Tap the three-dot menu in the top right</li>
+  <li>Tap "Add to Home Screen" or "Install App"</li>
+  <li>Confirm</li>
+</ol>
+
+<h2>What's already set up for you</h2>
+<p>You do not need to configure any of the following — it's all done:</p>
+<ul>
+  <li><strong>School:</strong> Dio</li>
+  <li><strong>Cycle:</strong> 7-day rotation</li>
+  <li><strong>Term dates:</strong> All four terms for 2026</li>
+  <li><strong>Statutory holidays:</strong> Auckland Anniversary, Waitangi Day, Good Friday, Easter Monday, ANZAC Day, King's Birthday, Matariki, Labour Day</li>
+  <li><strong>Day 0 dates:</strong> Orientation (27-28 Jan), Athletics Day (17 Feb), EOTC Week (23-27 Feb), Teacher Only Days (15 May, 31 Aug), House Music (1 Jul), Final Days (7-8 Dec)</li>
+  <li><strong>Anchor date:</strong> Already set so the cycle aligns correctly</li>
+</ul>
+<p>If any of these change during the year, you can update them yourself in the Setup tab (see <a href="#" data-nav="setup">Section 8</a>).</p>
+</div>
+
+<!-- ══════ 2. GETTING STARTED ══════ -->
+<div class="section" id="getting-started">
+<h1>Getting Started — What You Need to Do</h1>
+<p class="section-intro">Setup takes about five minutes. You only do this once.</p>
+
+<p>Open the planner and tap the <strong>Setup</strong> tab along the top.</p>
+
+<div class="step-grid">
+<div class="step-card">
+  <h3>Step 1: Add your classes</h3>
+  <p>Scroll down to the <strong>Classes</strong> section and click "+ Add Class" for each class you teach.</p>
+  <p>For each class, enter:</p>
+  <ul>
+    <li><strong>Code</strong> — the short code you know it by (e.g. <code>9SCI3</code>, <code>12PHY1</code>)</li>
+    <li><strong>Description</strong> (optional) — something to remind you what it is (e.g. "Year 9 Science, Period 3 start")</li>
+    <li><strong>Colour</strong> — pick one from the palette. Each class gets its own colour so you can spot them at a glance across your week.</li>
+  </ul>
+  <p>You can reorder your classes using the up/down arrows.</p>
+</div>
+
+<div class="step-card">
+  <h3>Step 2: Build your timetable</h3>
+  <p>Scroll to the <strong>Timetable</strong> section. You'll see a grid with days across the top (Day 1 through Day 7) and periods down the side (P1 through P6).</p>
+  <p>For each cell:</p>
+  <ul>
+    <li><strong>Click it</strong> and either select one of your classes from the dropdown, or type the class code directly</li>
+    <li>For periods where you don't have a class, type <code>nc</code> (non-contact)</li>
+  </ul>
+  <p>The dropdown will show your class colours to help you match things up.</p>
+</div>
+
+<div class="step-card">
+  <h3>Step 3: Choose your display mode</h3>
+  <p>At the top of the Setup page, you'll see four display options:</p>
+  <ul>
+    <li><strong>Light</strong> — light background, easy on the eyes</li>
+    <li><strong>Dark</strong> — dark background, good for evening planning</li>
+    <li><strong>Light Bold</strong> — light background with stronger contrast</li>
+    <li><strong>Dark Bold</strong> — dark background with stronger contrast</li>
+  </ul>
+  <p>Pick whichever you find most comfortable to read. You can change this any time.</p>
+</div>
+
+<div class="step-card">
+  <h3>Step 4: Choose a theme (optional)</h3>
+  <p>This only affects the <strong>Planning Lab</strong> — a fun motivational tracker that gives you experience points and achievements as you plan. It has no impact on how the planner works.</p>
+  <p>Five themes are available:</p>
+  <ul>
+    <li>Physics &#128300;</li>
+    <li>Coffee &#9749;</li>
+    <li>Cooking &#127859;</li>
+    <li>Ocean &#127754;</li>
+    <li>NZ Birds &#128038;</li>
+  </ul>
+  <p>Pick one that makes you smile, or ignore it entirely.</p>
+</div>
+
+<div class="step-card">
+  <h3>Step 5: Save</h3>
+  <p>Scroll to the bottom of the Setup page and click <strong>Save Configuration</strong>.</p>
+  <p>You're done. Head to the <strong>Week</strong> tab and start planning.</p>
+</div>
+</div>
+</div>
+
+<!-- ══════ 3. CORE VIEWS ══════ -->
+<div class="section" id="core-views">
+<h1>Core Views</h1>
+<p class="section-intro">The planner has four main views, accessible from the tabs along the top. Each one shows your planning from a different angle. You'll probably spend most of your time in Week View.</p>
+
+<h2>Term View &#128197;</h2>
+<p>A bird's-eye look at an entire term. Each day appears as a small tile in a calendar grid.</p>
+<p>What you can see at a glance:</p>
+<ul>
+  <li>Which day of the cycle each date falls on</li>
+  <li>Day 0 events (highlighted with their label)</li>
+  <li>Holidays and weekends (greyed out)</li>
+  <li>The mid-morning type for each day (Tutor, Dean's Assembly, etc.)</li>
+  <li>A small fraction on each tile (e.g. <code>3/5</code>) showing how many teaching periods you've planned vs how many you have that day</li>
+  <li>Coloured dots across the top of each tile representing your P1-P6 classes for that day</li>
+</ul>
+<p>You can switch between terms using the buttons at the top.</p>
+<p><strong>Clicking a day</strong> opens it in Day View. <strong>Clicking a week number</strong> (on the left) jumps to that week in Week View.</p>
+
+<h2>Week View &#128467;&#65039;</h2>
+<p>This is your main workspace. It shows Monday to Friday with your full timetable laid out in a grid.</p>
+<p>Across the top you'll see:</p>
+<ul>
+  <li>The day and date for each column</li>
+  <li>The cycle day number (e.g. D3, D5)</li>
+  <li>The mid-morning type for each day</li>
+</ul>
+<p>The grid below shows one row per period (P1-P6), with each cell displaying:</p>
+<ul>
+  <li>The class code (colour-coded) or <code>NC</code> for non-contact</li>
+  <li>The topic, if you've entered one</li>
+  <li>A flag icon &#127937; if your notes contain a flag word</li>
+  <li>A small green dot if the period has been planned</li>
+</ul>
+<p><strong>Clicking any cell</strong> opens a quick-edit box at the bottom of the screen where you can type a topic and press Enter. Fast and simple.</p>
+<p><strong>Clicking "Full detail"</strong> in the quick-edit box takes you to Day View for that specific period.</p>
+<p>Above the grid you'll see a summary strip:</p>
+<ul>
+  <li>How many periods are planned out of your total</li>
+  <li>How many items are flagged</li>
+  <li>Any unlabelled Day 0 dates that week</li>
+</ul>
+<p>Other things you can do in Week View:</p>
+<ul>
+  <li><strong>Day notes row:</strong> just below the headers, there's a small text area per day for meetings, reminders, or duty notes</li>
+  <li><strong>Class spotlighting:</strong> click any class badge above the grid to highlight where that class appears during the week — a popup shows the exact periods and times</li>
+  <li><strong>Mid-morning setup panel:</strong> expand this at the bottom to quickly set the mid-morning type (Tutor, Dean's Assembly, Full School Assembly, Chapel) for each day of the week</li>
+  <li><strong>Navigate:</strong> use the left/right arrows to move between weeks, or hit "Today" to jump back to the current week</li>
+  <li><strong>Export:</strong> at the bottom, you can download the full week or just your reflections as a Markdown file</li>
+</ul>
+
+<h2>Day View &#128203;</h2>
+<p>The most detailed view. Shows every period of a single day in order, including break times.</p>
+<p>For each teaching period you'll see:</p>
+<ul>
+  <li>The class code (colour-coded)</li>
+  <li>Start time</li>
+  <li>Period label (P1, P2, etc.)</li>
+  <li>A flag icon or green dot if content has been entered</li>
+</ul>
+<p><strong>Clicking a period</strong> expands it. You can then choose:</p>
+<ul>
+  <li><strong>Quick mode</strong> — a single text field for the topic. Good for when you just need a one-liner.</li>
+  <li><strong>Detailed mode</strong> — three fields: Topic, Notes and Tasks, and Resources and Links. Use this when you want to plan more thoroughly.</li>
+</ul>
+<p>At the top of the expanded period, you'll see a <strong>lesson context</strong> strip telling you:</p>
+<ul>
+  <li>What lesson number this is for that class this term (e.g. "Lesson 12/48")</li>
+  <li>When the previous and next lessons are</li>
+</ul>
+<p>Other features on the Day View:</p>
+<ul>
+  <li><strong>Day notes:</strong> a text area at the top for meetings or reminders</li>
+  <li><strong>Mid-morning block:</strong> choose the type for that day (Tutor, Dean's Assembly, Full School Assembly, Chapel) — this adjusts the break labels and timings accordingly</li>
+  <li><strong>Reflections panel:</strong> expandable section at the bottom for end-of-day thoughts — what went well, what you'd change</li>
+  <li><strong>Day 0 dates:</strong> if the day is a Day 0, the timetable disappears and you get a simple label and notes field instead</li>
+  <li><strong>Navigation:</strong> move to the previous or next school day, or go back to whichever view you came from</li>
+  <li><strong>Print:</strong> hit the print button to get a clean printout of the day</li>
+</ul>
+
+<h2>Class View &#128218;</h2>
+<p>Shows every lesson for a single class laid out in a list, across the term or the full year.</p>
+<p>At the top, click a class badge to select which class you're viewing. You can also filter by term or view all terms at once.</p>
+<p>Each lesson appears as a row showing:</p>
+<ul>
+  <li>The date, day of the week, period, and cycle day</li>
+  <li>The topic you've entered (or "Click to plan" if empty)</li>
+  <li>A flag icon if flagged</li>
+  <li>A lesson number (e.g. <code>#14</code>)</li>
+  <li>Week dividers so you can see the term structure</li>
+</ul>
+<p>The current day's lesson is highlighted and labelled <code>TODAY</code>. The next upcoming lesson is labelled <code>NEXT</code>.</p>
+<p><strong>Clicking a row</strong> opens a quick-edit box (same as Week View) where you can type a topic and press Enter. Click "Full detail" to jump to Day View for that lesson.</p>
+<p>This view is particularly useful for:</p>
+<ul>
+  <li>Checking your long-term sequence for a class</li>
+  <li>Spotting gaps in your planning</li>
+  <li>Seeing how many lessons you have left in the term</li>
+</ul>
+</div>
+
+<!-- ══════ 4. PLANNING ══════ -->
+<div class="section" id="planning">
+<h1>Planning Your Lessons</h1>
+<p class="section-intro">What you type, where, and the small features designed to make it quicker.</p>
+
+<h2>Quick mode vs Detailed mode</h2>
+<p>When you expand a period in Day View, you'll see two tabs at the top:</p>
+<ul>
+  <li><strong>Quick</strong> — a single text field. Type your topic or a one-liner and move on. This is all you need most of the time.</li>
+  <li><strong>Detailed</strong> — three separate fields:
+    <ul>
+      <li><strong>Topic / Subject</strong> — what the lesson is about</li>
+      <li><strong>Notes and Tasks</strong> — your lesson plan, activities, instructions</li>
+      <li><strong>Resources and Links</strong> — URLs, file names, handout references</li>
+    </ul>
+  </li>
+</ul>
+<p>You can switch between modes at any time. Anything you type in Quick mode appears in the Topic field if you switch to Detailed, and vice versa. Nothing is lost.</p>
+<p>Non-contact periods only show a single notes field — useful for jotting down what you're using that time for (marking, meetings, prep).</p>
+
+<h2>Quick editing from Week View and Class View</h2>
+<p>You don't have to open Day View every time. In both Week View and Class View, clicking a period or lesson opens a small edit box where you can type a topic and press Enter. It saves immediately.</p>
+<p>If you need the full set of fields, click "Full detail" to jump to Day View for that period.</p>
+
+<h2>Day notes</h2>
+<p>At the top of each day (in both Day View and Week View) there's a text area for things that aren't tied to a specific period — staff meetings, duty, reminders, anything you want to see when you look at that day.</p>
+
+<h2>Mid-morning block</h2>
+<p>Each day has a mid-morning block type that controls the labels and timings for the two slots between P2 and P3. The four options are:</p>
+<ul>
+  <li><strong>Tutor (T)</strong> — Tutor Time + Morning Tea</li>
+  <li><strong>Dean's Assembly (DA)</strong> — Dean's Assembly + Morning Tea</li>
+  <li><strong>Full School Assembly (FSA)</strong> — Full School Assembly + Morning Tea (note: this shifts all period times slightly to accommodate the longer assembly)</li>
+  <li><strong>Chapel (C)</strong> — Morning Tea + Chapel</li>
+</ul>
+<p>You can set this per day in Day View (using the buttons below the day notes) or for the whole week at once using the "Mid-morning setup" panel at the bottom of Week View.</p>
+
+<h2>Reflections</h2>
+<p>At the bottom of Day View there's an expandable <strong>Reflections</strong> panel. This is a space for end-of-day thoughts — what went well, what you'd change, anything you want to remember.</p>
+<p>Reflections are optional, but if you use them:</p>
+<ul>
+  <li>A small dot appears next to the Reflections heading on days that have content, so you can tell at a glance</li>
+  <li>You can export all your reflections for the week as a Markdown file from Week View (look for the "Reflections" export button)</li>
+</ul>
+
+<h2>Flag words</h2>
+<p>If you type any of the following words in your topic or notes, the planner will mark that period with a small flag icon so it stands out:</p>
+<div class="flag-list">
+  <span class="flag-tag">todo</span>
+  <span class="flag-tag">prepare</span>
+  <span class="flag-tag">tbc</span>
+  <span class="flag-tag">tbd</span>
+  <span class="flag-tag">check</span>
+  <span class="flag-tag">remind</span>
+  <span class="flag-tag">follow up</span>
+  <span class="flag-tag">incomplete</span>
+  <span class="flag-tag">print</span>
+  <span class="flag-tag">photocopy</span>
+</div>
+<p>Flagged items also appear in a summary list at the bottom of Week View, so you can see everything you need to act on in one place.</p>
+<p>You can view the full list of flag words at any time by clicking the small "flags" label in Week View.</p>
+
+<h2>Lesson context</h2>
+<p>When you expand a period in Day View, a small strip at the top tells you:</p>
+<ul>
+  <li>What lesson number this is for that class this term (e.g. "Lesson 12/48 this term")</li>
+  <li>The date of the previous lesson with that class</li>
+  <li>The date of the next lesson with that class</li>
+</ul>
+<p>This is handy for continuity — you can see at a glance where you are in the sequence and plan accordingly.</p>
+
+<h2>Saving</h2>
+<div class="callout"><p>Everything saves automatically. When you type in a field and then click away or move to another period, your work is saved to your browser within a moment. There is no save button to press during normal planning. Just type and move on.</p></div>
+</div>
+
+<!-- ══════ 5. LAB ══════ -->
+<div class="section" id="lab">
+<h1>The Planning Lab</h1>
+<p class="section-intro">Entirely optional. Skip it if it's not your thing — it has zero impact on how the planner works.</p>
+
+<p>The Planning Lab is a fun little motivational tracker. As you plan your lessons, it quietly keeps score in the background and rewards you with experience points, levels, and achievements. Think of it as a game running alongside your planning.</p>
+<p>You can access it from the <strong>Lab</strong> tab.</p>
+
+<h2>How it works</h2>
+<ul>
+  <li>You earn <strong>10 XP</strong> for every lesson you plan</li>
+  <li>You earn <strong>50 XP</strong> for a perfect week (every teaching period planned)</li>
+  <li>You earn <strong>bonus XP</strong> when you unlock achievements</li>
+</ul>
+<p>As your XP grows, you level up through a series of titles. Your current level and XP are shown in a small strip at the top of most views.</p>
+
+<h2>Streaks</h2>
+<p>If you plan at least 80% of your lessons in a week, that counts towards a streak. The streak number appears as a small fire icon &#128293; next to your level. It resets if you drop below 80% in a week.</p>
+
+<h2>Achievements</h2>
+<p>There are ten achievements to unlock, things like planning your first lesson, completing a full week, reaching 50% of the term, and so on. Each one comes with a short description and a bit of flavour text. Hover over the badge icons to see what they are.</p>
+
+<h2>Themes</h2>
+<p>The Lab comes in five visual themes. Each one changes the achievement names, the level titles, and the weekly progress illustration:</p>
+<ul>
+  <li><strong>Physics</strong> &#128300; — launch from the pad to orbit</li>
+  <li><strong>Coffee</strong> &#9749; — from green bean to cafe owner</li>
+  <li><strong>Cooking</strong> &#127859; — from sous chef to iron chef</li>
+  <li><strong>Ocean</strong> &#127754; — from the shore to the abyss</li>
+  <li><strong>NZ Birds</strong> &#128038; — from the forest floor to soaring above the Alps</li>
+</ul>
+<p>You can change your theme any time in the Setup tab. It only affects the Lab — nothing else changes.</p>
+
+<h2>Weekly visual</h2>
+<p>The Lab includes a small illustrated tracker that fills up as you plan your lessons for the current week. It's just a nice thing to glance at. Nothing more.</p>
+</div>
+
+<!-- ══════ 6. EXPORTING ══════ -->
+<div class="section" id="exporting">
+<h1>Exporting and Sharing Your Plans</h1>
+<p class="section-intro">A few ways to get your plans out of the app and into other formats.</p>
+
+<h2>Export a full week</h2>
+<p>At the bottom of Week View, you'll see an export panel. Click "Full week" to download a Markdown file (.md) containing everything for that week:</p>
+<ul>
+  <li>Each day's date, cycle day, and mid-morning type</li>
+  <li>Day notes</li>
+  <li>Every period with its class, topic, notes, and resources</li>
+  <li>Reflections (if you've written any)</li>
+</ul>
+
+<h2>Export reflections</h2>
+<p>If you've written reflections during the week, a separate "Reflections" button appears in the export panel. This downloads just your reflections for that week as a Markdown file — useful if you're keeping a teaching journal or want to share thoughts with a mentor or appraiser.</p>
+<p>The button only appears if at least one day that week has a reflection written.</p>
+
+<h2>What is Markdown?</h2>
+<p>Markdown is a simple, widely used text format. The files open in any text editor and read perfectly well as plain text, but they also carry light structure — headings, bold text, bullet points — that other tools can understand.</p>
+<p>This means you can:</p>
+<ul>
+  <li>Read them as they are</li>
+  <li>Paste them into a document, email, or chat</li>
+  <li>Open them in Word, Google Docs, or Notion and the formatting carries across</li>
+  <li><strong>Feed them into an AI tool</strong> (like ChatGPT, Gemini, or Claude) and ask it to summarise your week, draft a report, suggest improvements, create resources based on your plan, or anything else you can think of</li>
+</ul>
+<div class="callout"><p>That last point is the real power — your planning data comes out in a clean, structured format that AI tools work very well with.</p></div>
+
+<h2>Print a day</h2>
+<p>In Day View, there's a small print button near the top navigation. This uses your browser's built-in print function and hides all the navigation and buttons so you get a clean printout of just that day's plan.</p>
+<p>Handy for sticking on your desk or handing to a reliever.</p>
+</div>
+
+<!-- ══════ 7. DATA ══════ -->
+<div class="section" id="data">
+<h1>Your Data</h1>
+<p class="section-intro">Where your data lives, how to back it up, and how to sync across devices.</p>
+
+<h2>Where your data lives</h2>
+<p>Everything you type into the planner — your lessons, day notes, reflections, mid-morning choices, and your setup — is saved in your browser's local storage on your device. It never leaves your machine unless you choose to export it or set up cloud sync.</p>
+<p>This means:</p>
+<ul>
+  <li>It's private — nobody else can see it</li>
+  <li>It's fast — no loading from a server</li>
+  <li>It works offline — once the page has loaded, you can plan without internet</li>
+</ul>
+
+<h2>What to be aware of</h2>
+<p>Because your data lives in the browser:</p>
+<ul>
+  <li><strong>Switching browsers</strong> (e.g. from Chrome to Firefox) means starting fresh — each browser has its own storage</li>
+  <li><strong>Switching devices</strong> (e.g. from your laptop to your phone) means your data won't be there unless you sync or import a backup</li>
+  <li><strong>Clearing your browser data</strong> (cache, cookies, site data) will delete your planning data — be careful with this</li>
+  <li><strong>Using a private or incognito window</strong> will not save anything after you close it</li>
+</ul>
+
+<h2>Backing up your data</h2>
+<div class="callout"><p>You should back up regularly. It takes a few seconds.</p></div>
+<ol>
+  <li>Click the small save icon (&#128190;) next to the view tabs at the top</li>
+  <li>In the panel that opens, click "Download Backup"</li>
+  <li>A JSON file will download to your device — keep it somewhere safe</li>
+</ol>
+<p>To restore from a backup:</p>
+<ol>
+  <li>Open the same panel</li>
+  <li>Click "Choose File" and select your backup file</li>
+  <li>Review the summary (it shows how many notes and settings were found)</li>
+  <li>Click "Confirm" to import</li>
+</ol>
+<p>Importing merges the backup into your current data. It will overwrite any overlapping entries.</p>
+
+<h2>Cloud sync (optional, for advanced users)</h2>
+<p>If you want your data to stay in sync across multiple devices, you can connect the planner to a GitHub Gist. This is a free, private online file that acts as a bridge between your devices.</p>
+<p>This requires a GitHub account and a personal access token. If those words mean nothing to you, skip this — backups are perfectly fine.</p>
+<p>If you're comfortable with it:</p>
+<ol>
+  <li>Go to GitHub and create a free account if you don't have one</li>
+  <li>Create a personal access token with "gist" permission (there's a direct link in the sync panel)</li>
+  <li>Open the save panel (&#128190;) in the planner</li>
+  <li>Paste your token and leave the Gist ID blank</li>
+  <li>Click "Connect" — the planner will create a private Gist for you</li>
+  <li>From then on, use "Push" to upload your data and "Pull" to download it on another device</li>
+</ol>
+<p>A small coloured dot on the save icon shows your sync status:</p>
+<ul>
+  <li>Green = connected</li>
+  <li>Pulsing = syncing</li>
+  <li>Red = something went wrong</li>
+</ul>
+<p>The planner also auto-pushes changes a few seconds after you edit something, so in most cases you won't need to push manually.</p>
+
+<h2>Updates to the planner itself</h2>
+<p>From time to time, the planner may be updated with improvements or fixes. This happens automatically — the next time you open the app (or the version installed to your home screen), your browser will fetch the latest version. Your planning data is completely unaffected by updates.</p>
+</div>
+
+<!-- ══════ 8. SETUP ══════ -->
+<div class="section" id="setup">
+<h1>Customising the Setup</h1>
+<p class="section-intro">Most of the setup is already done for you (see <a href="#" data-nav="welcome">Section 1</a>). This section is for when something changes during the year and you need to adjust things.</p>
+
+<p>All changes are made in the <strong>Setup</strong> tab. Remember to scroll down and click <strong>Save Configuration</strong> after making any changes.</p>
+
+<h2>Editing term dates</h2>
+<p>If a term start or end date changes:</p>
+<ol>
+  <li>Find the term in the <strong>Terms</strong> section</li>
+  <li>Click the start or end date to open the calendar picker</li>
+  <li>Select the new date</li>
+</ol>
+<p>You can also add or remove entire terms using the "+ Add Term" button or the small &#10005; on each term card. Terms are automatically renumbered.</p>
+
+<h2>Adding or editing holidays</h2>
+<p>If a new public holiday is announced or a date changes:</p>
+<ol>
+  <li>Scroll to the <strong>Statutory Holidays</strong> section</li>
+  <li>Click dates on the calendar to toggle them on or off</li>
+  <li>Give each holiday a name in the text field that appears below</li>
+</ol>
+<p>Holidays automatically become Day 0 dates as well — you don't need to add them in both places.</p>
+
+<h2>Adding or editing Day 0 dates</h2>
+<p>If the school adds a new Day 0 event (teacher only day, sports day, special event):</p>
+<ol>
+  <li>Scroll to the <strong>Day 0 Dates</strong> section</li>
+  <li>Click the date on the calendar</li>
+  <li>Type a label (e.g. "Teacher Only Day", "Swimming Sports")</li>
+</ol>
+<p>Dates that came from statutory holidays appear with a lock icon &#128274; — you can't remove them here. To remove those, remove the holiday first.</p>
+
+<h2>Changing the anchor date</h2>
+<p>The anchor date tells the planner which cycle day a specific date falls on, and it calculates everything else from there. It's already set correctly for 2026.</p>
+<p>You would only need to change this if:</p>
+<ul>
+  <li>The school resets the cycle mid-year (rare)</li>
+  <li>You're setting up for a new year</li>
+</ul>
+<p>To change it:</p>
+<ol>
+  <li>Scroll to the <strong>Anchor</strong> section</li>
+  <li>Pick a date you're certain about (e.g. the first Monday of a term)</li>
+  <li>Select which cycle day that date is</li>
+</ol>
+<p>If you're unsure, check with your timetabler or the daily notices.</p>
+
+<h2>Editing classes</h2>
+<p>To add a new class:</p>
+<ol>
+  <li>Scroll to the <strong>Classes</strong> section</li>
+  <li>Click "+ Add Class"</li>
+  <li>Enter the code, an optional description, and pick a colour</li>
+</ol>
+<p>To edit an existing class, just change its fields directly.</p>
+<p>To remove a class, click the small &#10005; on its card. This removes it from your setup but does not delete any lesson notes you've already written for that class.</p>
+<p>To reorder classes, use the up/down arrows on each card. The order here is the order they appear in Class View and in the timetable dropdown.</p>
+
+<h2>Editing the timetable</h2>
+<p>If your timetable changes (e.g. a class swap, a new semester):</p>
+<ol>
+  <li>Scroll to the <strong>Timetable</strong> section</li>
+  <li>Click the cell you need to change</li>
+  <li>Select a different class from the dropdown, type a class code, or type <code>nc</code> for non-contact</li>
+</ol>
+<p>Changing the timetable does not delete any existing notes — it only changes what class the planner expects in that slot going forward.</p>
+
+<h2>Changing the cycle length</h2>
+<p>If you ever need to change the number of days in the rotation (unlikely, but possible):</p>
+<ol>
+  <li>Find the <strong>Cycle Length</strong> dropdown near the top of the Setup tab</li>
+  <li>Select the new number</li>
+</ol>
+<p>Be aware that changing this will affect the timetable grid — you may need to re-enter some cells.</p>
+</div>
+
+<!-- ══════ 9. TIPS ══════ -->
+<div class="section" id="tips">
+<h1>Tips, Tricks, and Common Questions</h1>
+<p class="section-intro">Shortcuts, troubleshooting, and answers to things you might wonder about.</p>
+
+<h2>Keyboard shortcuts</h2>
+<p>These work in any quick-edit box (Week View and Class View):</p>
+<ul>
+  <li><strong>Enter</strong> — save and close the edit box</li>
+  <li><strong>Escape</strong> — cancel and close without saving</li>
+</ul>
+<p>In text fields throughout the app, your work saves automatically when you click away from the field. No need to press anything.</p>
+
+<h2>Weekend mode</h2>
+<p>If you open the planner on a Saturday or Sunday, you'll see a small "Weekend mode" label next to your name at the top. The planner still works normally — it just acknowledges that you're planning on your own time. The "Today" button in Week View will jump to the coming Monday instead.</p>
+
+<h2>What if I teach a class that isn't on my regular timetable?</h2>
+<p>The planner follows your timetable grid exactly. If you have a one-off lesson (e.g. covering for a colleague), you can still write notes for that period — just open it in Day View and use it normally. The class badge will show whatever is assigned in your timetable for that slot, but your notes are tied to the date and period, not the class code.</p>
+
+<h2>Can two teachers share the same planner?</h2>
+<p>Not directly. Each person's data is stored separately in their own browser. Two teachers using the same link will each have their own independent planner.</p>
+<p>If you want to share a week's plan with a colleague (e.g. for team planning or handing over to a reliever), use the export feature in Week View to download a Markdown file and send it to them.</p>
+
+<h2>My data disappeared — what happened?</h2>
+<p>The most common causes:</p>
+<ul>
+  <li>You opened the planner in a <strong>different browser</strong> than usual (each browser has its own storage)</li>
+  <li>You (or your IT department) <strong>cleared your browser data</strong> — this deletes local storage along with cookies and cache</li>
+  <li>You're using a <strong>private or incognito window</strong> — these don't keep data after closing</li>
+</ul>
+<p>If you have a backup file, you can restore everything using the import feature in the save panel (&#128190;). This is why regular backups are worth doing.</p>
+
+<h2>Can I use this on my phone or tablet?</h2>
+<p>Yes. The planner works in any modern browser on any device. The layout adapts to smaller screens, though the Week View grid is most comfortable on a laptop or tablet in landscape.</p>
+<p>For the best experience on a phone or tablet, add it to your home screen (see <a href="#" data-nav="welcome">Section 1</a>) so it opens full-screen without browser toolbars.</p>
+
+<h2>Does it work offline?</h2>
+<p>Yes, once the page has loaded. If you lose internet during the day, you can keep planning normally. Your data saves to your device regardless of connection. If you have cloud sync set up, it will push your changes next time you're back online.</p>
+
+<h2>Does the planner update automatically?</h2>
+<p>Yes. From time to time, improvements or fixes may be made to the planner. The next time you open it — whether in your browser or from your home screen — it will quietly pick up the latest version. Your planning data is never affected by updates.</p>
+
+<h2>I have a suggestion or found a problem</h2>
+<p>Talk to Victor. He's friendly and likes feedback.</p>
+
+<h2>Quick-reference glossary</h2>
+<dl>
+  <div class="glossary-item"><dt>Anchor date</dt><dd>A known date-and-cycle-day pair that the planner uses to calculate the cycle day for every other date. Think of it as the "reference point" for the rotation.</dd></div>
+  <div class="glossary-item"><dt>Cycle day</dt><dd>The day number in the rotating timetable (Day 1 through Day 7). This advances by one for each teaching day and pauses on weekends, holidays, and Day 0 events.</dd></div>
+  <div class="glossary-item"><dt>Day 0</dt><dd>A school day with no regular timetable. Could be a public holiday, teacher only day, sports day, or special event. The cycle pauses on these days.</dd></div>
+  <div class="glossary-item"><dt>Flag words</dt><dd>Specific words (like <code>todo</code>, <code>tbc</code>, <code>print</code>) that the planner recognises and highlights with a flag icon so they stand out as action items.</dd></div>
+  <div class="glossary-item"><dt>Markdown</dt><dd>A simple text format used for exported files. It's readable as plain text but also carries structure (headings, bold, lists) that other tools — including AI tools — can work with.</dd></div>
+  <div class="glossary-item"><dt>Non-contact (nc)</dt><dd>A timetable period where you don't have a class. The planner still lets you write notes for these slots.</dd></div>
+</dl>
+</div>
+
+</main>
+</div>
+
+<script>
+(function(){
+  const navItems = document.querySelectorAll('.nav-item');
+  const sections = document.querySelectorAll('.section');
+  const sidebar = document.getElementById('sidebar');
+  const menuBtn = document.getElementById('menuBtn');
+  const overlayBg = document.getElementById('overlayBg');
+  const mainContent = document.getElementById('mainContent');
+
+  function showSection(id){
+    sections.forEach(s => s.classList.toggle('active', s.id === id));
+    navItems.forEach(n => n.classList.toggle('active', n.dataset.section === id));
+    mainContent.scrollTop = 0;
+    window.scrollTo(0, 0);
+    closeSidebar();
+  }
+
+  function closeSidebar(){
+    sidebar.classList.remove('open');
+    overlayBg.classList.remove('open');
+  }
+
+  navItems.forEach(item => {
+    item.addEventListener('click', () => showSection(item.dataset.section));
+  });
+
+  // Handle inline cross-references (data-nav links)
+  document.addEventListener('click', e => {
+    const link = e.target.closest('[data-nav]');
+    if(link){ e.preventDefault(); showSection(link.dataset.nav); }
+  });
+
+  // Prev/Next navigation
+  const order = Array.from(navItems).map(n => n.dataset.section);
+  sections.forEach(sec => {
+    const idx = order.indexOf(sec.id);
+    const nav = document.createElement('div');
+    nav.className = 'page-nav';
+    const prev = document.createElement('button');
+    prev.className = 'page-nav-btn';
+    if(idx > 0){
+      const prevId = order[idx-1];
+      const prevLabel = Array.from(navItems).find(n=>n.dataset.section===prevId).textContent;
+      prev.innerHTML = '&#8592; ' + prevLabel;
+      prev.addEventListener('click', () => showSection(prevId));
+    } else { prev.disabled = true; prev.textContent = ''; }
+    const next = document.createElement('button');
+    next.className = 'page-nav-btn';
+    if(idx < order.length - 1){
+      const nextId = order[idx+1];
+      const nextLabel = Array.from(navItems).find(n=>n.dataset.section===nextId).textContent;
+      next.innerHTML = nextLabel + ' &#8594;';
+      next.addEventListener('click', () => showSection(nextId));
+    } else { next.disabled = true; next.textContent = ''; }
+    nav.appendChild(prev);
+    nav.appendChild(next);
+    sec.appendChild(nav);
+  });
+
+  // Mobile menu
+  menuBtn.addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+    overlayBg.classList.toggle('open');
+  });
+  overlayBg.addEventListener('click', closeSidebar);
+})();
+</script>
+</body>
+</html>
