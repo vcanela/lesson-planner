@@ -6,6 +6,19 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 1.1.1 — 2026-04-23
+
+### Features
+- **No lesson reason**: when marking a period as "No lesson", anything typed in the input is saved as the reason (e.g. "Class has assembly"). Shown in Week View cell, Class View row, and Day View alongside the "No lesson" label.
+
+### Fixes
+- "No lesson" state now shows in Day View — period row displays "No lesson" (with reason if set), label changes to "Reason (optional)", and a toggle button lets you set or remove the status without leaving the day
+- "No lesson" now counts as planned in all views consistently: Week View summary bar, Term View coverage dots, Class View planned count, XP/gamification — all were missing it except the gamification engine
+- Markdown removed from export format options (replaced with "Formatted" using structured text); default changed from Markdown to Formatted
+- No remaining literal `\u` escape sequences in any rendered output
+
+---
+
 ## 1.1.0 — 2026-04-22
 
 ### Features
