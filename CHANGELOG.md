@@ -6,6 +6,16 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 1.2.0 — 2026-04-24
+
+### Features
+- **Gamification toggle**: Setup > Display now has a switch to hide the XP bar and awards. Planning counts and XP continue to accumulate while hidden; toggling on restores everything. The x/x planned indicator is unaffected.
+
+### Fixes
+- Day View now opens on today when accessed from the current week in Week View. For any other week, it opens on that week's Monday.
+
+---
+
 ## 1.1.1 — 2026-04-23
 
 ### Features

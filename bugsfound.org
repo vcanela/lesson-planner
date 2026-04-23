@@ -1,0 +1,64 @@
+
+* DONE The experience points are only added after going into Setup, they should be added as I plan periods in a day
+CLOSED: [2026-04-22 Wed 14:54]
+
+* DONE The default term should be the current one, not always Term 1
+CLOSED: [2026-04-22 Wed 14:54]
+
+* DONE The default view in Class view should be by the current term, not all terms
+CLOSED: [2026-04-22 Wed 14:54]
+
+* DONE The text window in Day Notes (under Day view) should automatically get bigger as the text increases (and it doesn’t, in my phone, have a way of resizing it, it does have this in the laptop version)
+CLOSED: [2026-04-22 Wed 14:54]
+
+* DONE In week view the periods I haven’t planned for I would like them to have a red contour to make them more visible
+CLOSED: [2026-04-22 Wed 14:55]
+
+* DONE Periods that are currently not planned are too faint to see. I would like to be able to see them quickly even if they’re not planned.
+CLOSED: [2026-04-22 Wed 14:55]
+
+* DONE The classes bubbles in week view are centred in the cells
+CLOSED: [2026-04-22 Wed 14:55]
+
+* DONE When I am not having a lesson, I’d like there to be more tags to there not being a lesson (other than me just typing in the quick entry “no lesson”) so that other views (like the quick class view within week, that it displays that lesson as a no lesson). Possibly make this a state (a period could be a “nc” or a “lesson” which in turn can be a programmed lesson, or a “no lesson”.
+CLOSED: [2026-04-22 Wed 14:55]
+
+* DONE Try and make the buttons (e.g. the forward backward buttons under “week view”) not move. They currently resize base on the text length (for example, going from “Mon, 8 Jun – Fri, 12 Jun” to “Mon, 15 Jun – Fri, 19 Jun”, shifts the buttons which is annoying if you are clicking consecutively).
+CLOSED: [2026-04-22 Wed 14:55]
+
+* DONE There are still places where symbols did not parse correctly and are displayed as “\u2014”, for example, in week view, when you are about to type the quick description of a lesson. This should not happen.
+CLOSED: [2026-04-22 Wed 14:55]
+
+* DONE The export function, because .md files are being marked as “suspicious” and having trouble opening in macbooks, we need to change the file extension to a .txt. I’d like you to also (under Setup) set up a style of export. Either with markdown, orgmode, or nothing and just plain text.
+CLOSED: [2026-04-22 Wed 14:55]
+
+* DONE Explore also, if alongside the export (download) the week’s activity, there can be a “copy to clipboard” in case users want to copy it directly somewhere else.
+CLOSED: [2026-04-22 Wed 14:55]
+
+* DONE Literal expressions still around
+CLOSED: [2026-04-24 Fri 09:31]
+There are still some /u2014 expressions still around (I think they are either ellipsis or an em dash, long dash). Look at all the code and get rid of any of those literals.
+
+* DONE "No lesson" reason
+CLOSED: [2026-04-24 Fri 09:31]
+I would like to be able to add a reason for a "no lesson" period, just to be able to incorporate that into the exports, and perhaps even have evidence of patterns (that have more to do with the school) of outside events affecting particular classes more.
+
+* DONE "No lesson" state is not carrying over day view
+CLOSED: [2026-04-24 Fri 09:31]
+Make sure that the state, and label carries over to every view. Currently it seems that I have not planned the lesson under day view.
+
+* DONE No lesson should count as planned
+CLOSED: [2026-04-24 Fri 09:31]
+Verify that the "No lesson" state, when set, counts as a lesson planned. Otherwise cannot reach 100% week planned.
+
+* DONE No markdown export
+CLOSED: [2026-04-24 Fri 09:31]
+Just to give everyone more peace of mind, remove the exports in markdown mode. You can still format nicely the text file, but please no option to export as a .md.
+
+* DONE Day view goes into today
+CLOSED: [2026-04-24 Fri 11:33]
+A bit of logic coding involved here... From week view, if the week displayed is the current week, then clicking on "Day view" should direct us to the current date. At the moment it always defaults to the Monday of the current week. If the week is not the current week, then it is fine to go to the monday of the week displayed.
+
+* DONE Lab gamification off switch
+CLOSED: [2026-04-24 Fri 11:33]
+Some users want a cleaner interface, with less "stuff" on it. Could you add a toggle on/off for the gamification aspect of it? XP bar, awards, but leave the x/x planned indicator. This should be recoverable if they wish to. So actually, the switch is only a visibility switch, the counting and processing should still happen as normal, just not displayed. Put this switch into the Setup section.
