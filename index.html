@@ -2,6 +2,7 @@
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8"/>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.github.com; img-src 'self' data:; manifest-src 'self' data:; base-uri 'self'; form-action 'self';"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
@@ -13,9 +14,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" integrity="sha384-tMH8h3BGESGckSAVGZ82T9n90ztNXxvdwvdM6UoR56cYcf+0iGXBliJ29D+wZ/x8" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" integrity="sha384-bm7MnzvK++ykSwVJ2tynSE5TRdN+xL418osEVF2DE/L/gfWHj91J2Sphe582B1Bh" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js" integrity="sha384-aGlMNK3U/x0wl4lEH5jD1PGhJlX9hApuPmIiA5gtiYCOQ1J8ejIdC0btaU/TMoBD" crossorigin="anonymous"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root,[data-theme="light"]{
@@ -247,10 +248,54 @@ function getTheme(key){return THEMES[key]||THEMES.physics}
 function sGet(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null}catch{return null}}
 function sSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch{return false}}
 function getAllData(){const d={};Object.keys(localStorage).forEach(k=>{if(k.startsWith("note:")||k.startsWith("daymeta:"))d[k]=sGet(k)});d._meta={synced:new Date().toISOString(),version:1};const cfg=sGet("planner-config");if(cfg)d._config=cfg;return d}
-function importAllData(data){Object.keys(data).forEach(k=>{if(k==="_meta")return;if(k==="_config"){sSet("planner-config",data[k]);return}sSet(k,data[k])})}
-function gistCreate(tok,data){return fetch("https://api.github.com/gists",{method:"POST",headers:{"Authorization":"token "+tok,"Content-Type":"application/json"},body:JSON.stringify({description:"Lesson Planner Data","public":false,files:{"planner-data.json":{content:JSON.stringify(data,null,2)}}})}).then(r=>{if(!r.ok)throw new Error;return r.json()}).then(j=>j.id)}
-function gistPush(tok,gid,data){return fetch("https://api.github.com/gists/"+gid,{method:"PATCH",headers:{"Authorization":"token "+tok,"Content-Type":"application/json"},body:JSON.stringify({files:{"planner-data.json":{content:JSON.stringify(data,null,2)}}})}).then(r=>{if(!r.ok)throw new Error;return true})}
-function gistPull(tok,gid){return fetch("https://api.github.com/gists/"+gid,{headers:{"Authorization":"token "+tok}}).then(r=>{if(!r.ok)throw new Error;return r.json()}).then(j=>{const f=j.files&&j.files["planner-data.json"];if(!f||!f.content)throw new Error;return JSON.parse(f.content)})}
+
+// Key-allowlist: only "_config", "note:YYYY-MM-DD:<periodId>", and "daymeta:YYYY-MM-DD" are accepted.
+// Anything else (including unknown localStorage keys an attacker might smuggle in) is recorded in `skipped`.
+// Each value is shape-checked (must be a non-array object) before being written.
+const NOTE_KEY_RE=/^note:\d{4}-\d{2}-\d{2}:[a-z0-9]+$/i;
+const META_KEY_RE=/^daymeta:\d{4}-\d{2}-\d{2}$/i;
+function importAllData(data){
+  if(!data||typeof data!=="object"||Array.isArray(data))return{imported:0,skipped:[],error:"Not a backup object"};
+  const skipped=[];let imported=0;
+  Object.keys(data).forEach(k=>{
+    if(k==="_meta")return;
+    if(k==="_config"){
+      const c=data[k];
+      if(c&&typeof c==="object"&&!Array.isArray(c)){migrateConfig({...c});imported++}
+      else skipped.push(k+" (invalid shape)");
+      return;
+    }
+    if(NOTE_KEY_RE.test(k)||META_KEY_RE.test(k)){
+      const v=data[k];
+      if(v&&typeof v==="object"&&!Array.isArray(v)){sSet(k,v);imported++}
+      else skipped.push(k+" (invalid value)");
+      return;
+    }
+    skipped.push(k+" (unrecognised key)");
+  });
+  return{imported,skipped};
+}
+
+// Detect whether pulling `incoming` would clobber local data.
+// Returns null if safe, or an object describing the conflict.
+function checkSyncConflict(incoming){
+  if(!incoming||typeof incoming!=="object")return null;
+  const lastSync=localStorage.getItem("planner-last-sync");
+  const incomingSynced=incoming._meta&&incoming._meta.synced;
+  if(lastSync&&incomingSynced){
+    const li=Date.parse(lastSync),ri=Date.parse(incomingSynced);
+    if(!isNaN(li)&&!isNaN(ri)&&ri<li)return{type:"older",lastSync,incomingSynced};
+  }
+  const localCount=Object.keys(localStorage).filter(k=>k.startsWith("note:")||k.startsWith("daymeta:")).length;
+  const remoteCount=Object.keys(incoming).filter(k=>NOTE_KEY_RE.test(k)||META_KEY_RE.test(k)).length;
+  if(localCount>0&&remoteCount<localCount)return{type:"fewer",localCount,remoteCount};
+  return null;
+}
+
+const GH_HEADERS=tok=>({"Authorization":"Bearer "+tok,"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"});
+function gistCreate(tok,data){return fetch("https://api.github.com/gists",{method:"POST",headers:{...GH_HEADERS(tok),"Content-Type":"application/json"},body:JSON.stringify({description:"Lesson Planner Data","public":false,files:{"planner-data.json":{content:JSON.stringify(data,null,2)}}})}).then(r=>{if(!r.ok)throw new Error;return r.json()}).then(j=>j.id)}
+function gistPush(tok,gid,data){return fetch("https://api.github.com/gists/"+gid,{method:"PATCH",headers:{...GH_HEADERS(tok),"Content-Type":"application/json"},body:JSON.stringify({files:{"planner-data.json":{content:JSON.stringify(data,null,2)}}})}).then(r=>{if(!r.ok)throw new Error;return true})}
+function gistPull(tok,gid){return fetch("https://api.github.com/gists/"+gid,{headers:GH_HEADERS(tok)}).then(r=>{if(!r.ok)throw new Error;return r.json()}).then(j=>{const f=j.files&&j.files["planner-data.json"];if(!f||!f.content)throw new Error;return JSON.parse(f.content)})}
 
 /* ═══ CONFIG MIGRATION ═══════════════════════════════════════════════════ */
 function migrateConfig(cfg){
@@ -729,28 +774,81 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
 /* ═══ DATA PANEL ═════════════════════════════════════════════════════════ */
 function DataPanel({onClose,onImported,onSyncConn,onSyncDisc,lastSync,token,gistId,setToken,setGistId}){
   const[iSt,setISt]=useState(null);const[iData,setIData]=useState(null);const[iStats,setIStats]=useState(null);const fRef=useRef(null);
-  const[showTok,setShowTok]=useState(false);const[syncMsg,setSyncMsg]=useState(null);const[parseErr,setParseErr]=useState("");const connected=token&&gistId;
+  const[showTok,setShowTok]=useState(false);const[syncMsg,setSyncMsg]=useState(null);const[parseErr,setParseErr]=useState("");
+  // Preview shown when connecting to a non-empty Gist ID, so the user can see what they're about to adopt before it overwrites local data.
+  const[connPreview,setConnPreview]=useState(null);
+  // Pull-conflict prompt: shown when an explicit Pull would clobber newer/larger local data.
+  const[pullConflict,setPullConflict]=useState(null);
+  const connected=token&&gistId;
   const doExport=()=>{const data=getAllData();const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`planner-backup-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url)};
-  const handleFile=e=>{const file=e.target.files&&e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=ev=>{try{const parsed=JSON.parse(ev.target.result);if(!parsed||typeof parsed!=="object"||Array.isArray(parsed))throw new Error("Not a valid backup object");const allKeys=Object.keys(parsed);const dataKeys=allKeys.filter(k=>k!=="_meta"&&k!=="_config");setIData(parsed);setIStats({hasCfg:!!parsed._config,n:dataKeys.filter(k=>k.startsWith("note:")).length,m:dataKeys.filter(k=>k.startsWith("daymeta:")).length});setISt("confirm");setParseErr("")}catch(err){setISt("error");setIData(null);setIStats(null);setParseErr(err.message||"Invalid file")}};reader.readAsText(file);e.target.value=""};
-  const doImport=()=>{if(!iData)return;importAllData(iData);const keys=Object.keys(iData).filter(k=>k!=="_meta");setISt("done");setIStats(s=>({...s,imported:keys.length}));onImported()};
-  const doConn=()=>{if(!token){setSyncMsg({type:"error",text:"Enter a token first"});return}setSyncMsg({type:"info",text:"Connecting..."});if(gistId){gistPull(token,gistId).then(()=>{setSyncMsg({type:"ok",text:"Connected"});if(onSyncConn)onSyncConn(token,gistId)}).catch(()=>setSyncMsg({type:"error",text:"Could not access Gist"}))}else{gistCreate(token,getAllData()).then(nid=>{setGistId(nid);setSyncMsg({type:"ok",text:"Created Gist: "+nid.slice(0,8)+"..."});if(onSyncConn)onSyncConn(token,nid)}).catch(()=>setSyncMsg({type:"error",text:"Failed. Check token has gist scope."}))}};
+  // Parse a backup file but only count keys that match the import allowlist; everything else is reported as "skipped" so the user knows nothing unexpected can sneak through.
+  const handleFile=e=>{const file=e.target.files&&e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=ev=>{try{const parsed=JSON.parse(ev.target.result);if(!parsed||typeof parsed!=="object"||Array.isArray(parsed))throw new Error("Not a valid backup object");const ks=Object.keys(parsed);const n=ks.filter(k=>NOTE_KEY_RE.test(k)).length;const m=ks.filter(k=>META_KEY_RE.test(k)).length;const skipped=ks.filter(k=>k!=="_meta"&&k!=="_config"&&!NOTE_KEY_RE.test(k)&&!META_KEY_RE.test(k));setIData(parsed);setIStats({hasCfg:!!parsed._config,n,m,skipped});setISt("confirm");setParseErr("")}catch(err){setISt("error");setIData(null);setIStats(null);setParseErr(err.message||"Invalid file")}};reader.readAsText(file);e.target.value=""};
+  const doImport=()=>{if(!iData)return;const result=importAllData(iData);setISt("done");setIStats(s=>({...s,imported:result.imported,skippedDetail:result.skipped}));onImported()};
+  // Connect: if a Gist ID is supplied, pull and show a preview before adopting it. This stops a phished/copied Gist ID from silently replacing the user's data.
+  const doConn=()=>{
+    if(!token){setSyncMsg({type:"error",text:"Enter a token first"});return}
+    setSyncMsg({type:"info",text:gistId?"Verifying...":"Creating new Gist..."});
+    if(gistId){
+      gistPull(token,gistId).then(data=>{
+        if(!data||typeof data!=="object"){setSyncMsg({type:"error",text:"Gist content is not a valid backup"});return}
+        const remoteN=Object.keys(data).filter(k=>NOTE_KEY_RE.test(k)).length;
+        const remoteM=Object.keys(data).filter(k=>META_KEY_RE.test(k)).length;
+        const remoteSchool=data._config&&data._config.school||"(no school name)";
+        const remoteSynced=data._meta&&data._meta.synced||null;
+        const localN=Object.keys(localStorage).filter(k=>k.startsWith("note:")).length;
+        const localM=Object.keys(localStorage).filter(k=>k.startsWith("daymeta:")).length;
+        setConnPreview({remoteN,remoteM,localN,localM,remoteSchool,remoteSynced});
+        setSyncMsg(null);
+      }).catch(()=>setSyncMsg({type:"error",text:"Could not access Gist"}));
+    }else{
+      gistCreate(token,getAllData()).then(nid=>{
+        setGistId(nid);
+        localStorage.setItem("planner-last-sync",new Date().toISOString());
+        setSyncMsg({type:"ok",text:"Created Gist: "+nid.slice(0,8)+"..."});
+        if(onSyncConn)onSyncConn(token,nid);
+      }).catch(()=>setSyncMsg({type:"error",text:"Failed. Check token has gist scope."}));
+    }
+  };
+  const confirmConn=()=>{setConnPreview(null);setSyncMsg({type:"ok",text:"Connected"});if(onSyncConn)onSyncConn(token,gistId)};
+  const cancelConn=()=>{setConnPreview(null);setSyncMsg(null)};
   const doDisc=()=>{setToken("");setGistId("");setSyncMsg({type:"info",text:"Disconnected"});if(onSyncDisc)onSyncDisc()};
-  const doPull=()=>{if(!token||!gistId)return;setSyncMsg({type:"info",text:"Pulling..."});gistPull(token,gistId).then(data=>{importAllData(data);onImported();setSyncMsg({type:"ok",text:"Pulled \u2713"})}).catch(()=>setSyncMsg({type:"error",text:"Pull failed"}))};
-  const doPush=()=>{if(!token||!gistId)return;setSyncMsg({type:"info",text:"Pushing..."});gistPush(token,gistId,getAllData()).then(()=>setSyncMsg({type:"ok",text:"Pushed \u2713"})).catch(()=>setSyncMsg({type:"error",text:"Push failed"}))};
+  // Pull: if checkSyncConflict says the gist is older or smaller than local, ask before clobbering. Otherwise import directly.
+  const doPull=()=>{
+    if(!token||!gistId)return;
+    setSyncMsg({type:"info",text:"Pulling..."});
+    gistPull(token,gistId).then(data=>{
+      const conflict=checkSyncConflict(data);
+      if(conflict){setPullConflict({data,conflict});setSyncMsg(null);return}
+      importAllData(data);
+      localStorage.setItem("planner-last-sync",new Date().toISOString());
+      onImported();
+      setSyncMsg({type:"ok",text:"Pulled \u2713"});
+    }).catch(()=>setSyncMsg({type:"error",text:"Pull failed"}));
+  };
+  const confirmPull=()=>{
+    if(!pullConflict)return;
+    importAllData(pullConflict.data);
+    localStorage.setItem("planner-last-sync",new Date().toISOString());
+    onImported();
+    setPullConflict(null);
+    setSyncMsg({type:"ok",text:"Pulled \u2713"});
+  };
+  const cancelPull=()=>{setPullConflict(null);setSyncMsg({type:"info",text:"Pull cancelled"})};
+  const doPush=()=>{if(!token||!gistId)return;setSyncMsg({type:"info",text:"Pushing..."});gistPush(token,gistId,getAllData()).then(()=>{localStorage.setItem("planner-last-sync",new Date().toISOString());setSyncMsg({type:"ok",text:"Pushed \u2713"})}).catch(()=>setSyncMsg({type:"error",text:"Push failed"}))};
   const cn=Object.keys(localStorage).filter(k=>k.startsWith("note:")).length;const cm=Object.keys(localStorage).filter(k=>k.startsWith("daymeta:")).length;
   const smc=syncMsg?(syncMsg.type==="ok"?"var(--success)":syncMsg.type==="error"?"var(--error)":"var(--text-muted)"):"";
   return<div className="overlay" onClick={onClose}><div onClick={e=>e.stopPropagation()} style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"var(--radius-lg)",padding:20,minWidth:300,maxWidth:460,maxHeight:"90vh",overflowY:"auto"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><span className="hd" style={{fontWeight:600,color:"var(--text)",fontSize:".95rem"}}>{"\u2699\uFE0F"} Data & Sync</span><button onClick={onClose} style={{background:"none",border:"none",color:"var(--text-secondary)",fontSize:"1.2rem",cursor:"pointer"}}>{"\u2715"}</button></div>
     <div style={{fontSize:".72rem",color:"var(--text-secondary)",marginBottom:14,padding:"8px 10px",background:"var(--surface)",borderRadius:"var(--radius-md)"}}><div style={{marginBottom:4,fontWeight:600,color:"var(--text)"}}>Current data</div><span className="mn">{cn}</span> notes {"\u00B7"} <span className="mn">{cm}</span> day settings</div>
     <div style={{marginBottom:16}}><div className="sl" style={{marginBottom:8}}>{"\u2601\uFE0F"} Cloud Sync</div>
-      {connected?<div><div style={{fontSize:".72rem",color:"var(--success)",marginBottom:8,display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",background:"var(--success)"}}/>Connected: <span className="mn" onClick={()=>navigator.clipboard&&navigator.clipboard.writeText(gistId)} style={{fontSize:".6rem",color:"var(--accent)",cursor:"pointer",textDecoration:"underline",wordBreak:"break-all"}}>{gistId}</span></div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}><Btn onClick={doPush}>{"\u2B06"} Push</Btn><Btn onClick={doPull}>{"\u2B07"} Pull</Btn><Btn onClick={doDisc} style={{color:"var(--error)"}}>{"\u2715"} Disconnect</Btn></div>{lastSync&&<div style={{fontSize:".6rem",color:"var(--text-muted)",marginTop:6}}>Last sync: {lastSync}</div>}</div>
-      :<div><div style={{fontSize:".72rem",color:"var(--text-secondary)",marginBottom:8,lineHeight:1.5}}>Connect to GitHub Gist for cross-device sync. <a href="https://github.com/settings/tokens/new?scopes=gist&description=Lesson+Planner" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Create token {"\u2197"}</a></div><div style={{marginBottom:6}}><label className="fl">Token</label><div style={{display:"flex",gap:4}}><input className="inp" type={showTok?"text":"password"} value={token} onChange={e=>setToken(e.target.value)} placeholder="ghp_xxxx..." style={{fontSize:".72rem",flex:1}}/><Btn onClick={()=>setShowTok(!showTok)} style={{padding:"4px 8px",fontSize:".65rem"}}>{showTok?"\u{1F441}":"\u2022\u2022\u2022"}</Btn></div></div><div style={{marginBottom:8}}><label className="fl">Gist ID <span style={{fontWeight:400,color:"var(--text-muted)"}}>(blank = create new)</span></label><input className="inp" value={gistId} onChange={e=>setGistId(e.target.value)} placeholder="Leave empty for new" style={{fontSize:".72rem"}}/></div><button className="btn-a" onClick={doConn}>{"\u{1F517}"} Connect</button></div>}
+      {connected?<div><div style={{fontSize:".72rem",color:"var(--success)",marginBottom:8,display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",background:"var(--success)"}}/>Connected: <span className="mn" onClick={()=>navigator.clipboard&&navigator.clipboard.writeText(gistId)} style={{fontSize:".6rem",color:"var(--accent)",cursor:"pointer",textDecoration:"underline",wordBreak:"break-all"}}>{gistId}</span></div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}><Btn onClick={doPush}>{"\u2B06"} Push</Btn><Btn onClick={doPull}>{"\u2B07"} Pull</Btn><Btn onClick={doDisc} style={{color:"var(--error)"}}>{"\u2715"} Disconnect</Btn></div>{lastSync&&<div style={{fontSize:".6rem",color:"var(--text-muted)",marginTop:6}}>Last sync: {lastSync}</div>}{pullConflict&&<div style={{padding:10,background:"var(--surface)",borderRadius:6,border:"1px solid var(--flag)",marginTop:8}}><div style={{fontSize:".75rem",color:"var(--flag)",fontWeight:600,marginBottom:6}}>{"\u26a0"} Sync conflict</div><div style={{fontSize:".67rem",color:"var(--text-secondary)",lineHeight:1.5,marginBottom:8}}>{pullConflict.conflict.type==="older"?<>The Gist appears <strong>older</strong> than your last sync ({new Date(pullConflict.conflict.incomingSynced).toLocaleString("en-NZ")} vs {new Date(pullConflict.conflict.lastSync).toLocaleString("en-NZ")}). Pulling will overwrite local data.</>:<>The Gist has fewer entries ({pullConflict.conflict.remoteCount}) than your local copy ({pullConflict.conflict.localCount}). Pulling may discard local work.</>}</div><div style={{display:"flex",gap:6}}><Btn onClick={confirmPull} style={{color:"var(--error)"}}>{"\u26a0"} Overwrite local</Btn><button className="btn-a" onClick={cancelPull} style={{padding:"6px 14px"}}>Keep local</button></div></div>}</div>
+      :<div><div style={{fontSize:".72rem",color:"var(--text-secondary)",marginBottom:8,lineHeight:1.5}}>Connect to GitHub Gist for cross-device sync. <a href="https://github.com/settings/tokens/new?scopes=gist&description=Lesson+Planner" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Create token {"\u2197"}</a></div><div style={{marginBottom:6}}><label className="fl">Token</label><div style={{display:"flex",gap:4}}><input className="inp" type={showTok?"text":"password"} value={token} onChange={e=>setToken(e.target.value)} placeholder="ghp_xxxx..." style={{fontSize:".72rem",flex:1}}/><Btn onClick={()=>setShowTok(!showTok)} style={{padding:"4px 8px",fontSize:".65rem"}}>{showTok?"\u{1F441}":"\u2022\u2022\u2022"}</Btn></div></div><div style={{marginBottom:8}}><label className="fl">Gist ID <span style={{fontWeight:400,color:"var(--text-muted)"}}>(blank = create new)</span></label><input className="inp" value={gistId} onChange={e=>setGistId(e.target.value)} placeholder="Leave empty for new" style={{fontSize:".72rem"}}/></div><button className="btn-a" onClick={doConn} disabled={!!connPreview}>{"\u{1F517}"} Connect</button>{connPreview&&<div style={{marginTop:10,padding:10,background:"var(--surface)",borderRadius:6,border:"1px solid var(--accent)"}}><div style={{fontSize:".75rem",color:"var(--accent)",fontWeight:600,marginBottom:6}}>Preview: this Gist contains</div><div style={{fontSize:".68rem",color:"var(--text-secondary)",lineHeight:1.6,marginBottom:8}}>School: <strong>{connPreview.remoteSchool}</strong><br/><span className="mn">{connPreview.remoteN}</span> notes {"·"} <span className="mn">{connPreview.remoteM}</span> day settings{connPreview.remoteSynced&&<><br/>Last synced: {new Date(connPreview.remoteSynced).toLocaleString("en-NZ")}</>}</div>{(connPreview.localN+connPreview.localM>0)&&<div style={{fontSize:".66rem",color:"var(--flag)",marginBottom:8,padding:"6px 8px",background:"var(--card)",borderRadius:4,border:"1px solid var(--flag)"}}>{"⚠"} Your local data ({connPreview.localN} notes, {connPreview.localM} day settings) will be replaced on the next pull.</div>}<div style={{display:"flex",gap:6}}><button className="btn-a" onClick={confirmConn} style={{padding:"6px 14px"}}>{"✓"} Use this Gist</button><Btn onClick={cancelConn}>Cancel</Btn></div></div>}</div>}
       {syncMsg&&<div style={{fontSize:".68rem",color:smc,marginTop:8,padding:"4px 8px",background:"var(--surface)",borderRadius:4}}>{syncMsg.text}</div>}</div>
     <div style={{marginBottom:16}}><div className="sl" style={{marginBottom:8}}>Export</div><Btn onClick={doExport}>{"\u{1F4E5}"} Download Backup</Btn></div>
     <div><div className="sl" style={{marginBottom:8}}>Import</div>      <input ref={fRef} type="file" accept=".json,application/json,text/plain,.txt" onChange={handleFile} style={{display:"none"}}/>
       {iSt===null&&<Btn onClick={()=>fRef.current&&fRef.current.click()}>{"\u{1F4E4}"} Choose File</Btn>}
-      {iSt==="confirm"&&iStats&&<div style={{padding:10,background:"var(--surface)",borderRadius:6,border:"1px solid var(--accent)"}}><div style={{fontSize:".7rem",color:"var(--text-secondary)",marginBottom:8}}>{iStats.hasCfg&&<span style={{color:"var(--success)",fontWeight:600}}>Config found {"\u2713"} </span>}<span className="mn">{iStats.n}</span> notes {"\u00B7"} <span className="mn">{iStats.m}</span> day settings</div><div style={{display:"flex",gap:8}}><button className="btn-a" onClick={doImport} style={{padding:"6px 14px"}}>{"\u2713"} Confirm</button><Btn onClick={()=>{setISt(null);setIData(null);setIStats(null)}}>Cancel</Btn></div></div>}
-      {iSt==="done"&&iStats&&<div style={{padding:10,background:"var(--surface)",borderRadius:6,border:"1px solid var(--success)"}}><div style={{fontSize:".78rem",color:"var(--success)",fontWeight:600}}>{"\u2713"} Imported <span className="mn">{iStats.imported}</span> entries</div><Btn onClick={onClose} style={{marginTop:8}}>Close</Btn></div>}
+      {iSt==="confirm"&&iStats&&<div style={{padding:10,background:"var(--surface)",borderRadius:6,border:"1px solid var(--accent)"}}><div style={{fontSize:".7rem",color:"var(--text-secondary)",marginBottom:8}}>{iStats.hasCfg&&<span style={{color:"var(--success)",fontWeight:600}}>Config found {"\u2713"} </span>}<span className="mn">{iStats.n}</span> notes {"\u00B7"} <span className="mn">{iStats.m}</span> day settings</div>{iStats.skipped&&iStats.skipped.length>0&&<div style={{fontSize:".62rem",color:"var(--flag)",marginBottom:8,padding:"6px 8px",background:"var(--card)",borderRadius:4,border:"1px solid var(--flag)"}}>{"⚠"} {iStats.skipped.length} unrecognised {iStats.skipped.length===1?"key":"keys"} will be ignored: <span className="mn" style={{wordBreak:"break-all"}}>{iStats.skipped.slice(0,3).join(", ")}{iStats.skipped.length>3?", ...":""}</span></div>}<div style={{display:"flex",gap:8}}><button className="btn-a" onClick={doImport} style={{padding:"6px 14px"}}>{"\u2713"} Confirm</button><Btn onClick={()=>{setISt(null);setIData(null);setIStats(null)}}>Cancel</Btn></div></div>}
+      {iSt==="done"&&iStats&&<div style={{padding:10,background:"var(--surface)",borderRadius:6,border:"1px solid var(--success)"}}><div style={{fontSize:".78rem",color:"var(--success)",fontWeight:600}}>{"\u2713"} Imported <span className="mn">{iStats.imported}</span> entries</div>{iStats.skippedDetail&&iStats.skippedDetail.length>0&&<div style={{fontSize:".62rem",color:"var(--text-muted)",marginTop:6}}>{iStats.skippedDetail.length} skipped (rejected by validator)</div>}<Btn onClick={onClose} style={{marginTop:8}}>Close</Btn></div>}
       {iSt==="error"&&<div style={{padding:10,background:"var(--surface)",borderRadius:6,border:"1px solid var(--error)"}}><div style={{fontSize:".78rem",color:"var(--error)",fontWeight:600}}>{"\u26A0"} Import failed</div>{parseErr&&<div style={{fontSize:".6rem",color:"var(--text-muted)",marginTop:6,wordBreak:"break-all",fontFamily:"'JetBrains Mono',monospace",lineHeight:1.4}}>{parseErr}</div>}<Btn onClick={()=>{setISt(null);setParseErr("");fRef.current&&fRef.current.click()}} style={{marginTop:8}}>Try another</Btn></div>}
     </div></div></div>;
 }
@@ -786,8 +884,13 @@ function App(){
   },[dispMode,cfg&&cfg.theme]);
 
   useEffect(()=>{if(!eng)return;const p={};eng.terms.forEach(term=>{eng.getTermWks(term).flat().filter(eng.isSD).forEach(d=>{const k=dk(d),v=sGet(`daymeta:${k}`);if(v)p[k]=nM(v)})});mcR.current={...mcR.current,...p};setMC(c=>({...c,...p}))},[eng]);
-  const triggerSync=useCallback(()=>{const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");if(!tok||!gid)return;clearTimeout(syncTimer.current);syncTimer.current=setTimeout(()=>{setSyncSt("syncing");gistPush(tok,gid,getAllData()).then(()=>{setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),3000)}).catch(()=>{setSyncSt("error");setTimeout(()=>setSyncSt("idle"),5000)})},4000)},[]);
-  useEffect(()=>{const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");if(!tok||!gid)return;setSyncSt("syncing");gistPull(tok,gid).then(data=>{importAllData(data);const nc=migrateConfig(sGet("planner-config"));if(nc)setCfg(nc);const p={};if(eng)eng.terms.forEach(term=>{eng.getTermWks(term).flat().filter(eng.isSD).forEach(d=>{const k=dk(d),v=sGet(`daymeta:${k}`);if(v)p[k]=nM(v)})});mcR.current=p;setMC(p);setGR(r=>r+1);setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),3000)}).catch(()=>{setSyncSt("error");setTimeout(()=>setSyncSt("idle"),5000)})},[]);
+  // Debounced push to gist. On success, record `planner-last-sync` so future pulls can detect
+  // whether the gist has gone backwards (e.g. an older copy from another device or a hostile gist).
+  const triggerSync=useCallback(()=>{const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");if(!tok||!gid)return;clearTimeout(syncTimer.current);syncTimer.current=setTimeout(()=>{setSyncSt("syncing");gistPush(tok,gid,getAllData()).then(()=>{localStorage.setItem("planner-last-sync",new Date().toISOString());setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),3000)}).catch(()=>{setSyncSt("error");setTimeout(()=>setSyncSt("idle"),5000)})},4000)},[]);
+  // Startup auto-pull. If the gist appears older than our last successful sync, or if it has
+  // fewer entries than local storage, we DO NOT clobber. The sync state goes to "conflict" so
+  // the user can open the Data Panel and resolve manually with full visibility.
+  useEffect(()=>{const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");if(!tok||!gid)return;setSyncSt("syncing");gistPull(tok,gid).then(data=>{const conflict=checkSyncConflict(data);if(conflict){setSyncSt("conflict");return}importAllData(data);localStorage.setItem("planner-last-sync",new Date().toISOString());const nc=migrateConfig(sGet("planner-config"));if(nc)setCfg(nc);const p={};if(eng)eng.terms.forEach(term=>{eng.getTermWks(term).flat().filter(eng.isSD).forEach(d=>{const k=dk(d),v=sGet(`daymeta:${k}`);if(v)p[k]=nM(v)})});mcR.current=p;setMC(p);setGR(r=>r+1);setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),3000)}).catch(()=>{setSyncSt("error");setTimeout(()=>setSyncSt("idle"),5000)})},[]);
   useEffect(()=>{window._plannerSync=triggerSync;window._plannerGamRefresh=()=>setGR(r=>r+1);return()=>{window._plannerSync=null;window._plannerGamRefresh=null}},[triggerSync]);
 
   const themeKey=cfg&&cfg.theme||"physics";
@@ -839,7 +942,7 @@ function App(){
           {[["term","\u{1F4C5} Term"],["week","\u{1F5D3} Week"],["day","\u{1F4CB} Day"],["class","\u{1F4DA} Class"],["lab",`${gam.th.icon} Lab`],["setup","\u2699\uFE0F Setup"]].map(([v,lbl])=>{const a=view===v;return<button key={v} className={`vtab${a?" on":""}`} onClick={()=>{if(v==="day")goDayTab();else{setView(v);setGR(r=>r+1)}}}>{lbl}</button>})}
         </div>
         <button onClick={()=>{const dk=dispMode.startsWith("dark"),hc=dispMode.endsWith("-hc");setDispMode((dk?"light":"dark")+(hc?"-hc":""))}} title={dispMode.startsWith("dark")?"Switch to day mode":"Switch to night mode"} style={{background:"var(--surface)",border:"1px solid var(--border)",color:"var(--text)",borderRadius:"var(--radius-sm)",padding:"5px 10px",cursor:"pointer",fontSize:"1rem",lineHeight:1}}>{dispMode.startsWith("dark")?"☀️":"\u{1F319}"}</button>
-        <button onClick={()=>setShowDP(true)} title="Data & Sync" style={{background:"var(--surface)",border:"1px solid var(--border)",color:"var(--text)",borderRadius:"var(--radius-sm)",padding:"5px 10px",cursor:"pointer",fontSize:"1rem",lineHeight:1,position:"relative"}}>{"\u{1F4BE}"}{syncConnected()&&<span style={{position:"absolute",top:2,right:2,width:7,height:7,borderRadius:"50%",background:syncSt==="syncing"?"var(--accent)":syncSt==="synced"?"var(--success)":syncSt==="error"?"var(--error)":"var(--success)",border:"1px solid var(--card)"}}/>}</button>
+        <button onClick={()=>setShowDP(true)} title={syncSt==="conflict"?"Sync conflict — open to resolve":"Data & Sync"} style={{background:"var(--surface)",border:"1px solid var(--border)",color:"var(--text)",borderRadius:"var(--radius-sm)",padding:"5px 10px",cursor:"pointer",fontSize:"1rem",lineHeight:1,position:"relative"}}>{"\u{1F4BE}"}{syncConnected()&&<span style={{position:"absolute",top:2,right:2,width:7,height:7,borderRadius:"50%",background:syncSt==="syncing"?"var(--accent)":syncSt==="synced"?"var(--success)":syncSt==="error"?"var(--error)":syncSt==="conflict"?"var(--flag)":"var(--success)",border:"1px solid var(--card)"}}/>}</button>
       </div>
     </div>
     {(cfg&&(!cfg.classes||cfg.classes.length===0||!cfg.timetable||Object.keys(cfg.timetable).length===0))&&<div className="card" style={{padding:"14px 18px",marginBottom:14,border:"1px solid var(--dz-border)",background:"var(--dz-bg)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:"1.1rem"}}>{"\u{1F44B}"}</span><div style={{flex:1,minWidth:200}}><div className="hd" style={{fontSize:".85rem",fontWeight:600,color:"var(--dz-text)"}}>Welcome! Add your classes and timetable</div><div style={{fontSize:".7rem",color:"var(--dz-text)",opacity:.8}}>Term dates and holidays are already set up. Head to Setup to add your classes and timetable.</div></div><button className="btn-a" onClick={()=>{setView("setup");setGR(r=>r+1)}} style={{padding:"6px 14px",fontSize:".78rem"}}>Go to Setup {"\u2192"}</button></div>}

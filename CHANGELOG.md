@@ -6,6 +6,18 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 1.4.0 — 2026-04-26
+
+### Security hardening (audit pass 1)
+- **Subresource Integrity** added to React, ReactDOM and Babel CDN scripts. The browser refuses to execute these files if they do not match the pinned SHA-384 hashes, blocking CDN-compromise and TLS-intercept attacks.
+- **Content Security Policy** meta tag added. Restricts script, style, font, image, manifest, connect, base-uri and form-action sources to known origins.
+- **Backup import key allowlist**: only `_config`, `note:YYYY-MM-DD:periodId` and `daymeta:YYYY-MM-DD` keys are accepted, and each value is shape-checked. Unknown or malformed keys are reported in the import preview as "will be ignored". Closes the path where a malicious backup file could overwrite the GitHub token or inject arbitrary localStorage entries.
+- **Gist sync conflict detection**: the app records the timestamp of every successful push and pull. On future pulls, if the Gist appears older than the last sync or has fewer entries than local storage, the pull is paused and a "Sync conflict" prompt explains the discrepancy and asks for confirmation before overwriting local data. The startup auto-pull surfaces the same state (red dot on the Data button) without clobbering anything.
+- **Gist ID connection preview**: when you connect to a non-empty Gist ID, the app first pulls a read-only preview (school name, note count, last-synced time) and asks "Use this Gist?" before adopting it. Stops a phished or copy-pasted Gist ID from silently replacing your data.
+- GitHub API requests now use `Bearer` authorization with explicit `Accept` and `X-GitHub-Api-Version` headers (modern GitHub recommendation).
+
+---
+
 ## 1.3.0 — 2026-04-26
 
 ### Features

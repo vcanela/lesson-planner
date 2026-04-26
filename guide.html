@@ -751,6 +751,14 @@ a:hover{text-decoration:underline}
 <h1>What's New</h1>
 <p class="section-intro">Recent updates to the planner.</p>
 
+<h2>26 April 2026 (later)</h2>
+<ul>
+  <li><strong>Security hardening</strong> — the app now refuses to load the React, ReactDOM and Babel scripts unless they match a pinned cryptographic hash, and a Content Security Policy restricts where scripts, styles and network requests can come from. Both protect against compromised CDNs and intercepted connections.</li>
+  <li><strong>Safer backup imports</strong> — only known, properly-shaped keys (notes, day settings, config) are imported from a backup file. Anything unrecognised is reported in the import preview as "will be ignored". A maliciously crafted backup can no longer overwrite your GitHub token or inject other localStorage entries.</li>
+  <li><strong>Sync conflict detection</strong> — when pulling from your Gist, if the Gist appears older or smaller than your local data, the pull is paused and asks "Overwrite local" or "Keep local". On startup, the same check runs silently and the Data button shows a warning dot if a conflict exists, so the auto-pull can never silently overwrite work you did offline on another device.</li>
+  <li><strong>Gist ID preview</strong> — when you connect to a Gist ID, the app first fetches a read-only summary (school name, note count, last sync time) and asks for confirmation before adopting it. Protects you from accidentally pasting in a Gist ID that does not contain your data.</li>
+</ul>
+
 <h2>26 April 2026</h2>
 <ul>
   <li><strong>Day/night toggle</strong> — a sun/moon button now sits in the nav bar at the top of every view. One tap flips between day and night mode while keeping your bold or non-bold preference intact.</li>
