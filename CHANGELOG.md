@@ -6,6 +6,17 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 1.5.0 — 2026-04-27
+
+### Data-loss resilience (audit pass 2)
+- **localStorage quota banner**: when a save hits the browser's storage limit, a sticky red banner appears at the top of every view with a button to open the Data Panel for export. While the banner is visible, the cloud sync is suspended so the gist never receives partial state. Dismiss the banner once you've cleared space; it will reappear if a new save fails.
+- **`beforeunload` flush in `useAutoSave`**: closing the tab during the 80 ms blur-debounce window no longer drops the typed text. The hook also flushes on `pagehide` and `visibilitychange` to cover Safari and iOS, where `beforeunload` is unreliable.
+- **Multi-tab `storage` event listener**: when another tab writes a `note:`, `daymeta:`, or `planner-config` key, this tab refreshes its React state automatically. Two browser tabs editing simultaneously no longer overwrite each other on save.
+- **Schema version gate**: `_meta.version` is now read on every backup import and gist pull. Payloads with a newer version than the running app are refused with a clear message (`"This backup is from a newer version of the planner (v2). Please update before importing."`) instead of being silently ingested. The Sync Conflict prompt has a third type, "version mismatch", with no Overwrite option.
+- **No-lesson confirmation**: marking a period as No Lesson when the topic field has content now shows an inline confirmation (Yes / Cancel) instead of clearing the topic silently. The confirmation appears in Day View, Week View, and Class View. Uses inline UI rather than a popup dialog to match the rest of the app's visual register.
+
+---
+
 ## 1.4.2 — 2026-04-27
 
 ### Fixes

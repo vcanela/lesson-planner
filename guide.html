@@ -751,6 +751,15 @@ a:hover{text-decoration:underline}
 <h1>What's New</h1>
 <p class="section-intro">Recent updates to the planner.</p>
 
+<h2>27 April 2026</h2>
+<ul>
+  <li><strong>Storage-full warning</strong> &mdash; when your browser runs out of space, a red banner now appears at the top of the app explaining that recent changes have not been saved and pointing you to the Data Panel for an export. Cloud sync is suspended while the banner is visible so your Gist never receives partial data.</li>
+  <li><strong>No more lost text on tab close</strong> &mdash; if you close the browser tab in the brief window between typing and auto-save firing, the planner now flushes the pending save before the page goes away. Works on desktop and iOS Safari.</li>
+  <li><strong>Two tabs can now coexist</strong> &mdash; if you have the planner open in two browser tabs and edit in one, the other tab now picks up the change automatically. Previously each tab was unaware of the other's edits and could overwrite them.</li>
+  <li><strong>Refuses to import data from a newer version</strong> &mdash; if a backup file or Gist was saved by a future version of the planner, this version will refuse to ingest it (with a clear message) rather than silently corrupting your data. Update the planner first.</li>
+  <li><strong>No Lesson asks before clearing your topic</strong> &mdash; clicking "No lesson" on a period with existing topic text now shows an inline "Replace your topic with No Lesson?" prompt with Yes / Cancel buttons. No more accidental loss of typed planning when you mis-click.</li>
+</ul>
+
 <h2>26 April 2026 (later)</h2>
 <ul>
   <li><strong>Security hardening</strong> — the app now refuses to load the React, ReactDOM and Babel scripts unless they match a pinned cryptographic hash, and a Content Security Policy restricts where scripts, styles and network requests can come from. Both protect against compromised CDNs and intercepted connections.</li>

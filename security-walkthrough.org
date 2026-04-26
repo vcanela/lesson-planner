@@ -1,0 +1,475 @@
+#+TITLE: From Audit to Green Dot: Hardening a School Web App
+#+AUTHOR: Victor Canela (with Claude as pair)
+#+DATE: 2026-04-27
+
+This document walks through what happened over two days when we sat down to
+audit the Lesson Planner for security, what we found, what we changed, and
+what broke as a result. It is written for two audiences: colleagues who
+want to understand how this kind of work goes, and students who can use it
+as a case study in software engineering.
+
+Read it linearly the first time. The story matters more than any single
+technical detail.
+
+* Background
+
+The Lesson Planner is a single-file React web app I built for staff at
+Diocesan School. Teachers use it to plan periods across the rotating
+timetable cycle. It runs on GitHub Pages, stores data in the browser's
+localStorage, and optionally syncs across devices via a private GitHub
+Gist. By v1.3.0 it was feature-complete and being used by colleagues.
+
+The release of v1.0.0 had been quietly nerve-wracking. Once people are
+using software, you cannot pretend the security model is somebody else's
+problem. So we sat down and asked the question every developer should
+ask before more colleagues come on board:
+
+  /If a malicious actor wanted to get into a teacher's account through
+  this app, what doors are open?/
+
+* The Audit
+
+** What we looked for
+
+We told an auditing assistant to wear three hats:
+
+1. *Security auditor.* This is a school. Compromise has consequences.
+2. *Edge-case hunter.* What happens when storage is full, when two tabs
+   are open, when a backup file is malformed, when the timezone clock
+   shifts under daylight saving?
+3. *Readability reviewer.* The code will be used as a teaching example.
+   If it cannot be read by a careful student, it is failing one of its
+   jobs.
+
+The auditor was given concrete things to check: =dangerouslySetInnerHTML=
+usage, token handling, =eval=, dynamic code execution, header policies,
+import paths, sync conflicts, schema migration, multi-tab races, DST,
+and so on.
+
+** What came back
+
+The audit produced about thirty findings, ranked Critical to Low. The
+three most important were structural rather than tactical:
+
+1. *No Subresource Integrity on CDN scripts.* The app loaded React,
+   ReactDOM, and Babel from a public CDN over HTTPS. If that CDN was
+   ever compromised, or if the user was behind a corporate proxy that
+   intercepted TLS, an attacker could replace the script content and
+   gain full code execution while the user's GitHub token was sitting
+   in localStorage.
+
+2. *Backup and Gist imports trusted any JSON.* The function that wrote
+   imported data into localStorage iterated every key in the parsed
+   JSON and wrote it straight through, with no allowlist and no shape
+   check. A malicious backup file could overwrite the GitHub token,
+   change the Gist ID, or inject anything else.
+
+3. *No conflict detection on Gist sync.* When the app started up, it
+   pulled from the configured Gist and called =importAllData= on
+   whatever it received, with no comparison against local state. If
+   the Gist had been tampered with, or had simply gone backwards
+   somehow, your local work would be quietly overwritten.
+
+There was also a long list of readability issues (single-letter variable
+names, 1500-character single-line JSX, no comments on the hardest logic),
+which we deferred to a later pass.
+
+** A note on auditing as a discipline
+
+A useful audit is not a checklist. It is a stance. You assume that:
+
+- Anything coming /into/ your code from outside is hostile until proven
+  otherwise. That includes user input, but also CDN scripts, JSON files
+  the user uploads, content fetched from APIs, and even data the user
+  themselves saved last week from another browser.
+
+- Errors will happen, and silent errors are the worst kind. Code that
+  fails loudly is code you can fix. Code that fails quietly creates
+  invisible damage.
+
+- Your defences will eventually be wrong. The question is whether the
+  layer underneath catches the layer above.
+
+This third point becomes the moral of the whole story below.
+
+* Pass 1: The Five Hardening Changes
+
+We picked the five highest-impact items from the audit and shipped them
+together as v1.4.0.
+
+** 1. Subresource Integrity on CDN scripts
+
+Before:
+
+#+begin_src html
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+#+end_src
+
+After:
+
+#+begin_src html
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"
+        integrity="sha384-tMH8h3BGESGckSAVGZ82T9n90ztNXxvdwvdM6UoR56cYcf+0iGXBliJ29D+wZ/x8"
+        crossorigin="anonymous"></script>
+#+end_src
+
+The =integrity= attribute carries a SHA-384 hash of the file's bytes. The
+browser computes the hash of whatever it downloads, and refuses to execute
+the script if the hashes do not match. If the CDN is compromised
+tomorrow, the page breaks loudly instead of silently running attacker code.
+
+The hashes were computed with a one-line shell command:
+
+#+begin_src bash
+curl -sL "$URL" | openssl dgst -sha384 -binary | openssl base64 -A
+#+end_src
+
+This is the simplest, highest-impact security change in the whole pass,
+and it took five minutes.
+
+** 2. Content Security Policy
+
+A CSP is a meta tag that tells the browser, "scripts can only come from
+these places, styles from these places, network calls to these places."
+It is a fence around what the page is allowed to do.
+
+#+begin_src html
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' https://cdnjs.cloudflare.com 'unsafe-inline' 'unsafe-eval';
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+  font-src 'self' https://fonts.gstatic.com;
+  connect-src 'self' https://api.github.com;
+  img-src 'self' data:;
+  manifest-src 'self' data:;
+  base-uri 'self';
+  form-action 'self';
+"/>
+#+end_src
+
+Two of these directives need =unsafe-inline= and =unsafe-eval= because
+the app uses Babel in the browser. That is a real cost; pre-compiling
+the JSX at build time would let us drop both. Worth doing later.
+
+The =connect-src= directive is the important one for this app: it limits
+where =fetch= and =XMLHttpRequest= can go. Even if an attacker somehow
+got JavaScript running on the page, they could only call api.github.com
+and our own origin. They could not exfiltrate data to their own server.
+
+** 3. Backup import allowlist
+
+The original =importAllData= was a single line:
+
+#+begin_src javascript
+function importAllData(data){
+  Object.keys(data).forEach(k => {
+    if (k === "_meta") return;
+    if (k === "_config") { sSet("planner-config", data[k]); return; }
+    sSet(k, data[k]);
+  });
+}
+#+end_src
+
+It writes anything to anywhere. A backup file containing
+={"planner-gh-token": "attacker-controlled-token"}= would hand the
+attacker control of the user's Gist sync.
+
+The new version refuses any key that is not on a strict allowlist:
+
+#+begin_src javascript
+const NOTE_KEY_RE = /^note:\d{4}-\d{1,2}-\d{1,2}:[a-z0-9]+$/i;
+const META_KEY_RE = /^daymeta:\d{4}-\d{1,2}-\d{1,2}$/i;
+
+function importAllData(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data))
+    return { imported: 0, skipped: [], error: "Not a backup object" };
+  const skipped = [];
+  let imported = 0;
+  Object.keys(data).forEach(k => {
+    if (k === "_meta") return;
+    if (k === "_config") {
+      const c = data[k];
+      if (c && typeof c === "object" && !Array.isArray(c)) {
+        migrateConfig({ ...c });
+        imported++;
+      } else skipped.push(k + " (invalid shape)");
+      return;
+    }
+    if (NOTE_KEY_RE.test(k) || META_KEY_RE.test(k)) {
+      const v = data[k];
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        sSet(k, v);
+        imported++;
+      } else skipped.push(k + " (invalid value)");
+      return;
+    }
+    skipped.push(k + " (unrecognised key)");
+  });
+  return { imported, skipped };
+}
+#+end_src
+
+Notice three principles in the rewrite:
+
+- *Allowlist, not blocklist.* We do not try to enumerate the bad keys.
+  We enumerate the good ones and reject everything else. Blocklists
+  are exhausting to maintain and one missing entry is a hole.
+
+- *Shape check the values, not just the keys.* A note must be an
+  object that is not an array. A subtle attacker could pass an array
+  with mutated prototype properties. =Array.isArray= and =typeof= make
+  that explicit.
+
+- *Surface what was rejected.* The function returns =skipped= so the
+  user can see the import was filtered. Silent filtering would be
+  worse than no filter at all because it would hide tampering.
+
+** 4. Sync conflict detection
+
+When you pull from your Gist on startup, what stops a hostile (or
+simply stale) Gist from clobbering your local work?
+
+The new =checkSyncConflict= helper compares the incoming data's
+=_meta.synced= timestamp with a locally-stored =planner-last-sync=
+value, and counts how many notes/meta keys are on each side.
+
+#+begin_src javascript
+function checkSyncConflict(incoming) {
+  if (!incoming || typeof incoming !== "object") return null;
+  const lastSync = localStorage.getItem("planner-last-sync");
+  const incomingSynced = incoming._meta && incoming._meta.synced;
+  if (lastSync && incomingSynced) {
+    const li = Date.parse(lastSync);
+    const ri = Date.parse(incomingSynced);
+    if (!isNaN(li) && !isNaN(ri) && ri < li)
+      return { type: "older", lastSync, incomingSynced };
+  }
+  const localCount = Object.keys(localStorage)
+    .filter(k => k.startsWith("note:") || k.startsWith("daymeta:")).length;
+  const remoteCount = Object.keys(incoming)
+    .filter(k => NOTE_KEY_RE.test(k) || META_KEY_RE.test(k)).length;
+  if (localCount > 0 && remoteCount < localCount)
+    return { type: "fewer", localCount, remoteCount };
+  return null;
+}
+#+end_src
+
+Two checks: "the gist is older than the last successful sync" and
+"the gist has fewer entries than I do locally." Either condition
+triggers a confirm dialog with explicit "Overwrite local" or
+"Keep local" buttons. The startup auto-pull, instead of silently
+clobbering, surfaces a warning dot on the data button and waits for
+the user.
+
+** 5. Gist ID connection preview
+
+Before this pass, pasting a Gist ID and clicking Connect would silently
+adopt that Gist as your sync target. If a colleague forwarded you a
+Gist ID by email and a phisher had intercepted the message, you would
+not know until your data was gone.
+
+Now Connect performs a read-only pull first and shows a preview:
+
+  /Preview: this Gist contains/
+  /School: Smith High School/
+  /87 notes, 22 day settings/
+  /Last synced: 26/04/2026 09:14/
+
+  /Your local data (133 notes, 38 day settings) will be replaced on the/
+  /next pull./
+
+  [Use this Gist] [Cancel]
+
+You decide, with full information, before adopting it.
+
+* The Two Follow-Up Bugs
+
+Pass 1 shipped. Victor opened the deployed app to test it. The status
+indicator went orange. Pull triggered a conflict prompt. The audit
+findings were now live, and they immediately caught two bugs of my own.
+
+** Follow-up bug 1: timestamp drift
+
+After Victor clicked Push, then Pull, the conflict prompt said:
+
+  /The Gist appears older than your last sync (26/04/2026, 11:57:21pm/
+  /vs 26/04/2026, 11:57:23pm). Pulling will overwrite local data./
+
+A two-second drift between push and pull. Why?
+
+The data structure pushed to the Gist contained =_meta.synced=, set to
+=new Date().toISOString()= /at the moment getAllData() was called/. That
+is, before the network request fired. The push then took a couple of
+seconds to complete. On success, the success handler set the local
+=planner-last-sync= to a /fresh/ =new Date().toISOString()=, which by
+then was 2 seconds later than the timestamp embedded in the Gist.
+
+So on every successful push, local "last sync" was 2 seconds /ahead/ of
+the Gist's recorded timestamp. The next pull would always look "older."
+
+The fix is one principle: anchor both clocks to the same moment. Use
+the timestamp the data /already contains/, not a new one:
+
+#+begin_src javascript
+const data = getAllData();          // _meta.synced is set here
+gistPush(token, gistId, data).then(() => {
+  // Use the same timestamp the gist now holds, not Date.now().
+  localStorage.setItem("planner-last-sync", data._meta.synced);
+  ...
+});
+#+end_src
+
+Same idea on the pull side: when you pull data, anchor your local
+last-sync to whatever =_meta.synced= the incoming data carries, not to
+the moment of arrival.
+
+This is a tiny example of a much larger phenomenon called /clock skew/.
+In any system where two parties record the time of "the same event,"
+they will disagree, because they do not share a clock. The fix is
+always the same: pick one clock and have everyone copy from it.
+
+** Follow-up bug 2: the over-strict regex
+
+After v1.4.1, the timestamp drift was gone. But the next conflict
+prompt said:
+
+  /The Gist has fewer entries (0) than your local copy (133)./
+
+The Gist had 133 entries. The conflict counter saw 0. So the regex
+was wrong.
+
+I had written:
+
+#+begin_src javascript
+const NOTE_KEY_RE = /^note:\d{4}-\d{2}-\d{2}:[a-z0-9]+$/i;
+#+end_src
+
+ISO 8601 format, =YYYY-MM-DD=, two digits each. Looked right.
+
+The actual stored keys looked like this:
+
+  =note:2026-3-23:p5=
+
+Single-digit month. Single-digit day. The =dk()= function in the app
+that produces these keys had always used unpadded month and day. I had
+not checked. I had /assumed/ ISO format because that's what I would
+have written.
+
+The regex required exactly two digits. Every legitimate key failed.
+
+The fix:
+
+#+begin_src javascript
+const NOTE_KEY_RE = /^note:\d{4}-\d{1,2}-\d{1,2}:[a-z0-9]+$/i;
+#+end_src
+
+One character changed. =\d{2}= became =\d{1,2}=.
+
+This bug is a much smaller example of a much larger phenomenon called
+/the assumption gap/. Every line of code rests on assumptions about
+the data shape, the timing, the environment. Most of those assumptions
+hold. The ones that do not are where bugs live. The way to find them
+is to verify before writing, not after.
+
+* The Five Lessons Worth Sharing
+
+These are the takeaways I would put on a slide if I had to teach this
+to colleagues or to senior students.
+
+** 1. Defence in depth catches your own bugs
+
+The two follow-up bugs above /were caught by the very check we had
+just added/. The conflict prompt was meant to protect against hostile
+or stale Gist content. Instead, on its first day, it protected Victor
+from my own miscalibrated regex.
+
+If we had only added the import allowlist /without/ the conflict
+detection, the regex bug would have silently rejected every key on
+every backup import, and nobody would have noticed until somebody
+needed to restore from a backup and found nothing. Likely months later.
+
+This is not a coincidence. Layers exist because the layer underneath
+them will eventually be wrong, and the next layer is what saves you.
+Always have at least two.
+
+** 2. False positives erode trust faster than missed threats
+
+If the conflict prompt cried wolf every time you pulled, you would
+start clicking "Overwrite local" reflexively to make the dialog go
+away. At which point the protection is functionally gone, even though
+the code still runs.
+
+Both of the follow-up patches were not about catching new threats.
+They were about removing false positives so the real warnings still
+mean something. /Tuning is part of security./
+
+** 3. Verify your assumptions before writing the code
+
+Both of the follow-up bugs came from the same source: I assumed
+without checking. I assumed the timestamps would be aligned because
+they "should be." I assumed the date format was ISO because it
+"should be."
+
+A 30-second look at the code that produces these values would have
+caught both. Spending half a minute on verification is the cheapest
+debugging you will ever do, because it happens before the bug exists.
+
+** 4. Test the security additions, not just the features
+
+When the audit pass shipped, I tested the CSP by opening a private
+window and checking the console. I did /not/ do an end-to-end push
+and pull on the Gist. If I had, both follow-up bugs would have
+surfaced before deployment instead of after.
+
+Lesson: every security pass needs a "now use the app for five
+minutes and see if anything that worked yesterday is broken" step.
+Treat it as a regression test, not a victory lap.
+
+** 5. Audits have a half-life
+
+The audit was a snapshot of the code on one day. The codebase will
+keep growing. New features will introduce new untrusted inputs, new
+storage paths, new ways for things to be wrong. A single audit is
+not a finishing line.
+
+Worth re-auditing every few major versions, or whenever you add a
+feature that touches: user-supplied input, external network calls,
+file uploads, persistent storage, or third-party scripts.
+
+* What's Next
+
+Pass 1 closed the most urgent security gaps. Two more passes are
+queued for when there is time:
+
+- *Pass 2: data-loss resilience.* Surface localStorage quota errors
+  with a sticky banner. Flush pending saves on tab close. Listen for
+  storage events so multiple tabs do not overwrite each other. Confirm
+  before "No lesson" wipes existing topic text.
+
+- *Pass 3: readability.* Run the file through Prettier. Rename the
+  cryptic variables. Add header comments to every top-level function.
+  Extract the duplicated quick-edit logic into a hook. This is the
+  pass that turns the codebase from a working artifact into a
+  teaching resource.
+
+If you want to follow along, the version history is in =CHANGELOG.md=
+in the repo, and the live audit findings are linked from there.
+
+* For the Curious
+
+A few breadcrumbs if any of this caught your attention and you want
+to dig deeper:
+
+- *MDN web docs on SRI:* https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity
+- *MDN web docs on CSP:* https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
+- *OWASP Top Ten:* the standard reference list of the most common web
+  application security risks. Worth reading once a year even if you
+  are not a security professional.
+- *Defensive Programming chapter in "Code Complete" by Steve McConnell:*
+  the canonical software-engineering text on the mindset of "what if
+  this assumption is wrong?"
+
+The most important thing is the mindset, not the tools. Ask "how
+could this go wrong?" before "how do I make this work?". Two passes
+through that question will save you more bugs than any specific
+technique.
