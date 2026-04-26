@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 1.4.1 — 2026-04-27
+
+### Fixes
+- Gist sync conflict detection no longer false-positives after a successful push. Previously the local "last sync" timestamp was set to `Date.now()` on the client, but the gist's own `_meta.synced` was set milliseconds earlier inside `getAllData()` (before the network round trip). The two timestamps drifted by 1-3 seconds, which made every subsequent pull report the gist as "older than your last sync". The fix anchors local `planner-last-sync` to the same `_meta.synced` value that lives in the gist, so a clean round-trip leaves both sides in agreement.
+
+---
+
 ## 1.4.0 — 2026-04-26
 
 ### Security hardening (audit pass 1)

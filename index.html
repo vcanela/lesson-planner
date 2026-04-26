@@ -801,9 +801,11 @@ function DataPanel({onClose,onImported,onSyncConn,onSyncDisc,lastSync,token,gist
         setSyncMsg(null);
       }).catch(()=>setSyncMsg({type:"error",text:"Could not access Gist"}));
     }else{
-      gistCreate(token,getAllData()).then(nid=>{
+      const data=getAllData();
+      gistCreate(token,data).then(nid=>{
         setGistId(nid);
-        localStorage.setItem("planner-last-sync",new Date().toISOString());
+        // Use the same timestamp we just embedded in the gist so the next pull sees them as equal.
+        localStorage.setItem("planner-last-sync",data._meta.synced);
         setSyncMsg({type:"ok",text:"Created Gist: "+nid.slice(0,8)+"..."});
         if(onSyncConn)onSyncConn(token,nid);
       }).catch(()=>setSyncMsg({type:"error",text:"Failed. Check token has gist scope."}));
@@ -820,7 +822,8 @@ function DataPanel({onClose,onImported,onSyncConn,onSyncDisc,lastSync,token,gist
       const conflict=checkSyncConflict(data);
       if(conflict){setPullConflict({data,conflict});setSyncMsg(null);return}
       importAllData(data);
-      localStorage.setItem("planner-last-sync",new Date().toISOString());
+      // Anchor local last-sync to the gist's own timestamp so a re-pull doesn't appear as a regression.
+      localStorage.setItem("planner-last-sync",(data._meta&&data._meta.synced)||new Date().toISOString());
       onImported();
       setSyncMsg({type:"ok",text:"Pulled \u2713"});
     }).catch(()=>setSyncMsg({type:"error",text:"Pull failed"}));
@@ -828,13 +831,14 @@ function DataPanel({onClose,onImported,onSyncConn,onSyncDisc,lastSync,token,gist
   const confirmPull=()=>{
     if(!pullConflict)return;
     importAllData(pullConflict.data);
-    localStorage.setItem("planner-last-sync",new Date().toISOString());
+    const d=pullConflict.data;
+    localStorage.setItem("planner-last-sync",(d._meta&&d._meta.synced)||new Date().toISOString());
     onImported();
     setPullConflict(null);
     setSyncMsg({type:"ok",text:"Pulled \u2713"});
   };
   const cancelPull=()=>{setPullConflict(null);setSyncMsg({type:"info",text:"Pull cancelled"})};
-  const doPush=()=>{if(!token||!gistId)return;setSyncMsg({type:"info",text:"Pushing..."});gistPush(token,gistId,getAllData()).then(()=>{localStorage.setItem("planner-last-sync",new Date().toISOString());setSyncMsg({type:"ok",text:"Pushed \u2713"})}).catch(()=>setSyncMsg({type:"error",text:"Push failed"}))};
+  const doPush=()=>{if(!token||!gistId)return;setSyncMsg({type:"info",text:"Pushing..."});const data=getAllData();gistPush(token,gistId,data).then(()=>{localStorage.setItem("planner-last-sync",data._meta.synced);setSyncMsg({type:"ok",text:"Pushed \u2713"})}).catch(()=>setSyncMsg({type:"error",text:"Push failed"}))};
   const cn=Object.keys(localStorage).filter(k=>k.startsWith("note:")).length;const cm=Object.keys(localStorage).filter(k=>k.startsWith("daymeta:")).length;
   const smc=syncMsg?(syncMsg.type==="ok"?"var(--success)":syncMsg.type==="error"?"var(--error)":"var(--text-muted)"):"";
   return<div className="overlay" onClick={onClose}><div onClick={e=>e.stopPropagation()} style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"var(--radius-lg)",padding:20,minWidth:300,maxWidth:460,maxHeight:"90vh",overflowY:"auto"}}>
@@ -886,11 +890,11 @@ function App(){
   useEffect(()=>{if(!eng)return;const p={};eng.terms.forEach(term=>{eng.getTermWks(term).flat().filter(eng.isSD).forEach(d=>{const k=dk(d),v=sGet(`daymeta:${k}`);if(v)p[k]=nM(v)})});mcR.current={...mcR.current,...p};setMC(c=>({...c,...p}))},[eng]);
   // Debounced push to gist. On success, record `planner-last-sync` so future pulls can detect
   // whether the gist has gone backwards (e.g. an older copy from another device or a hostile gist).
-  const triggerSync=useCallback(()=>{const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");if(!tok||!gid)return;clearTimeout(syncTimer.current);syncTimer.current=setTimeout(()=>{setSyncSt("syncing");gistPush(tok,gid,getAllData()).then(()=>{localStorage.setItem("planner-last-sync",new Date().toISOString());setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),3000)}).catch(()=>{setSyncSt("error");setTimeout(()=>setSyncSt("idle"),5000)})},4000)},[]);
+  const triggerSync=useCallback(()=>{const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");if(!tok||!gid)return;clearTimeout(syncTimer.current);syncTimer.current=setTimeout(()=>{setSyncSt("syncing");const data=getAllData();gistPush(tok,gid,data).then(()=>{localStorage.setItem("planner-last-sync",data._meta.synced);setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),3000)}).catch(()=>{setSyncSt("error");setTimeout(()=>setSyncSt("idle"),5000)})},4000)},[]);
   // Startup auto-pull. If the gist appears older than our last successful sync, or if it has
   // fewer entries than local storage, we DO NOT clobber. The sync state goes to "conflict" so
   // the user can open the Data Panel and resolve manually with full visibility.
-  useEffect(()=>{const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");if(!tok||!gid)return;setSyncSt("syncing");gistPull(tok,gid).then(data=>{const conflict=checkSyncConflict(data);if(conflict){setSyncSt("conflict");return}importAllData(data);localStorage.setItem("planner-last-sync",new Date().toISOString());const nc=migrateConfig(sGet("planner-config"));if(nc)setCfg(nc);const p={};if(eng)eng.terms.forEach(term=>{eng.getTermWks(term).flat().filter(eng.isSD).forEach(d=>{const k=dk(d),v=sGet(`daymeta:${k}`);if(v)p[k]=nM(v)})});mcR.current=p;setMC(p);setGR(r=>r+1);setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),3000)}).catch(()=>{setSyncSt("error");setTimeout(()=>setSyncSt("idle"),5000)})},[]);
+  useEffect(()=>{const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");if(!tok||!gid)return;setSyncSt("syncing");gistPull(tok,gid).then(data=>{const conflict=checkSyncConflict(data);if(conflict){setSyncSt("conflict");return}importAllData(data);localStorage.setItem("planner-last-sync",(data._meta&&data._meta.synced)||new Date().toISOString());const nc=migrateConfig(sGet("planner-config"));if(nc)setCfg(nc);const p={};if(eng)eng.terms.forEach(term=>{eng.getTermWks(term).flat().filter(eng.isSD).forEach(d=>{const k=dk(d),v=sGet(`daymeta:${k}`);if(v)p[k]=nM(v)})});mcR.current=p;setMC(p);setGR(r=>r+1);setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),3000)}).catch(()=>{setSyncSt("error");setTimeout(()=>setSyncSt("idle"),5000)})},[]);
   useEffect(()=>{window._plannerSync=triggerSync;window._plannerGamRefresh=()=>setGR(r=>r+1);return()=>{window._plannerSync=null;window._plannerGamRefresh=null}},[triggerSync]);
 
   const themeKey=cfg&&cfg.theme||"physics";
