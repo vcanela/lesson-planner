@@ -6,6 +6,19 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 1.3.0 — 2026-04-26
+
+### Features
+- **Day/night toggle**: a sun/moon button in the nav bar instantly flips between day and night mode from any view, preserving your bold/non-bold preference.
+- **"This week" vertical bar**: the Lab view's weekly progress visual has been replaced with a clean vertical fill bar. Milestone markers sit at their percentage positions along the bar, filling as you plan more periods.
+- **Lab view clarity**: the XP & Level card now has a clear heading and explanatory subtitle. A "Your progress" label separates the stats tiles from the XP card.
+
+### Fixes
+- Clicking an already-open quick-edit panel in Week View or Class View now closes it (click-to-toggle), instead of requiring the X button.
+- Coverage-by-class bars in Lab view are now taller (8 px) and fully opaque, making them much easier to read.
+
+---
+
 ## 1.2.0 — 2026-04-24
 
 ### Features

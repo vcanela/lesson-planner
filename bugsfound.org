@@ -62,3 +62,23 @@ A bit of logic coding involved here... From week view, if the week displayed is 
 * DONE Lab gamification off switch
 CLOSED: [2026-04-24 Fri 11:33]
 Some users want a cleaner interface, with less "stuff" on it. Could you add a toggle on/off for the gamification aspect of it? XP bar, awards, but leave the x/x planned indicator. This should be recoverable if they wish to. So actually, the switch is only a visibility switch, the counting and processing should still happen as normal, just not displayed. Put this switch into the Setup section.
+
+* DONE Double click toggles
+CLOSED: [2026-04-26 Sun 10:00]
+It would be great to toggle with a double click a show more/less (kind of like the current functionality in Day view, if you click the lesson title repeatedly you cycle through show and hide the lesson description/title). Currently in Week view and in Class view, clicking again does not hide the section that has just opened.
+
+* DONE Revamp on "This week" of the game
+CLOSED: [2026-04-26 Sun 10:00]
+The "This week" cartoon is difficult to understand, perhaps a vertical fillable bar would work better: all the states of planning are displayed and I'm more motivated to "fill the bar".
+
+* DONE Too faint progress bar
+CLOSED: [2026-04-26 Sun 10:00]
+In the Lab view, "Coverage by class", the colour of the fill bars is too faint to see easily. It improves a bit with night mode, but could use more contrast.
+
+* DONE Global day/night mode
+CLOSED: [2026-04-26 Sun 10:00]
+It would be great to have an overall button pair of day/night view. If only for the session, but if I am working and the sun sets, I'd like to quickly toggle the day/night from any view, also keeping my option of "bold" or "not bold". So let's say I was viewing in "day bold", then clicking the night button would change this to "night bold".
+
+* DONE More clarity in Lab view,
+CLOSED: [2026-04-26 Sun 10:00]
+Achievements VS ""week planning state" VS "experience state", is kind of confusing. How can I know where I am in the experience ladder? This should be separate from achievements or not? the week view I understand as keeping me engaged short term? Please give me more clarity here.
