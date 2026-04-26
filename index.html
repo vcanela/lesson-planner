@@ -249,11 +249,13 @@ function sGet(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null
 function sSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch{return false}}
 function getAllData(){const d={};Object.keys(localStorage).forEach(k=>{if(k.startsWith("note:")||k.startsWith("daymeta:"))d[k]=sGet(k)});d._meta={synced:new Date().toISOString(),version:1};const cfg=sGet("planner-config");if(cfg)d._config=cfg;return d}
 
-// Key-allowlist: only "_config", "note:YYYY-MM-DD:<periodId>", and "daymeta:YYYY-MM-DD" are accepted.
+// Key-allowlist: only "_config", "note:<date>:<periodId>", and "daymeta:<date>" are accepted.
+// Note: the date portion is the result of dk() which uses unpadded month/day (e.g. "2026-3-23"),
+// so the regex deliberately accepts 1-2 digit months and days. Years are still strictly 4 digits.
 // Anything else (including unknown localStorage keys an attacker might smuggle in) is recorded in `skipped`.
 // Each value is shape-checked (must be a non-array object) before being written.
-const NOTE_KEY_RE=/^note:\d{4}-\d{2}-\d{2}:[a-z0-9]+$/i;
-const META_KEY_RE=/^daymeta:\d{4}-\d{2}-\d{2}$/i;
+const NOTE_KEY_RE=/^note:\d{4}-\d{1,2}-\d{1,2}:[a-z0-9]+$/i;
+const META_KEY_RE=/^daymeta:\d{4}-\d{1,2}-\d{1,2}$/i;
 function importAllData(data){
   if(!data||typeof data!=="object"||Array.isArray(data))return{imported:0,skipped:[],error:"Not a backup object"};
   const skipped=[];let imported=0;

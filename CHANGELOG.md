@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 1.4.2 — 2026-04-27
+
+### Fixes
+- Import allowlist regex was too strict on date format. Note and daymeta keys store dates in the same form `dk()` produces, which uses unpadded month and day (e.g. `note:2026-3-23:p5`). The v1.4.0 regex required `\d{2}-\d{2}` and so rejected every legitimate key. Symptom: backup imports surfaced all keys as "unrecognised" and `checkSyncConflict` counted remote entries as 0, falsely flagging every healthy gist as having "fewer entries than local copy". Fix: relaxed the regex to `\d{1,2}-\d{1,2}` for month and day; year is still strictly 4 digits.
+
+---
+
 ## 1.4.1 — 2026-04-27
 
 ### Fixes
