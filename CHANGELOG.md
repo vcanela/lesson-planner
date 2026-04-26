@@ -6,6 +6,22 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 1.5.1 — 2026-04-27
+
+### Readability (audit pass 3)
+No behaviour changes. The codebase is now substantially more legible as a teaching example.
+
+- **Architecture overview** comment block at the top of the script tag, explaining data shapes, localStorage key conventions, the component hierarchy, the date engine, and the security posture. About 60 lines.
+- **Header comments on every top-level function and component**: `compGam`, `useAutoSave`, `makeDateEngine`, `migrateConfig`, `syncHolsToDZ`, `getAllData`, `gistCreate`/`gistPush`/`gistPull`, `cycD`, `nearSD`, `PCard`, `DayView`, `TermView`, `WeekView`, `ClassView`, `LabView`, `WeeklyBar`, `SettingsView`, `DataPanel`, `App`, plus the small primitives (`Btn`, `SvH`, `AInp`, `CBadge`, `MTag`, `XpStrip`, `Badges`).
+- **Inline block comment on the cycle-day calculator** (`cycD`) explaining the anchor-based walk, the forward and backward branches, and the double-modulo trick for negative results. This is the cleverest piece of code in the file and was previously the most opaque.
+- **Inline annotations on `compGam`** breaking the gamification pipeline into named steps (active term lookup, two-pass calcStats, streak vs longest-streak, achievement triggers, XP and level lookup).
+- **Per-clause annotations on `migrateConfig`** explaining which legacy shape each clause handles.
+- **Named constants for ten magic numbers**: `XP_PER_LESSON`, `XP_PER_PERFECT_WEEK`, `STREAK_THRESHOLD_PCT`, `ALL_HALF_THRESHOLD_PCT`, `BLUR_SAVE_MS`, `STATUS_PILL_MS`, `SYNC_DEBOUNCE_MS`, `SYNC_STATUS_OK_MS`, `SYNC_STATUS_ERR_MS`, `CYCLE_WALK_MAX_DAYS`.
+
+The cryptic short identifiers (`compGam`, `eN`, `dk`, `sGet`, etc.) are deliberately left in place for now. A bulk rename is planned as a separate pass.
+
+---
+
 ## 1.5.0 — 2026-04-27
 
 ### Data-loss resilience (audit pass 2)

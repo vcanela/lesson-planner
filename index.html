@@ -178,7 +178,113 @@ textarea,input,button,select{font-family:'Inter',system-ui,sans-serif}
 <body>
 <div id="root"></div>
 <script type="text/babel">
+/* ════════════════════════════════════════════════════════════════════════════
+ * LESSON PLANNER — ARCHITECTURE OVERVIEW
+ * ════════════════════════════════════════════════════════════════════════════
+ *
+ * This is a single-file React app. All state lives in localStorage; an optional
+ * GitHub Gist is used as cross-device sync. There is no server.
+ *
+ * KEY DATA SHAPES (all stored as JSON in localStorage)
+ *
+ *   planner-config         { school, cycleDays, terms[], holidays[], dayZeros[],
+ *                            classes[], timetable, anchor, theme, exportStyle, ...
+ *                            userName, showGam }
+ *
+ *   note:<date>:<periodId>  { subject, notes, resources, status }
+ *                          status === "nl" means "No lesson" (assembly etc.)
+ *                          date format: YYYY-M-D (UNPADDED; produced by dk())
+ *                          periodId: "p1".."p6"
+ *
+ *   daymeta:<date>          { mmType, dayNotes, day0label, reflections }
+ *                          mmType is the mid-morning block type (tutor/deans/fullsch/chapel)
+ *
+ *   planner-gh-token        GitHub PAT with `gist` scope (string)
+ *   planner-gist-id         The Gist holding the cloud-sync copy (string)
+ *   planner-last-sync       ISO timestamp anchored to gist's _meta.synced
+ *   planner-theme           Display mode (light / dark / light-hc / dark-hc)
+ *
+ * COMPONENT HIERARCHY (top-down)
+ *
+ *   App
+ *     header (nav tabs, day/night toggle, data button)
+ *     storage-failed banner (when localStorage quota is hit)
+ *     <DataPanel> (modal overlay, sync + import/export)
+ *     one of:
+ *       <TermView>      — term-at-a-glance grid, click into a day or week
+ *       <WeekView>      — five-day grid with quick-edit panel per period
+ *       <DayView>       — single day, periods stacked, full edit per period
+ *       <ClassView>     — all lessons for one class across selected term(s)
+ *       <LabView>       — gamification dashboard (XP, weekly bar, achievements)
+ *       <SettingsView>  — config editor (terms, holidays, classes, timetable, ...)
+ *
+ * THE KEY ENGINE
+ *
+ *   makeDateEngine(cfg) returns an object exposing:
+ *     isSD(d)   — is d a school day? (weekday & in term & not a holiday)
+ *     cycD(d)   — what's d's rotation cycle day (1..N), or 0 if it's a Day 0 event
+ *     nearSD(d, dir) — walk forward/back from d to find the next school day
+ *     getTermWks(term) — list of [Mon..Fri] weeks within a term
+ *     timetable, classMap, classCodes, PIDS, terms, ...
+ *
+ *   The cycle-day calculation is the cleverest piece of code in the file. It
+ *   walks teaching-days from a user-defined anchor, skipping weekends, holidays
+ *   and Day 0 events, to compute a number 1..N. See cycD() for full details.
+ *
+ * DATA FLOW
+ *
+ *   Saves go through useAutoSave, which debounces by 80ms, writes via sSet,
+ *   and on success notifies window._plannerSync (debounced gist push) and
+ *   window._plannerGamRefresh (recompute XP). Failed writes (quota) trigger
+ *   _storageFailListeners; the App component shows a sticky banner.
+ *
+ *   Pulls (manual or startup auto-pull) run through checkSyncConflict before
+ *   importAllData. importAllData allowlists keys against NOTE_KEY_RE /
+ *   META_KEY_RE / "_config" and shape-checks each value before writing.
+ *
+ * SECURITY POSTURE (audit pass 1, v1.4.0)
+ *
+ *   - SRI hashes on all CDN scripts (React, ReactDOM, Babel)
+ *   - CSP meta tag restricting script/style/connect/font sources
+ *   - Backup and Gist imports allowlisted by key shape and value shape
+ *   - Gist sync conflict detection (older / fewer / version-mismatch)
+ *   - Gist ID connection preview before adopting a new Gist
+ *   - Bearer token auth with explicit GitHub API version header
+ *
+ *   See security-walkthrough.org for the full story and the lessons learned.
+ *
+ * FOR FUTURE READERS
+ *
+ *   The single-letter / two-letter naming convention (sGet, eN, dk, hBlr) is a
+ *   legacy from when this file was kept compact for readability of a single
+ *   long script. A future pass will rename these to full English. Until then,
+ *   the comments above each function explain what's what.
+ * ════════════════════════════════════════════════════════════════════════════
+ */
 const {useState,useEffect,useRef,useCallback,useMemo,createContext,useContext}=React;
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * NAMED CONSTANTS — magic numbers extracted from inline use sites.
+ * ════════════════════════════════════════════════════════════════════════════
+ */
+// Gamification XP rewards.
+const XP_PER_LESSON=10;          // every planned period (or "no lesson") earns this
+const XP_PER_PERFECT_WEEK=50;    // bonus when every teaching period in a week is planned
+const STREAK_THRESHOLD_PCT=0.8;  // a week counts toward streak if >= 80% planned
+const ALL_HALF_THRESHOLD_PCT=0.5;// "every class >50%" achievement threshold
+
+// useAutoSave timing.
+const BLUR_SAVE_MS=80;           // debounce window after a field loses focus
+const STATUS_PILL_MS=2000;       // how long the "saved"/"error" pill stays visible
+
+// Cloud sync timing.
+const SYNC_DEBOUNCE_MS=4000;     // wait this long after a write before pushing to gist
+const SYNC_STATUS_OK_MS=3000;    // how long the "synced" badge stays visible
+const SYNC_STATUS_ERR_MS=5000;   // how long the "error" badge stays visible
+
+// Cycle-day walk safety bound. The walk should never run this far in practice;
+// the limit guards against runaway loops if anchor and target are inconsistent.
+const CYCLE_WALK_MAX_DAYS=60;
 
 const CfgCtx=createContext(null);
 function useCfg(){return useContext(CfgCtx)}
@@ -244,7 +350,14 @@ const THEMES={
 const THEME_KEYS=Object.keys(THEMES);
 function getTheme(key){return THEMES[key]||THEMES.physics}
 
-/* ═══ STORAGE + GIST SYNC ════════════════════════════════════════════════ */
+/* ═══ STORAGE + GIST SYNC ════════════════════════════════════════════════
+ * Thin wrappers around localStorage that return null on parse failure
+ * (sGet) and notify a listener registry on quota failure (sSet). The
+ * listener registry is how the App component shows a sticky banner when
+ * the browser refuses to store any more data.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+// sGet: read and JSON-parse one key. Returns null if missing or unparseable.
 function sGet(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null}catch{return null}}
 // Registry of callbacks fired when sSet hits a quota or other write error. The App
 // component subscribes so it can show a sticky banner and suspend gist push.
@@ -258,6 +371,9 @@ function sSet(k,v){
 // importAllData refuses payloads whose _meta.version is higher than this constant, so an old
 // client never silently ingests data from a newer planner version.
 const SCHEMA_VERSION=1;
+// getAllData: collect everything that should be exported or pushed to the gist.
+// Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
+// The timestamp is consumed by checkSyncConflict on the receiving end.
 function getAllData(){const d={};Object.keys(localStorage).forEach(k=>{if(k.startsWith("note:")||k.startsWith("daymeta:"))d[k]=sGet(k)});d._meta={synced:new Date().toISOString(),version:SCHEMA_VERSION};const cfg=sGet("planner-config");if(cfg)d._config=cfg;return d}
 
 // Key-allowlist: only "_config", "note:<date>:<periodId>", and "daymeta:<date>" are accepted.
@@ -311,43 +427,91 @@ function checkSyncConflict(incoming){
   return null;
 }
 
+// GitHub API headers. Bearer auth with explicit Accept and version header per
+// the modern GitHub recommendation. The token is a personal access token with
+// `gist` scope; it lives only in this user's localStorage and is sent over HTTPS.
 const GH_HEADERS=tok=>({"Authorization":"Bearer "+tok,"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"});
+// gistCreate: POST a fresh secret gist containing planner-data.json. Resolves to the new gist's id.
 function gistCreate(tok,data){return fetch("https://api.github.com/gists",{method:"POST",headers:{...GH_HEADERS(tok),"Content-Type":"application/json"},body:JSON.stringify({description:"Lesson Planner Data","public":false,files:{"planner-data.json":{content:JSON.stringify(data,null,2)}}})}).then(r=>{if(!r.ok)throw new Error;return r.json()}).then(j=>j.id)}
+// gistPush: PATCH the existing gist with fresh data. Resolves to true on success.
 function gistPush(tok,gid,data){return fetch("https://api.github.com/gists/"+gid,{method:"PATCH",headers:{...GH_HEADERS(tok),"Content-Type":"application/json"},body:JSON.stringify({files:{"planner-data.json":{content:JSON.stringify(data,null,2)}}})}).then(r=>{if(!r.ok)throw new Error;return true})}
+// gistPull: GET the gist and return the parsed planner-data.json. The caller is
+// expected to run checkSyncConflict on the result before calling importAllData.
 function gistPull(tok,gid){return fetch("https://api.github.com/gists/"+gid,{headers:GH_HEADERS(tok)}).then(r=>{if(!r.ok)throw new Error;return r.json()}).then(j=>{const f=j.files&&j.files["planner-data.json"];if(!f||!f.content)throw new Error;return JSON.parse(f.content)})}
 
-/* ═══ CONFIG MIGRATION ═══════════════════════════════════════════════════ */
+/* ═══ CONFIG MIGRATION ═══════════════════════════════════════════════════
+ * migrateConfig is run on every config load (from localStorage on startup
+ * and after a backup import). Each clause handles one legacy shape and
+ * upgrades it in place. New clauses get added at the bottom as the schema
+ * evolves; old ones must keep working forever, since old backups can be
+ * imported at any time.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
 function migrateConfig(cfg){
   if(!cfg)return cfg;
+  // v1.0: holidays[] used to be plain ISO date strings. Now they are {date,name} objects.
   if(cfg.holidays&&cfg.holidays.length>0&&typeof cfg.holidays[0]==="string")cfg.holidays=cfg.holidays.map(d=>({date:d,name:"Public Holiday"}));
+  // v1.0: dayZeros[] used to be plain ISO strings. Now {date,label,source} objects.
   if(cfg.dayZeros&&cfg.dayZeros.length>0&&typeof cfg.dayZeros[0]==="string")cfg.dayZeros=cfg.dayZeros.map(d=>({date:d,label:"Day 0",source:"manual"}));
+  // Ensure every dayZero has a `source` field (manual vs statutory) — added later, default "manual".
   if(cfg.dayZeros)cfg.dayZeros=cfg.dayZeros.map(d=>({...d,source:d.source||"manual"}));
+  // Ensure every class has a description (added later for the timetable picker tooltip).
   if(cfg.classes)cfg.classes=cfg.classes.map(c=>({...c,description:c.description||""}));
+  // Default theme for users who pre-date theme support.
   if(!cfg.theme)cfg.theme="physics";
   sSet("planner-config",cfg);return cfg;
 }
+// syncHolsToDZ: keep the dayZeros list in sync with the holidays list.
+// Statutory holidays automatically appear as dayZeros (the cycle pauses on them).
+// Manual dayZeros (e.g. EOTC days) are preserved untouched.
 function syncHolsToDZ(holidays,dayZeros){
   const holDates=new Set((holidays||[]).map(h=>h.date));
+  // Drop statutory dayZeros whose holiday no longer exists; keep all manual ones.
   let dz=(dayZeros||[]).filter(d=>d.source!=="statutory"||holDates.has(d.date));
   const dzDates=new Set(dz.map(d=>d.date));
+  // Add a statutory dayZero for any holiday that isn't already represented.
   (holidays||[]).forEach(h=>{if(!dzDates.has(h.date))dz.push({date:h.date,label:h.name||"Public Holiday",source:"statutory"})});
+  // Refresh statutory dayZero labels from their corresponding holiday name.
   dz=dz.map(d=>{if(d.source==="statutory"){const h=(holidays||[]).find(hh=>hh.date===d.date);if(h)return{...d,label:h.name||"Public Holiday"}}return d});
   return dz;
 }
 
-/* ═══ DATE ENGINE ════════════════════════════════════════════════════════ */
+/* ═══ DATE ENGINE ════════════════════════════════════════════════════════
+ * Date helpers and the cycle-day calculator. The cycle-day calculator is
+ * the most domain-specific piece of code in the file — it implements the
+ * "rotating timetable" used by the school, where the cycle advances one
+ * day per teaching day (skipping weekends, holidays, and Day 0 events).
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+// dk: short date key for a Date. Format is YYYY-M-D with UNPADDED month/day
+// (e.g. "2026-3-23" not "2026-03-23"). This format is used as a localStorage
+// key suffix throughout: note:<dk>:<pid> and daymeta:<dk>. Do not pad these.
 const dk=d=>`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+// dck: same as dk but with month+1, used internally for set-membership checks
+// against ISO-like strings produced from cfg.holidays / cfg.dayZeros.
 const dck=d=>`${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+// Display formatters. fmtF = "Monday, 23 March 2026". fmtS = "Mon, 23 Mar".
 const fmtF=d=>d.toLocaleDateString("en-NZ",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
 const fmtS=d=>d.toLocaleDateString("en-NZ",{weekday:"short",day:"numeric",month:"short"});
+// fmtISO/parseISO: round-trip ISO 8601 date (YYYY-MM-DD, padded). Used for cfg storage.
 const fmtISO=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),dd=String(d.getDate()).padStart(2,"0");return`${y}-${m}-${dd}`};
 const parseISO=s=>{const[y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)};
+// isWE: true if Saturday or Sunday.
 const isWE=d=>{const w=d.getDay();return w===0||w===6};
+// addD: add n days to a date, returning a new Date. Wall-clock based (DST-safe).
 const addD=(d,n)=>{const r=new Date(d);r.setDate(r.getDate()+n);return r};
+// getMon: return the Monday of the week containing d (handles Sunday correctly).
 function getMon(d){const r=new Date(d),w=r.getDay();r.setDate(r.getDate()-(w===0?6:w-1));r.setHours(0,0,0,0);return r}
+// getPlanMon: like getMon but if d is a weekend, returns the Monday of the *next* week.
+// Used for "where should the planner default to" on weekend opens.
 function getPlanMon(d){const w=d.getDay();if(w===0||w===6){const r=new Date(d);r.setDate(r.getDate()+(w===0?1:2));r.setHours(0,0,0,0);return r}return getMon(d)}
+// getWDs: return [Mon, Tue, Wed, Thu, Fri] for the week containing b.
 const getWDs=b=>{const m=getMon(b);return[0,1,2,3,4].map(i=>addD(m,i))};
 
+// makeDateEngine: build the canonical "what day is what" object from a config.
+// Holds the timetable, term boundaries, holiday/dayZero sets, and exposes the
+// cycle-day calculator (cycD), school-day predicate (isSD), and various walks.
+// Consumed by every view via a React context (CfgCtx / useCfg).
 function makeDateEngine(cfg){
   if(!cfg)return null;
   const holDates=(cfg.holidays||[]).map(h=>typeof h==="string"?h:h.date);
@@ -376,13 +540,49 @@ function makeDateEngine(cfg){
       }
     }return null;
   }
-  function nearSD(d,dir){let x=addD(d,dir);for(let i=0;i<60;i++){if(isSD(x))return x;x=addD(x,dir)}return null}
+  // nearSD: walk forward (dir=+1) or back (dir=-1) one day at a time until we hit
+  // a school day, or give up after CYCLE_WALK_MAX_DAYS. Used for Prev/Next nav
+  // and for snapping to a school day when entering Day View on a holiday.
+  function nearSD(d,dir){let x=addD(d,dir);for(let i=0;i<CYCLE_WALK_MAX_DAYS;i++){if(isSD(x))return x;x=addD(x,dir)}return null}
+  /*
+   * cycD: compute the rotation cycle day for `date`, in 1..nCycle.
+   *
+   * Returns:
+   *   null  — not a school day (weekend, holiday, outside terms)
+   *   0     — Day 0 event (cycle is paused for orientation, EOTC, etc.)
+   *   1..N  — the cycle day, where N = cfg.cycleDays (typically 7)
+   *
+   * Algorithm: walk teaching days from a user-defined anchor.
+   *
+   * The user pins one date to one cycle day (anchor.date, anchor.day). To find
+   * the cycle day for any other date, we count "teaching days" between the
+   * two (isTD: school days that are not Day 0 events) and add or subtract
+   * that count from anchor.day, modulo nCycle.
+   *
+   * Forward walk (target on or after anchor): start at anchor, step +1 day,
+   * increment n on teaching days, stop when we reach the target.
+   *
+   * Backward walk: step -1 day, increment n on teaching days. The double-
+   * modulo at the end handles negative results (in JS, (-1 % 7) is -1 but
+   * we want 6).
+   *
+   * Cost is O(distance-from-anchor), which is fine — anchor is usually the
+   * current term, and views never render more than a year of dates at once.
+   */
   function cycD(date){
     const t=new Date(date);t.setHours(0,0,0,0);
-    if(!isSD(t))return null;if(isDZ(t))return 0;if(!anchor)return 1;
-    const a=new Date(anchor.date);a.setHours(0,0,0,0);let n=0,d=new Date(a);
-    if(t>=a){while(d<t){if(isTD(d))n++;d.setDate(d.getDate()+1)}return((anchor.day-1+n)%nCycle)+1}
-    else{while(d>t){d.setDate(d.getDate()-1);if(isTD(d))n++}return(((anchor.day-1-n)%nCycle)+nCycle)%nCycle+1}
+    if(!isSD(t))return null;     // weekend, holiday, or outside terms
+    if(isDZ(t))return 0;         // teaching paused: Day 0 event
+    if(!anchor)return 1;         // no anchor configured yet
+    const a=new Date(anchor.date);a.setHours(0,0,0,0);
+    let n=0,d=new Date(a);
+    if(t>=a){
+      while(d<t){if(isTD(d))n++;d.setDate(d.getDate()+1)}
+      return((anchor.day-1+n)%nCycle)+1;
+    }else{
+      while(d>t){d.setDate(d.getDate()-1);if(isTD(d))n++}
+      return(((anchor.day-1-n)%nCycle)+nCycle)%nCycle+1;
+    }
   }
   function getTermWks(term){
     const ts=new Date(term.start);ts.setHours(0,0,0,0);const te=new Date(term.end);te.setHours(23,59,59,999);
@@ -398,14 +598,42 @@ const eN=()=>({subject:"",notes:"",resources:"",status:""});
 const eM=()=>({mmType:"tutor",dayNotes:"",day0label:"",reflections:""});
 const nM=v=>({...eM(),...(v||{})});
 
-/* ═══ UNIVERSAL GAMIFICATION ENGINE ══════════════════════════════════════ */
+/* ═══ UNIVERSAL GAMIFICATION ENGINE ══════════════════════════════════════
+ * compGam: read every saved note from localStorage and compute the
+ * gamification snapshot the views need.
+ *
+ * Args:
+ *   eng       — date engine (from makeDateEngine), or null
+ *   pwn       — the "current" week number (used as the streak's reference week)
+ *   themeKey  — which theme's level titles / achievement icons to use
+ *
+ * Returns a flat object consumed by XpStrip, Badges, TermView, ClassView,
+ * and LabView:
+ *   cum   — cumulative stats across all terms (tp planned, tl total, sk streak, ls longest)
+ *   term  — same, but only for the active term, plus pw (perfect weeks) and per-class cd
+ *   achs  — list of achievement objects with `unlocked` bool computed against state
+ *   xp    — total XP: tp * XP_PER_LESSON + pw * XP_PER_PERFECT_WEEK + bonuses from unlocked achs
+ *   lev   — current level object {icon,title}, looked up via LEVEL_XP thresholds
+ *   nxt   — next level (or null at max)
+ *   cw    — current-week stats {p,t} for the weekly visual
+ *   th    — the theme object itself, passed through
+ *
+ * The recipe is straightforward — it's the sheer number of derived values
+ * that makes it dense. Each piece is computed once, shared via the `st`
+ * snapshot for the achievement triggers, and bundled into the return.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
 function compGam(eng,pwn,themeKey){
   const th=getTheme(themeKey);
   const empty={cum:{tp:0,tl:0,sk:0,ls:0},term:{tp:0,tl:0,pw:0,allCls:false,allHalf:false,cd:{}},sk:0,ls:0,achs:[],xp:0,lev:th.levels[0],nxt:th.levels[1],levXp:0,nxtXp:100,cw:{p:0,t:0},th,pw:0,tp:0,tl:0,wd:{},cd:{}};
   if(!eng)return empty;
   const now=new Date();now.setHours(0,0,0,0);
+  // Active-term index: pick the first term whose end is in the future, or the last term otherwise.
   let ati=0;for(let i=0;i<eng.terms.length;i++){if(now<=eng.terms[i].end){ati=i;break}else ati=i}
 
+  // calcStats: walk every school day in the given terms, count total teaching periods (tl)
+  // and planned periods (tp), and roll up by week (wd) and by class (cd). This is the only
+  // place that touches localStorage in compGam; everything else is derived from these counts.
   function calcStats(termList){
     const wd={},cd={};let tp=0,tl=0;
     termList.forEach(term=>{eng.getTermWks(term).flat().forEach(d=>{
@@ -417,31 +645,62 @@ function compGam(eng,pwn,themeKey){
     })});
     const pw=Object.values(wd).filter(w=>w.t>0&&w.p===w.t).length;
     const allCls=eng.classCodes.length>0&&eng.classCodes.every(c=>cd[c]&&cd[c].p>0);
-    const allHalf=eng.classCodes.length>0&&eng.classCodes.every(c=>{const d=cd[c];return d&&d.p>d.t*.5});
+    const allHalf=eng.classCodes.length>0&&eng.classCodes.every(c=>{const d=cd[c];return d&&d.p>d.t*ALL_HALF_THRESHOLD_PCT});
     return{tp,tl,pw,wd,cd,allCls,allHalf};
   }
 
+  // Two passes: cumulative (all terms) and active-term-only.
   const cum=calcStats(eng.terms);
   const at=eng.terms[ati];const term=at?calcStats([at]):{tp:0,tl:0,pw:0,wd:{},cd:{},allCls:false,allHalf:false};
 
+  // Streak (sk): count consecutive weeks ending at pwn where >=80% of teaching periods were planned.
+  // Walk weeks in reverse-chronological order; stop as soon as a week falls below threshold.
   const sorted=Object.keys(cum.wd).map(Number).filter(n=>n<=pwn).sort((a,b)=>b-a);
-  let sk=0;for(const wn of sorted){const w=cum.wd[wn];if(w&&w.t>0&&w.p/w.t>=.8)sk++;else break}
-  let longest=0,run=0;Object.keys(cum.wd).map(Number).sort((a,b)=>a-b).forEach(wn=>{const w=cum.wd[wn];if(w&&w.t>0&&w.p/w.t>=.8){run++;if(run>longest)longest=run}else run=0});
+  let sk=0;for(const wn of sorted){const w=cum.wd[wn];if(w&&w.t>0&&w.p/w.t>=STREAK_THRESHOLD_PCT)sk++;else break}
+  // Longest streak (ls): walk weeks in chronological order, track the longest run of >=80% weeks.
+  // This is independent of `sk`: the longest streak might not be the current one.
+  let longest=0,run=0;Object.keys(cum.wd).map(Number).sort((a,b)=>a-b).forEach(wn=>{const w=cum.wd[wn];if(w&&w.t>0&&w.p/w.t>=STREAK_THRESHOLD_PCT){run++;if(run>longest)longest=run}else run=0});
 
+  // Snapshot used by the achievement triggers (each trigger's ck() reads from this).
   const st={cum:{...cum,sk,ls:longest},term};
+  // Each achievement combines its trigger (id, xp, ck) with the theme's icon/title/etc.
   const achs=ACH_TRIGGERS.map((a,i)=>({...a,...th.achs[i],unlocked:a.ck(st)}));
-  let xp=cum.tp*10+cum.pw*50;achs.forEach(a=>{if(a.unlocked)xp+=a.xp});
+  // Total XP: planned periods, perfect-week bonuses, and unlocked achievement bonuses.
+  let xp=cum.tp*XP_PER_LESSON+cum.pw*XP_PER_PERFECT_WEEK;achs.forEach(a=>{if(a.unlocked)xp+=a.xp});
+  // Look up the highest level whose XP threshold has been crossed.
   let levIdx=0;LEVEL_XP.forEach((x,i)=>{if(xp>=x)levIdx=i});
   const cw=cum.wd[pwn]||{p:0,t:0};
   return{cum,term,sk,ls:longest,achs,xp,lev:th.levels[levIdx],nxt:th.levels[levIdx+1]||null,levXp:LEVEL_XP[levIdx],nxtXp:LEVEL_XP[levIdx+1],cw,th,pw:cum.pw,tp:cum.tp,tl:cum.tl,wd:cum.wd,cd:cum.cd};
 }
 
-/* ═══ HOOKS ══════════════════════════════════════════════════════════════ */
+/* ═══ HOOKS ══════════════════════════════════════════════════════════════
+ * useAutoSave: the central save mechanism. Every editable form in the app
+ * uses this hook for its persistence.
+ *
+ * Lifecycle:
+ *   1. On mount or sk change: read sk from localStorage, merge with defaults
+ *      (dv), expose as `data`.
+ *   2. updateField(f, v): mutate the in-memory record and re-render.
+ *   3. hFoc / hBlr: cancel or schedule a save with BLUR_SAVE_MS debounce.
+ *   4. save(): synchronously call sSet, fire onSave/sync/gam-refresh hooks
+ *      on success, surface a status pill via `ss` for STATUS_PILL_MS.
+ *   5. On tab close (beforeunload/pagehide/visibilitychange): flush any
+ *      pending blur-debounce timer so typed text is never lost.
+ *
+ * Args:
+ *   sk     — localStorage key, or null/empty to disable persistence
+ *   dv     — defaults object, merged with the stored value at read time
+ *   onSave — optional callback fired with the saved record (used by Day View
+ *            to update its in-memory mc cache)
+ *
+ * Returns: { data, updateField, ss, hFoc, hBlr, save }
+ * ═══════════════════════════════════════════════════════════════════════
+ */
 function useAutoSave(sk,dv,onSave){
   const dr=useRef(dv);const[data,setData]=useState(()=>{if(!sk)return null;const s=sGet(sk);return{...dr.current,...(s||{})}});
   const ref=useRef(data||{...dv});const[ss,setSS]=useState("idle");const bt=useRef(null),st=useRef(null);
   useEffect(()=>{if(!sk){setData(null);return}const s=sGet(sk),m={...dr.current,...(s||{})};ref.current=m;setData(m);setSS("idle");return()=>{clearTimeout(bt.current);clearTimeout(st.current)}},[sk]);
-  const save=useCallback(()=>{if(!sk)return;clearTimeout(st.current);setSS("saving");const ok=sSet(sk,ref.current);if(ok&&onSave)onSave({...ref.current});if(ok&&window._plannerSync)window._plannerSync();if(ok&&window._plannerGamRefresh)window._plannerGamRefresh();setSS(ok?"saved":"error");st.current=setTimeout(()=>setSS("idle"),2000)},[sk,onSave]);
+  const save=useCallback(()=>{if(!sk)return;clearTimeout(st.current);setSS("saving");const ok=sSet(sk,ref.current);if(ok&&onSave)onSave({...ref.current});if(ok&&window._plannerSync)window._plannerSync();if(ok&&window._plannerGamRefresh)window._plannerGamRefresh();setSS(ok?"saved":"error");st.current=setTimeout(()=>setSS("idle"),STATUS_PILL_MS)},[sk,onSave]);
   // Flush any pending blur-debounce save when the tab is closing or hidden. Without this,
   // typing into a field and immediately closing the tab loses up to 80ms of input. pagehide
   // and visibilitychange cover Safari/iOS, where beforeunload is not always reliable.
@@ -455,9 +714,12 @@ function useAutoSave(sk,dv,onSave){
   },[save]);
   const updateField=useCallback((f,v)=>{const u={...ref.current,[f]:v};ref.current=u;setData({...u})},[]);
   const hFoc=useCallback(()=>clearTimeout(bt.current),[]);
-  const hBlr=useCallback(()=>{clearTimeout(bt.current);bt.current=setTimeout(save,80)},[save]);
+  const hBlr=useCallback(()=>{clearTimeout(bt.current);bt.current=setTimeout(save,BLUR_SAVE_MS)},[save]);
   return{data,updateField,ss,hFoc,hBlr,save};
 }
+// useToday: returns "today" as a midnight-aligned Date, and re-renders the
+// caller automatically when the calendar day rolls over (so a tab left open
+// overnight updates the "TODAY" highlight without a manual refresh).
 function useToday(){
   const[today,setToday]=useState(()=>{const d=new Date();d.setHours(0,0,0,0);return d});
   useEffect(()=>{const now=new Date(),tom=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1),ms=tom-now+200;const t=setTimeout(()=>{const d=new Date();d.setHours(0,0,0,0);setToday(d)},ms);return()=>clearTimeout(t)},[today]);
@@ -499,12 +761,21 @@ function TTCombo({value,onChange,classes}){
 }
 
 /* ═══ SHARED UI ══════════════════════════════════════════════════════════ */
+// Btn: a generic styled button.
 const Btn=({children,onClick,style={},disabled})=><button className="btn" onClick={onClick} disabled={disabled} style={style}>{children}</button>;
+// SvH: tiny "save handle" pill. Shows "saving" / "saved" / "failed" next to a field.
 const SvH=({ss})=>{if(!ss||ss==="idle")return null;const m={saving:["var(--text-muted)","saving..."],saved:["var(--success)","\u2713 saved"],error:["var(--error)","\u26A0 failed"]};const[c,l]=m[ss]||["",""];return<span style={{fontSize:".61rem",color:c,marginLeft:6}}>{l}</span>};
+// AInp: auto-resizing input/textarea bound to one field of a useAutoSave record.
+// `multi` switches to a textarea that grows to fit its content as you type.
 const AInp=({data,field,updateField,hFoc,hBlr,ph,multi,rows})=>{const ref=useRef(null);const val=(data&&data[field])||"";useEffect(()=>{if(multi&&ref.current){ref.current.style.height="auto";ref.current.style.height=ref.current.scrollHeight+"px"}},[val,multi]);if(!multi)return<input className="inp" value={val} onChange={e=>updateField(field,e.target.value)} onFocus={hFoc} onBlur={hBlr} placeholder={ph||""}/>;return<textarea ref={ref} className="ta" value={val} onChange={e=>{updateField(field,e.target.value);if(ref.current){ref.current.style.height="auto";ref.current.style.height=ref.current.scrollHeight+"px"}}} onFocus={hFoc} onBlur={hBlr} placeholder={ph||""} rows={rows||3}/>};
+// CBadge: pill showing a class code with its theme colour. "nc" renders as "Non-contact".
 const CBadge=({cc,style={}})=>{const eng=useCfg();const nc=!cc||cc==="nc";const clr=nc?null:(eng&&eng.classMap[cc]);return<span className="mn" style={{padding:"2px 8px",borderRadius:4,fontSize:".75rem",fontWeight:700,background:nc?"var(--nc-bg)":(clr&&clr.bg)||"var(--nc-bg)",color:nc?"var(--nc-text)":(clr&&clr.tx)||"var(--nc-text)",minWidth:84,textAlign:"center",flexShrink:0,...style}}>{nc?"Non-contact":cc}</span>};
+// MTag: small mid-morning-type chip (Tutor / Dean's Assembly / Full School Assembly / Chapel).
 const MTag=({mm,style={}})=>{const m=MMT[mm]||MMT.tutor;return<span style={{padding:"1px 5px",borderRadius:3,fontSize:".57rem",display:"inline-block",background:`var(--mm-${mm}-bg)`,color:`var(--mm-${mm}-text)`,...style}}>{m.icon} {m.short}</span>};
+// XpStrip: level icon, level title, XP bar, total XP, and streak indicator.
+// Rendered at the top of every gamification-aware view (gated by g.showGam).
 const XpStrip=({g})=>{const prog=g.nxt?(g.xp-(g.levXp||0))/((g.nxtXp||1)-(g.levXp||0))*100:100;return<div className="xps np"><span style={{fontSize:".9rem"}}>{g.lev.icon}</span><span className="hd" style={{fontWeight:600,fontSize:".7rem",color:"var(--text)",whiteSpace:"nowrap"}}>{g.lev.title}</span><div className="xpbo"><div className="xpbf" style={{width:Math.min(100,prog)+"%"}}/></div><span className="mn" style={{fontSize:".6rem",color:"var(--text-muted)",whiteSpace:"nowrap"}}>{g.xp} XP</span>{g.sk>0&&<span style={{fontSize:".65rem",whiteSpace:"nowrap"}}>{"\u{1F525}"}{g.sk}</span>}</div>};
+// Badges: row of achievement chips (locked/unlocked) shown below XpStrip.
 const Badges=({achs})=><div className="bs np">{achs.map(a=><div key={a.id} className={`bm${a.unlocked?"":" lk"}`} style={a.unlocked?{background:"var(--surface)",borderColor:"var(--accent)"}:{}}><span>{a.icon}</span><div className="bt"><strong>{a.title}</strong>{a.unlocked?" \u2713":` ${a.desc}`}</div></div>)}</div>;
 const FlagBank=()=>{const[o,setO]=useState(false);return<div className="fwb"><span onClick={()=>setO(!o)} style={{cursor:"pointer",color:"var(--flag)"}}>{"\u2691"} flags {o?"\u25B4":"\u25BE"}</span>{o&&FWORDS.map(w=><span key={w} className="fw">{w}</span>)}</div>};
 const MMBar=({val,onChange})=>{const mt=MMT[val]||MMT.tutor;return<div className="card" style={{padding:"12px 16px",marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Mid-morning block</div><div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>{Object.entries(MMT).map(([k,m])=>{const a=k===val;return<button key={k} className="pill" onClick={()=>onChange(k)} style={a?{fontWeight:700,background:`var(--mm-${k}-bg)`,color:`var(--mm-${k}-text)`,border:`1px solid var(--mm-${k}-text)`}:{}}><span>{m.icon}</span><span>{m.short}</span></button>})}<div style={{marginLeft:"auto",textAlign:"right"}}><div style={{fontSize:".72rem",color:`var(--mm-${val}-text)`,fontWeight:600}}>{mt.label}</div><div style={{fontSize:".64rem",color:"var(--text-muted)"}}>{mt.slot1} {"\u00B7"} {mt.slot2}</div></div></div></div>};
@@ -516,7 +787,13 @@ function ReflectionsPanel({meta,updateField,hFoc,hBlr,ss}){
     {open&&<div style={{marginTop:10}}><div style={{fontSize:".68rem",color:"var(--text-muted)",marginBottom:6}}>What went well? What would you change? <SvH ss={ss}/></div><AInp data={meta} field="reflections" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="End-of-day thoughts, observations, things to remember" multi rows={4}/></div>}</div>;
 }
 
-/* ═══ PERIOD CARD ════════════════════════════════════════════════════════ */
+/* ═══ PERIOD CARD ════════════════════════════════════════════════════════
+ * PCard: one period row in Day View. Collapsed by default; expands into
+ * a Quick or Detailed editor. Handles non-contact slots, breaks, and the
+ * No-Lesson toggle (with inline confirm if there's existing topic text).
+ * Reads/writes via useAutoSave on key `note:<dateKey>:<periodId>`.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
 function PCard({period,dateKey,cDay,initOpen}){
   const eng=useCfg();const cc=cDay?(eng.timetable[cDay]&&eng.timetable[cDay][period.id]||"nc"):null;const isNc=cc==="nc";
   const[open,setOpen]=useState(initOpen||false);const[mode,setMode]=useState(initOpen?"detailed":"quick");
@@ -535,7 +812,14 @@ function PCard({period,dateKey,cDay,initOpen}){
       {(mode==="quick"||isNc)?<div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}><label className="fl" style={{marginBottom:0}}>{isNc?"Notes":isNl?"Reason (optional)":"Topic / Quick note"} <SvH ss={ss}/></label>{!isNc&&(nlConfirm?<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:".62rem",color:"var(--flag)"}}>Replace topic with No Lesson?<button onMouseDown={e=>{e.preventDefault();markNL()}} style={{background:"var(--accent)",color:"var(--on-accent)",border:"none",borderRadius:3,fontSize:".6rem",padding:"2px 8px",cursor:"pointer",fontWeight:600}}>Yes</button><button onMouseDown={e=>{e.preventDefault();setNlConfirm(false)}} style={{background:"none",border:"none",fontSize:".6rem",cursor:"pointer",color:"var(--text-muted)",padding:"0 4px"}}>Cancel</button></span>:<button onMouseDown={e=>{e.preventDefault();isNl?clearNL():askNL()}} style={{background:"none",border:"none",fontSize:".65rem",cursor:"pointer",color:isNl?"var(--error)":"var(--text-muted)",padding:"0 2px"}}>{isNl?"\u2715 Remove no lesson":"No lesson"}</button>)}</div><AInp data={data} field={isNc?"notes":"subject"} updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph={isNc?"Meeting, marking, prep":isNl?"e.g. Class has an assembly":"e.g. Newton's 3rd Law"}/></div>:<><div><label className="fl">Topic / Subject <SvH ss={ss}/></label><AInp data={data} field="subject" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="e.g. Newton's 3rd Law"/></div><div><label className="flb">Notes & Tasks</label><AInp data={data} field="notes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Lesson plan, tasks" multi rows={3}/></div><div><label className="flb">Resources & Links</label><AInp data={data} field="resources" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="URLs, file names"/></div></>}</div></div>}</div>;
 }
 
-/* ═══ DAY VIEW ═══════════════════════════════════════════════════════════ */
+/* ═══ DAY VIEW ═══════════════════════════════════════════════════════════
+ * DayView: a single day, all periods stacked. The richest editor: each PCard
+ * has Quick and Detailed modes, plus a Reflections panel and Day Notes.
+ * Reads `mc` (meta cache) for the day's mid-morning type; writes via onMS.
+ * `fp` is an optional period ID to auto-expand (e.g. when navigating from
+ * Week View's "Full detail" link).
+ * ═══════════════════════════════════════════════════════════════════════
+ */
 function DayView({date,setDate,onBack,mc,onMS,fp,g}){
   const eng=useCfg();const cd=eng.cycD(date),dateKey=dk(date),isZ=cd===0,sch=eng.isSD(date);
   const twn=eng.termWkN(getWDs(date));
@@ -552,7 +836,13 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g}){
   </div>;
 }
 
-/* ═══ TERM VIEW ══════════════════════════════════════════════════════════ */
+/* ═══ TERM VIEW ══════════════════════════════════════════════════════════
+ * TermView: the term-at-a-glance grid. One row per week, one column per
+ * weekday. Each cell shows the cycle day, mid-morning type tag, and a
+ * coverage fraction (planned/total). Click a cell to open Day View, click
+ * a "Wk" button to open Week View. Defaults to the active term.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
 function TermView({onDay,onWk,mc,g,cfg}){
   const eng=useCfg();const today=useToday();const[termIdx,setTermIdx]=useState(()=>{if(!eng||!eng.terms)return 0;const now=new Date();now.setHours(0,0,0,0);let ati=0;for(let i=0;i<eng.terms.length;i++){if(now<=eng.terms[i].end){ati=i;break}else ati=i}return ati});
   const term=eng.terms[termIdx];const weeks=useMemo(()=>term?eng.getTermWks(term):[],[term]);
@@ -574,7 +864,15 @@ function TermView({onDay,onWk,mc,g,cfg}){
     <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:14,alignItems:"center"}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c];return<span key={c} className="mn" style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"2px 7px",borderRadius:3,fontSize:".63rem",fontWeight:700}}>{c}</span>})}<span style={{fontSize:".62rem",color:"var(--text-muted)",marginLeft:4}}>dots=P1{"\u2192"}P6 {"\u00B7"} fraction=planned/teaching</span></div></div>;
 }
 
-/* ═══ EXPORT HELPERS ════════════════════════════════════════════════════ */
+/* ═══ EXPORT HELPERS ════════════════════════════════════════════════════
+ * buildWkTxt / buildReflTxt: turn a week's data into a text document. The
+ * `style` parameter switches heading and bullet syntax: "org" for org-mode,
+ * "plain" for unstyled text. (Markdown was removed in v1.1.1 because macOS
+ * was flagging .md downloads as suspicious.)
+ *
+ * doDownload: trigger a browser download of the given text content.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
 function buildWkTxt(style,days,wl,wkLabel,sum,mc,eng,wNotes){
   const h1=s=>style==="org"?`* ${s}\n`:style==="plain"?`${s}\n${"=".repeat(Math.min(s.length,44))}\n`:`# ${s}\n`;
   const h2=s=>style==="org"?`** ${s}\n`:style==="plain"?`${s}\n${"-".repeat(Math.min(s.length,44))}\n`:`## ${s}\n`;
@@ -620,6 +918,13 @@ function buildReflTxt(style,days,wl,mc){
 function doDownload(content,filename){const blob=new Blob([content],{type:"text/plain"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url)}
 
 /* ═══ WEEK VIEW ══════════════════════════════════════════════════════════ */
+/* ═══ WEEK VIEW ══════════════════════════════════════════════════════════
+ * WeekView: five-day grid, six period rows per day. Click a cell to open the
+ * quick-edit panel (qe) at the bottom; type a topic, press Enter to save.
+ * The "No lesson" button has an inline confirm if there's existing topic text.
+ * The export card lets you download or copy the week as text.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
 function WeekView({base,setBase,onDet,mc,uM,mmO,setMmO,g}){
   const eng=useCfg();const today=useToday();const days=getWDs(base),wn=eng.wkN(base);
   const twn=eng.termWkN(days);const wkLabel=twn?`Term ${twn.tn}, Week ${twn.wk}`:"School Holidays";
@@ -674,6 +979,12 @@ function WeekView({base,setBase,onDet,mc,uM,mmO,setMmO,g}){
 }
 
 /* ═══ CLASS VIEW ═════════════════════════════════════════════════════════ */
+/* ═══ CLASS VIEW ═════════════════════════════════════════════════════════
+ * ClassView: every lesson for one class, in chronological order. Useful for
+ * checking continuity across the term. Same quick-edit pattern as WeekView.
+ * Filter by term using the chip row at the top; defaults to the active term.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
 function ClassView({onDet,g}){
   const eng=useCfg();const today=useToday();const[sel,setSel]=useState(eng.classCodes[0]||"");
   const[termIdx,setTermIdx]=useState(()=>{if(!eng||!eng.terms)return 0;const now=new Date();now.setHours(0,0,0,0);let ati=0;for(let i=0;i<eng.terms.length;i++){if(now<=eng.terms[i].end){ati=i;break}else ati=i}return ati});
@@ -709,6 +1020,8 @@ function ClassView({onDet,g}){
 }
 
 /* ═══ THEMED WEEKLY VISUAL ═══════════════════════════════════════════════ */
+// WeeklyBar: vertical fill bar showing this week's planning percentage with
+// theme milestones marked at 0/25/50/75/100. Used in LabView's "This Week" card.
 function WeeklyBar({pct,theme}){
   const p=Math.min(100,Math.max(0,pct));
   const ms=theme.milestones;
@@ -731,6 +1044,13 @@ function WeeklyBar({pct,theme}){
 }
 
 /* ═══ LAB VIEW ═══════════════════════════════════════════════════════════ */
+/* ═══ LAB VIEW ═══════════════════════════════════════════════════════════
+ * LabView: the gamification dashboard. Shows the weekly fill bar, the
+ * XP & Level card, the four progress stat tiles, the per-class coverage
+ * bars, and the achievements grid. All values come from the gam prop
+ * (the result of compGam, recomputed on every save).
+ * ═══════════════════════════════════════════════════════════════════════
+ */
 function LabView({g}){
   const eng=useCfg();const th=g.th;const tPct=g.term.tl>0?Math.round(g.term.tp/g.term.tl*100):0;const cwPct=g.cw.t>0?Math.round(g.cw.p/g.cw.t*100):0;
   const xpProg=g.nxt?(g.xp-(g.levXp||0))/((g.nxtXp||1)-(g.levXp||0))*100:100;const uCnt=g.achs.filter(a=>a.unlocked).length;
@@ -748,6 +1068,14 @@ function LabView({g}){
 }
 
 /* ═══ SETTINGS VIEW ══════════════════════════════════════════════════════ */
+/* ═══ SETTINGS / SETUP VIEW ══════════════════════════════════════════════
+ * SettingsView: the config editor. Each card edits one slice of cfg
+ * (display mode, school+cycle, terms, holidays, classes, timetable, anchor,
+ * theme, export style, gamification visibility). Everything runs through
+ * one local `cfg` state via `up()`; doSave persists to localStorage and
+ * notifies the App component (which rebuilds the date engine).
+ * ═══════════════════════════════════════════════════════════════════════
+ */
 function SettingsView({onSave,displayMode,setDisplayMode}){
   const[cfg,setCfg]=useState(()=>migrateConfig(sGet("planner-config")||{}));
   const up=f=>{setCfg(c=>{const next={...c,...f};if(f.holidays)next.dayZeros=syncHolsToDZ(next.holidays,next.dayZeros);return next})};
@@ -812,6 +1140,21 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
 }
 
 /* ═══ DATA PANEL ═════════════════════════════════════════════════════════ */
+/* ═══ DATA PANEL ═════════════════════════════════════════════════════════
+ * DataPanel: modal overlay accessed via the floppy-disk button. Three areas:
+ *
+ *   Cloud Sync — connect to a GitHub Gist (with preview before adopting),
+ *                manual Push / Pull / Disconnect. Pulls run through
+ *                checkSyncConflict and surface a confirmation if the gist
+ *                appears stale, smaller, or from a newer schema version.
+ *
+ *   Export     — download a JSON backup of all notes, daymeta, and config.
+ *
+ *   Import     — choose a backup file; it is parsed, validated against
+ *                the key allowlist (NOTE_KEY_RE / META_KEY_RE / _config),
+ *                and the user confirms before any data is written.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
 function DataPanel({onClose,onImported,onSyncConn,onSyncDisc,lastSync,token,gistId,setToken,setGistId}){
   const[iSt,setISt]=useState(null);const[iData,setIData]=useState(null);const[iStats,setIStats]=useState(null);const fRef=useRef(null);
   const[showTok,setShowTok]=useState(false);const[syncMsg,setSyncMsg]=useState(null);const[parseErr,setParseErr]=useState("");
@@ -898,6 +1241,23 @@ function DataPanel({onClose,onImported,onSyncConn,onSyncDisc,lastSync,token,gist
 }
 
 /* ═══ APP ═════════════════════════════════════════════════════════════════ */
+/* ═══ APP ═══════════════════════════════════════════════════════════════
+ * App: the root component. Holds:
+ *
+ *   - cfg / eng     — the config and the derived date engine
+ *   - view          — which top-level view is showing (term/week/day/...)
+ *   - mc, mcR       — daymeta cache (state for re-render + ref for stable callbacks)
+ *   - planWN        — the "current week" used as the gamification reference
+ *   - gam           — gamification snapshot (re-memoed on every save via gr counter)
+ *   - dispMode      — display mode (light/dark/light-hc/dark-hc)
+ *   - syncSt        — sync indicator state ("idle" / "syncing" / "synced" / "error" / "conflict")
+ *   - storageFailed — whether the storage-quota banner is visible
+ *
+ * Effects: gist startup auto-pull, multi-tab storage event listener,
+ * window globals (_plannerSync, _plannerGamRefresh) used by useAutoSave
+ * to fire side effects without prop drilling.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
 function App(){
   const[dispMode,setDispMode]=useState(()=>{const v=localStorage.getItem("planner-theme");if(["light","dark","light-hc","dark-hc"].includes(v))return v;return "light-hc"});
   const today=useToday();const[cfg,setCfg]=useState(()=>migrateConfig(sGet("planner-config")));
@@ -936,11 +1296,11 @@ function App(){
   useEffect(()=>{if(!eng)return;const p={};eng.terms.forEach(term=>{eng.getTermWks(term).flat().filter(eng.isSD).forEach(d=>{const k=dk(d),v=sGet(`daymeta:${k}`);if(v)p[k]=nM(v)})});mcR.current={...mcR.current,...p};setMC(c=>({...c,...p}))},[eng]);
   // Debounced push to gist. On success, record `planner-last-sync` so future pulls can detect
   // whether the gist has gone backwards (e.g. an older copy from another device or a hostile gist).
-  const triggerSync=useCallback(()=>{const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");if(!tok||!gid)return;if(storageFailedRef.current)return;clearTimeout(syncTimer.current);syncTimer.current=setTimeout(()=>{setSyncSt("syncing");const data=getAllData();gistPush(tok,gid,data).then(()=>{localStorage.setItem("planner-last-sync",data._meta.synced);setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),3000)}).catch(()=>{setSyncSt("error");setTimeout(()=>setSyncSt("idle"),5000)})},4000)},[]);
+  const triggerSync=useCallback(()=>{const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");if(!tok||!gid)return;if(storageFailedRef.current)return;clearTimeout(syncTimer.current);syncTimer.current=setTimeout(()=>{setSyncSt("syncing");const data=getAllData();gistPush(tok,gid,data).then(()=>{localStorage.setItem("planner-last-sync",data._meta.synced);setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),SYNC_STATUS_OK_MS)}).catch(()=>{setSyncSt("error");setTimeout(()=>setSyncSt("idle"),SYNC_STATUS_ERR_MS)})},SYNC_DEBOUNCE_MS)},[]);
   // Startup auto-pull. If the gist appears older than our last successful sync, or if it has
   // fewer entries than local storage, we DO NOT clobber. The sync state goes to "conflict" so
   // the user can open the Data Panel and resolve manually with full visibility.
-  useEffect(()=>{const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");if(!tok||!gid)return;setSyncSt("syncing");gistPull(tok,gid).then(data=>{const conflict=checkSyncConflict(data);if(conflict){setSyncSt("conflict");return}importAllData(data);localStorage.setItem("planner-last-sync",(data._meta&&data._meta.synced)||new Date().toISOString());const nc=migrateConfig(sGet("planner-config"));if(nc)setCfg(nc);const p={};if(eng)eng.terms.forEach(term=>{eng.getTermWks(term).flat().filter(eng.isSD).forEach(d=>{const k=dk(d),v=sGet(`daymeta:${k}`);if(v)p[k]=nM(v)})});mcR.current=p;setMC(p);setGR(r=>r+1);setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),3000)}).catch(()=>{setSyncSt("error");setTimeout(()=>setSyncSt("idle"),5000)})},[]);
+  useEffect(()=>{const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");if(!tok||!gid)return;setSyncSt("syncing");gistPull(tok,gid).then(data=>{const conflict=checkSyncConflict(data);if(conflict){setSyncSt("conflict");return}importAllData(data);localStorage.setItem("planner-last-sync",(data._meta&&data._meta.synced)||new Date().toISOString());const nc=migrateConfig(sGet("planner-config"));if(nc)setCfg(nc);const p={};if(eng)eng.terms.forEach(term=>{eng.getTermWks(term).flat().filter(eng.isSD).forEach(d=>{const k=dk(d),v=sGet(`daymeta:${k}`);if(v)p[k]=nM(v)})});mcR.current=p;setMC(p);setGR(r=>r+1);setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),SYNC_STATUS_OK_MS)}).catch(()=>{setSyncSt("error");setTimeout(()=>setSyncSt("idle"),SYNC_STATUS_ERR_MS)})},[]);
   useEffect(()=>{window._plannerSync=triggerSync;window._plannerGamRefresh=()=>setGR(r=>r+1);return()=>{window._plannerSync=null;window._plannerGamRefresh=null}},[triggerSync]);
   // Multi-tab sync. The browser fires a "storage" event in this tab when *another* tab writes
   // to localStorage. We don't get notified of our own writes, so there's no infinite loop.

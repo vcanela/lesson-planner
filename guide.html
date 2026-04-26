@@ -751,6 +751,13 @@ a:hover{text-decoration:underline}
 <h1>What's New</h1>
 <p class="section-intro">Recent updates to the planner.</p>
 
+<h2>27 April 2026 (later)</h2>
+<ul>
+  <li><strong>No new features.</strong> This release adds extensive code comments, an architecture overview at the top of the source file, and replaces magic numbers (XP rewards, debounce timings) with named constants. The app behaves exactly as before.</li>
+  <li>Aimed at making the codebase suitable as a teaching example. If you (or a student) opens <code>index.html</code> in a text editor, the hardest pieces of logic now have block comments explaining what they do and why.</li>
+  <li>The cryptic short variable names (<code>compGam</code>, <code>eN</code>, <code>dk</code>, etc.) are deliberately untouched in this release. A bulk rename is planned as a separate, isolated change so we can verify nothing breaks.</li>
+</ul>
+
 <h2>27 April 2026</h2>
 <ul>
   <li><strong>Storage-full warning</strong> &mdash; when your browser runs out of space, a red banner now appears at the top of the app explaining that recent changes have not been saved and pointing you to the Data Panel for an export. Cloud sync is suspended while the banner is visible so your Gist never receives partial data.</li>
