@@ -82,3 +82,6 @@ It would be great to have an overall button pair of day/night view. If only for 
 * DONE More clarity in Lab view,
 CLOSED: [2026-04-26 Sun 10:00]
 Achievements VS ""week planning state" VS "experience state", is kind of confusing. How can I know where I am in the experience ladder? This should be separate from achievements or not? the week view I understand as keeping me engaged short term? Please give me more clarity here.
+* DONE Double click on mouse toggles display on/off
+CLOSED: [2026-04-27 Mon 12:00]
+In both week view and in class view, when clicking on a lesson period it opens up the quick view edit. What I'd like is if I were to click again in the same lesson period, the quick view is closed. This already happens in day view, so it should be consistent with week and class view. Here's a more detailed description. When I press the button on my mouse, it actually goes away, but then removing my finger (so returning the click to its original state) re-displays the quick view edit window again.

@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 1.5.2 — 2026-04-27
+
+### Fixes
+- Click-to-toggle on Week and Class view period cells now closes the quick-edit panel correctly when you click the same period twice. The previous fix from v1.3.0 was defeated by event ordering: the input's onBlur fired between mousedown and click, clearing `qe` to null, so the click handler always saw "nothing was open" and re-opened the same period. Symptom: pressing the mouse button made the panel go away, releasing it brought the panel back. Fix: capture `qe` in a ref at mousedown time (before blur fires) and let the click handler check that captured value rather than the live state. Same pattern applied in WeekView and ClassView.
+
+---
+
 ## 1.5.1 — 2026-04-27
 
 ### Readability (audit pass 3)
