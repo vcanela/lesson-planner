@@ -6,6 +6,18 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 1.6.0 — 2026-04-27
+
+### Features
+- **Auto-pull on tab focus**: when the planner tab becomes visible after being hidden (e.g. you switch back to your computer after editing on your phone), the app now pulls fresh from the gist so cross-device edits show up without a page refresh. Throttled by `PULL_ON_FOCUS_MIN_MS` (15 s) so quick tab toggles do not spam the API. The existing conflict-detection guard still applies, so unsaved local changes will not be silently overwritten.
+
+### Fixes
+- **No-lesson reason no longer reverts to topic in Week and Class view.** The qe save handler (`sQE`) was writing `status:""` unconditionally, which downgraded a No-Lesson period back to a topic every time the user typed a reason and pressed Enter. Now `sQE` preserves the existing status, so editing a no-lesson reason keeps it as a reason. Day View already worked correctly because it uses a different code path.
+- **Backup-file import no longer requires "clicking around" to land.** `handleImport` was building the meta cache against the closed-over `eng` (which still reflects the pre-import config because `setCfg` has not committed yet). Now it builds a fresh engine from the just-imported config and walks that, so the views render correctly on first paint after import.
+- **Same fix applied to the gist startup auto-pull**, which had the identical stale-engine issue. Both call sites now share a `pullAndApply` helper.
+
+---
+
 ## 1.5.2 — 2026-04-27
 
 ### Fixes

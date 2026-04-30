@@ -286,6 +286,11 @@ const SYNC_STATUS_ERR_MS=5000;   // how long the "error" badge stays visible
 // the limit guards against runaway loops if anchor and target are inconsistent.
 const CYCLE_WALK_MAX_DAYS=60;
 
+// When the browser tab becomes visible after being hidden, we pull from the
+// gist so edits made on another device show up. Skipped if we synced within
+// this window — avoids spamming the API on quick tab-focus toggles.
+const PULL_ON_FOCUS_MIN_MS=15000;
+
 const CfgCtx=createContext(null);
 function useCfg(){return useContext(CfgCtx)}
 
@@ -936,7 +941,9 @@ function WeekView({base,setBase,onDet,mc,uM,mmO,setMmO,g}){
   const wNotes=useMemo(()=>{const m={};days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;const key=dk(d);eng.PIDS.forEach(pid=>{const n=sGet(`note:${key}:${pid}`);m[`${key}:${pid}`]={...eN(),...(n||{})}})});return m},[days.map(dk).join(","),nr]);
   const sum=useMemo(()=>{let p=0,t=0,f=0;days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{t++;const n=wNotes[`${dk(d)}:${pid}`];if(n&&(n.subject||n.notes||n.status==="nl"))p++;if(n&&(hasF(n.notes)||hasF(n.subject)))f++})});let ud=0;days.forEach(d=>{if(eng.cycD(d)===0){const m=mc[dk(d)];if(!m||!m.day0label)ud++}});return{p,t,f,ud}},[days,wNotes,mc]);
   const oQE=(key,pid,cls,date)=>{const n=wNotes[`${key}:${pid}`];setQV(n&&n.subject||"");setQE({dk:key,pid,cc:cls,date});setNlConfirm(false)};
-  const sQE=()=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=sGet(k)||eN();sSet(k,{...ex,subject:qv,status:""});setQE(null);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
+  // sQE saves the typed input. It preserves the existing status (so editing the
+  // reason of a no-lesson period does not silently downgrade it back to a topic).
+  const sQE=()=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=sGet(k)||eN();sSet(k,{...ex,subject:qv,status:ex.status||""});setQE(null);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
   // sNL writes the no-lesson state with an explicit subject (so the confirm-flow can pass "" rather than reusing whatever was typed as a topic).
   const sNL=(subj)=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=sGet(k)||eN();sSet(k,{...ex,subject:subj,status:"nl"});setQE(null);setNlConfirm(false);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
   const[nlConfirm,setNlConfirm]=useState(false);
@@ -1005,7 +1012,9 @@ function ClassView({onDet,g}){
   const nxtI=lessons.findIndex(l=>{const ld=new Date(l.date);ld.setHours(0,0,0,0);return ld>=today});
   const clr=eng.classMap[sel]||{bg:"var(--nc-bg)",tx:"var(--nc-text)",desc:""};
   const oQE=(i,l)=>{setQV(l.notes.subject||"");setQE({i,dk:l.dk,pid:l.pid,date:l.date});setNlConfirm(false)};
-  const sQE=()=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=sGet(k)||eN();sSet(k,{...ex,subject:qv,status:""});setQE(null);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
+  // sQE saves the typed input. It preserves the existing status (so editing the
+  // reason of a no-lesson period does not silently downgrade it back to a topic).
+  const sQE=()=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=sGet(k)||eN();sSet(k,{...ex,subject:qv,status:ex.status||""});setQE(null);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
   // sNL takes an explicit subject (so the confirm-flow passes "" to mean "no reason yet").
   const sNL=(subj)=>{if(!qe)return;const l=lessons[qe.i];const k=`note:${l.dk}:${l.pid}`;const ex=sGet(k)||eN();sSet(k,{...ex,subject:subj,status:"nl"});setQE(null);setNlConfirm(false);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
   const[nlConfirm,setNlConfirm]=useState(false);
@@ -1304,10 +1313,59 @@ function App(){
   // Debounced push to gist. On success, record `planner-last-sync` so future pulls can detect
   // whether the gist has gone backwards (e.g. an older copy from another device or a hostile gist).
   const triggerSync=useCallback(()=>{const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");if(!tok||!gid)return;if(storageFailedRef.current)return;clearTimeout(syncTimer.current);syncTimer.current=setTimeout(()=>{setSyncSt("syncing");const data=getAllData();gistPush(tok,gid,data).then(()=>{localStorage.setItem("planner-last-sync",data._meta.synced);setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),SYNC_STATUS_OK_MS)}).catch(()=>{setSyncSt("error");setTimeout(()=>setSyncSt("idle"),SYNC_STATUS_ERR_MS)})},SYNC_DEBOUNCE_MS)},[]);
-  // Startup auto-pull. If the gist appears older than our last successful sync, or if it has
-  // fewer entries than local storage, we DO NOT clobber. The sync state goes to "conflict" so
-  // the user can open the Data Panel and resolve manually with full visibility.
-  useEffect(()=>{const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");if(!tok||!gid)return;setSyncSt("syncing");gistPull(tok,gid).then(data=>{const conflict=checkSyncConflict(data);if(conflict){setSyncSt("conflict");return}importAllData(data);localStorage.setItem("planner-last-sync",(data._meta&&data._meta.synced)||new Date().toISOString());const nc=migrateConfig(sGet("planner-config"));if(nc)setCfg(nc);const p={};if(eng)eng.terms.forEach(term=>{eng.getTermWks(term).flat().filter(eng.isSD).forEach(d=>{const k=dk(d),v=sGet(`daymeta:${k}`);if(v)p[k]=nM(v)})});mcR.current=p;setMC(p);setGR(r=>r+1);setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),SYNC_STATUS_OK_MS)}).catch(()=>{setSyncSt("error");setTimeout(()=>setSyncSt("idle"),SYNC_STATUS_ERR_MS)})},[]);
+  // pullAndApply: shared pull-import-refresh helper used by the startup auto-pull and
+  // the visibility-change auto-pull. Bails on conflict (older / fewer / version mismatch).
+  // The meta-cache rebuild is keyed off a freshly-built engine from the just-imported
+  // config, not the stale `eng` closure — otherwise we walk the wrong term boundaries
+  // after a config import and the views render with partial data until the next event.
+  const pullAndApply=useCallback(()=>{
+    const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");
+    if(!tok||!gid)return;
+    if(storageFailedRef.current)return;
+    setSyncSt("syncing");
+    gistPull(tok,gid).then(data=>{
+      const conflict=checkSyncConflict(data);
+      if(conflict){setSyncSt("conflict");return}
+      importAllData(data);
+      localStorage.setItem("planner-last-sync",(data._meta&&data._meta.synced)||new Date().toISOString());
+      const nc=migrateConfig(sGet("planner-config"));
+      if(nc)setCfg(nc);
+      const freshEng=nc?makeDateEngine(nc):null;
+      if(freshEng){
+        const p={};
+        freshEng.terms.forEach(term=>{
+          freshEng.getTermWks(term).flat().filter(freshEng.isSD).forEach(d=>{
+            const k=dk(d),v=sGet(`daymeta:${k}`);
+            if(v)p[k]=nM(v);
+          });
+        });
+        mcR.current=p;setMC(p);
+      }
+      setGR(r=>r+1);
+      setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));
+      setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),SYNC_STATUS_OK_MS);
+    }).catch(()=>{
+      setSyncSt("error");setTimeout(()=>setSyncSt("idle"),SYNC_STATUS_ERR_MS);
+    });
+  },[]);
+  // Startup auto-pull: same conflict-aware path as pullAndApply.
+  useEffect(()=>{pullAndApply()},[]);
+  // Visibility-change auto-pull: when a teacher edits on their phone and switches
+  // back to the desktop tab (or vice versa), we pull fresh from the gist so they
+  // see the latest. Throttled so a quick tab toggle doesn't hammer the GitHub API.
+  useEffect(()=>{
+    const onVis=()=>{
+      if(document.visibilityState!=="visible")return;
+      const last=localStorage.getItem("planner-last-sync");
+      if(last){
+        const since=Date.now()-Date.parse(last);
+        if(!isNaN(since)&&since<PULL_ON_FOCUS_MIN_MS)return;
+      }
+      pullAndApply();
+    };
+    document.addEventListener("visibilitychange",onVis);
+    return()=>document.removeEventListener("visibilitychange",onVis);
+  },[pullAndApply]);
   useEffect(()=>{window._plannerSync=triggerSync;window._plannerGamRefresh=()=>setGR(r=>r+1);return()=>{window._plannerSync=null;window._plannerGamRefresh=null}},[triggerSync]);
   // Multi-tab sync. The browser fires a "storage" event in this tab when *another* tab writes
   // to localStorage. We don't get notified of our own writes, so there's no infinite loop.
@@ -1342,7 +1400,10 @@ function App(){
   const goDay=(d,pid)=>{setPrevV(view);setDetDate(d);setFP(pid||null);setView("day")};
   const goWk=d=>{setBase(d);setView("week")};
   const goDayTab=()=>{if(!detDate){let target;if(view==="week"){target=getMon(base).toDateString()===getMon(today).toDateString()?today:getMon(base)}else{target=planMon}if(eng&&!eng.isSD(target))target=eng.nearSD(target,1)||target;setDetDate(target)}setFP(null);setPrevV(view);setView("day")};
-  const handleImport=useCallback(()=>{const nc=migrateConfig(sGet("planner-config"));if(nc)setCfg(nc);const p={};if(eng)eng.terms.forEach(term=>{eng.getTermWks(term).flat().filter(eng.isSD).forEach(d=>{const k=dk(d),v=sGet(`daymeta:${k}`);if(v)p[k]=nM(v)})});mcR.current=p;setMC(p);setGR(r=>r+1);triggerSync()},[eng,triggerSync]);
+  // handleImport runs after a backup-file import lands. We build a fresh engine
+  // from the just-imported config rather than using the closed-over `eng` (which
+  // still reflects the pre-import config because setCfg has not committed yet).
+  const handleImport=useCallback(()=>{const nc=migrateConfig(sGet("planner-config"));if(nc)setCfg(nc);const freshEng=nc?makeDateEngine(nc):eng;const p={};if(freshEng)freshEng.terms.forEach(term=>{freshEng.getTermWks(term).flat().filter(freshEng.isSD).forEach(d=>{const k=dk(d),v=sGet(`daymeta:${k}`);if(v)p[k]=nM(v)})});mcR.current=p;setMC(p);setGR(r=>r+1);triggerSync()},[eng,triggerSync]);
   const onWE=isWE(today);
 
   useEffect(()=>{if(!cfg){    const blank={school:"Dio",cycleDays:7,terms:[

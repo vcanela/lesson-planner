@@ -85,3 +85,9 @@ Achievements VS ""week planning state" VS "experience state", is kind of confusi
 * DONE Double click on mouse toggles display on/off
 CLOSED: [2026-04-27 Mon 12:00]
 In both week view and in class view, when clicking on a lesson period it opens up the quick view edit. What I'd like is if I were to click again in the same lesson period, the quick view is closed. This already happens in day view, so it should be consistent with week and class view. Here's a more detailed description. When I press the button on my mouse, it actually goes away, but then removing my finger (so returning the click to its original state) re-displays the quick view edit window again.
+* DONE Setting a reason for no lesson from week view not working
+CLOSED: [2026-04-27 Mon 16:00]
+When setting the reason for no lesson from week view it reverts into a lesson title. This works from Day view, where it remains as a reason for No lesson. The bug seems to affect week view and class view.
+* DONE Some delays when syncing or importing
+CLOSED: [2026-04-27 Mon 16:00]
+I experience some delay when syncing having edited on my phone (the web app), and on my computer (the web app as well). Don't really know if this is normal or not. Also, it has happened that both indicators are green (so everything seems to be fine with the gist), but I have a different number of notes on one and the other. Finally, when importing a .json backup, nothing happens at first, and I have to click around until it all loads up.
