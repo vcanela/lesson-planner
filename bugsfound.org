@@ -91,3 +91,6 @@ When setting the reason for no lesson from week view it reverts into a lesson ti
 * DONE Some delays when syncing or importing
 CLOSED: [2026-04-27 Mon 16:00]
 I experience some delay when syncing having edited on my phone (the web app), and on my computer (the web app as well). Don't really know if this is normal or not. Also, it has happened that both indicators are green (so everything seems to be fine with the gist), but I have a different number of notes on one and the other. Finally, when importing a .json backup, nothing happens at first, and I have to click around until it all loads up.
+* DONE Dropdown hidden due to bottom of page
+CLOSED: [2026-05-01 Fri 10:00]
+When doing the setup, I got some people saying that when they were choosing their classes (in the timetable) the dropdown (with the classes choices) was not there. The problem was that it was below the bottom of the page, so they had to scroll down to see it. Not sure if the fix is either adding some extra space on the bottom, below the timetable, or perhaps a simple fix of not making this the last bubble in Setup (a good candidate for this would be the export choice, which does not involve dropdowns).

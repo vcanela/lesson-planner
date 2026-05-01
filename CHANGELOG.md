@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 1.6.1 — 2026-05-01
+
+### Fixes
+- **Timetable dropdown no longer hides off-screen.** The class-code combo (TTCombo) in Setup's Timetable section now measures the input's distance from the viewport bottom when it opens, and flips upward (drops above the input rather than below) when there is not enough room below. Setup also has 120 px of bottom padding now to give the page a comfortable tail-scroll.
+
+---
+
 ## 1.6.0 — 2026-04-27
 
 ### Features
