@@ -309,7 +309,7 @@ const ASM_T={p1:{s:"08:30",e:"09:20"},p2:{s:"09:20",e:"10:10"},mt1:{s:"10:10",e:
 const FWORDS=["todo","prepare","tbc","tbd","check","remind","follow up","incomplete","print","photocopy"];
 const FRE=/\b(todo|prepare|tbc|tbd|check|remind|follow.?up|incomplete|print|photocopy)\b/i;
 const hasF=t=>FRE.test(t||"");
-function bldP(mm){const m=MMT[mm]||MMT.tutor,T=m.asm?ASM_T:STD_T;return[{id:"p1",label:"P1",start:T.p1.s,end:T.p1.e,brk:false},{id:"p2",label:"P2",start:T.p2.s,end:T.p2.e,brk:false},{id:"mt1",label:m.slot1,start:T.mt1.s,end:T.mt1.e,brk:true},{id:"mt2",label:m.slot2,start:T.mt2.s,end:T.mt2.e,brk:true},{id:"p3",label:"P3",start:T.p3.s,end:T.p3.e,brk:false},{id:"p4",label:"P4",start:T.p4.s,end:T.p4.e,brk:false},{id:"l",label:"Lunch",start:T.l.s,end:T.l.e,brk:true},{id:"p5",label:"P5",start:T.p5.s,end:T.p5.e,brk:false},{id:"p6",label:"P6",start:T.p6.s,end:T.p6.e,brk:false}]}
+function bldP(mm){const m=MMT[mm]||MMT.tutor,T=m.asm?ASM_T:STD_T;return[{id:"P1",label:"P1",start:T.p1.s,end:T.p1.e,brk:false},{id:"P2",label:"P2",start:T.p2.s,end:T.p2.e,brk:false},{id:"mt1",label:m.slot1,start:T.mt1.s,end:T.mt1.e,brk:true},{id:"mt2",label:m.slot2,start:T.mt2.s,end:T.mt2.e,brk:true},{id:"P3",label:"P3",start:T.p3.s,end:T.p3.e,brk:false},{id:"P4",label:"P4",start:T.p4.s,end:T.p4.e,brk:false},{id:"l",label:"Lunch",start:T.l.s,end:T.l.e,brk:true},{id:"P5",label:"P5",start:T.p5.s,end:T.p5.e,brk:false},{id:"P6",label:"P6",start:T.p6.s,end:T.p6.e,brk:false}]}
 
 /* ═══ THEME ENGINE ═══════════════════════════════════════════════════════ */
 const LEVEL_XP=[0,100,300,600,1000,1800,3000];
@@ -410,6 +410,9 @@ function importAllData(data){
     }
     skipped.push(k+" (unrecognised key)");
   });
+  // Imported notes/daymeta may use the v1 shape; canonicalise them now so the rest of
+  // the app sees a single shape regardless of where the data came from.
+  if(imported>0)migrateStorage();
   return{imported,skipped};
 }
 
@@ -465,7 +468,57 @@ function migrateConfig(cfg){
   if(cfg.classes)cfg.classes=cfg.classes.map(c=>({...c,description:c.description||""}));
   // Default theme for users who pre-date theme support.
   if(!cfg.theme)cfg.theme="physics";
+  // v2: period keys upper-cased (p1→P1) and B-slot keys (B0, B1a, B1b, B2a, B2b, B3) seeded per cycle day.
+  // Idempotent: data already in v2 shape passes through unchanged.
+  if(cfg.timetable&&typeof cfg.timetable==="object"){
+    Object.keys(cfg.timetable).forEach(d=>{
+      const day=cfg.timetable[d];
+      if(!day||typeof day!=="object")return;
+      for(let i=1;i<=6;i++){
+        const lo="p"+i,up="P"+i;
+        if(lo in day&&!(up in day)){day[up]=day[lo]}
+        if(lo in day)delete day[lo];
+      }
+      ["B0","B1a","B1b","B2a","B2b","B3"].forEach(b=>{if(!(b in day))day[b]=null});
+    });
+  }
+  // mmType was per-day state in daymeta; defensively strip if it ever leaked into top-level config.
+  if("mmType" in cfg)delete cfg.mmType;
   sSet("planner-config",cfg);return cfg;
+}
+/* ═══ STORAGE MIGRATION ══════════════════════════════════════════════════
+ * migrateStorage runs once at startup (after migrateConfig) and again after
+ * a backup import. It re-keys v1 note entries (lower-case period IDs) to v2
+ * upper-case, and seeds an empty overrides map on every daymeta entry.
+ *
+ * Note: mmType is intentionally preserved on existing daymeta entries during
+ * step 1 so that MMBar continues to render the user's per-day choice until
+ * the MMBar component is removed (step 5). At that point a follow-up pass
+ * will strip mmType.
+ *
+ * Idempotent: a second run is a no-op.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+function migrateStorage(){
+  const noteRe=/^note:(\d{4}-\d{1,2}-\d{1,2}):(p[1-6])$/;
+  const renames=[];
+  Object.keys(localStorage).forEach(k=>{
+    const m=k.match(noteRe);
+    if(m)renames.push({old:k,next:`note:${m[1]}:${m[2].toUpperCase()}`});
+  });
+  renames.forEach(({old,next})=>{
+    const v=localStorage.getItem(old);
+    if(v!==null&&localStorage.getItem(next)===null)localStorage.setItem(next,v);
+    localStorage.removeItem(old);
+  });
+  Object.keys(localStorage).forEach(k=>{
+    if(!k.startsWith("daymeta:"))return;
+    const v=sGet(k);
+    if(!v||typeof v!=="object"||Array.isArray(v))return;
+    if(!("overrides" in v)||typeof v.overrides!=="object"||v.overrides===null){
+      sSet(k,{...v,overrides:{}});
+    }
+  });
 }
 // syncHolsToDZ: keep the dayZeros list in sync with the holidays list.
 // Statutory holidays automatically appear as dayZeros (the cycle pauses on them).
@@ -531,7 +584,7 @@ function makeDateEngine(cfg){
   const classMap={};classes.forEach(c=>{classMap[c.code]={bg:c.colour,tx:TEXT_FOR_BG[c.colour]||"#000",desc:c.description||""}});
   const classCodes=classes.map(c=>c.code);
   const nCycle=cfg.cycleDays||7;
-  const PIDS=[];for(let i=1;i<=6;i++)PIDS.push("p"+i);
+  const PIDS=[];for(let i=1;i<=6;i++)PIDS.push("P"+i);
   const isPH=d=>holSet.has(dck(d));const isDZ=d=>dzSet.has(dck(d));
   const inT=d=>terms.some(t=>d>=t.start&&d<=t.end);
   const isSD=d=>!isWE(d)&&!isPH(d)&&inT(d);const isTD=d=>isSD(d)&&!isDZ(d);
@@ -1155,7 +1208,7 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
       <div className="tt-grid" style={{gridTemplateColumns:`60px repeat(${cfg.cycleDays||7},1fr)`,overflowX:"auto"}}>
         <div/>
         {Array.from({length:cfg.cycleDays||7},(_,i)=><div key={i+1} className="hd" style={{textAlign:"center",fontSize:".7rem",fontWeight:600,color:"var(--text-muted)"}}>Day {i+1}</div>)}
-        {["p1","p2","p3","p4","p5","p6"].map((pid,pi)=><React.Fragment key={pid}>
+        {["P1","P2","P3","P4","P5","P6"].map((pid,pi)=><React.Fragment key={pid}>
           <div className="hd" style={{fontSize:".72rem",fontWeight:600,color:"var(--accent)",display:"flex",alignItems:"center"}}>P{pi+1}</div>
           {Array.from({length:cfg.cycleDays||7},(_,di)=>{const day=di+1;const val=((cfg.timetable||{})[day]||{})[pid]||"";return <TTCombo key={`${day}-${pid}`} value={val} classes={classes} onChange={v=>{const tt={...(cfg.timetable||{})};if(!tt[day])tt[day]={};tt[day][pid]=v;up({timetable:tt})}}/> })}
         </React.Fragment>)}
@@ -1469,6 +1522,11 @@ function App(){
   </div></div></CfgCtx.Provider>;
 }
 
+// Run schema migrations once before React mounts. migrateConfig is also called inside
+// useState initialisers as a safety net, but pre-running it here ensures the localStorage
+// shape is canonical before any view reads it.
+migrateConfig(sGet("planner-config"));
+migrateStorage();
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
