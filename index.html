@@ -376,7 +376,7 @@ function sSet(k,v){
 // Schema version for backup/sync data. Bump when the on-disk shape changes incompatibly.
 // importAllData refuses payloads whose _meta.version is higher than this constant, so an old
 // client never silently ingests data from a newer planner version.
-const SCHEMA_VERSION=1;
+const SCHEMA_VERSION=2;
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -654,7 +654,7 @@ function makeDateEngine(cfg){
 
 /* ═══ DATA DEFAULTS ══════════════════════════════════════════════════════ */
 const eN=()=>({subject:"",notes:"",resources:"",status:""});
-const eM=()=>({mmType:"tutor",dayNotes:"",day0label:"",reflections:""});
+const eM=()=>({mmType:"tutor",dayNotes:"",day0label:"",reflections:"",overrides:{}});
 const nM=v=>({...eM(),...(v||{})});
 
 /* ═══ UNIVERSAL GAMIFICATION ENGINE ══════════════════════════════════════
