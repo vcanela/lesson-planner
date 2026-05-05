@@ -310,6 +310,55 @@ const FWORDS=["todo","prepare","tbc","tbd","check","remind","follow up","incompl
 const FRE=/\b(todo|prepare|tbc|tbd|check|remind|follow.?up|incomplete|print|photocopy)\b/i;
 const hasF=t=>FRE.test(t||"");
 function bldP(mm){const m=MMT[mm]||MMT.tutor,T=m.asm?ASM_T:STD_T;return[{id:"P1",label:"P1",start:T.p1.s,end:T.p1.e,brk:false},{id:"P2",label:"P2",start:T.p2.s,end:T.p2.e,brk:false},{id:"mt1",label:m.slot1,start:T.mt1.s,end:T.mt1.e,brk:true},{id:"mt2",label:m.slot2,start:T.mt2.s,end:T.mt2.e,brk:true},{id:"P3",label:"P3",start:T.p3.s,end:T.p3.e,brk:false},{id:"P4",label:"P4",start:T.p4.s,end:T.p4.e,brk:false},{id:"l",label:"Lunch",start:T.l.s,end:T.l.e,brk:true},{id:"P5",label:"P5",start:T.p5.s,end:T.p5.e,brk:false},{id:"P6",label:"P6",start:T.p6.s,end:T.p6.e,brk:false}]}
+// B-slot timing tables. Step 4 will route these through cfg.timetable[D].assemblyDay
+// instead of mmType (preserved here so step 3 stays backward-compatible).
+const BSLOT_T_STD={B0:{s:"08:00",e:"08:30"},B1a:{s:"10:20",e:"10:45"},B1b:{s:"10:45",e:"11:10"},B2a:{s:"12:55",e:"13:20"},B2b:{s:"13:20",e:"13:50"},B3:{s:"15:30",e:""}};
+const BSLOT_T_ASM={B0:{s:"08:00",e:"08:30"},B1a:{s:"10:10",e:"10:50"},B1b:{s:"10:50",e:"11:20"},B2a:{s:"13:00",e:"13:25"},B2b:{s:"13:25",e:"13:50"},B3:{s:"15:30",e:""}};
+const BSLOT_LABELS={B0:"before school",B1a:"after 2",B1b:"before 3",B2a:"after 4",B2b:"before 5",B3:"after school"};
+// valEq: equality for B-slot values. Two nulls are equal; otherwise compare type and payload.
+function valEq(a,b){if(!a&&!b)return true;if(!a||!b)return false;if(a.t!==b.t)return false;return a.t==="activity"?a.tx===b.tx:a.c===b.c}
+/* buildSlots: ordered renderable slot list for one date.
+ *
+ * Returns an array of:
+ *   { type:"period", id:"P1", label:"P1", start, end }
+ *   { type:"bslot",  id:"B1a", code:"B1a", label:"after 2", start, end, value, isOverride }
+ *   { type:"gap",    id:"gap-B2a", code:"B2a", label:"after 4", start, end }
+ *
+ * Resolution order for B-slot values: per-date override > cycle-day default > null.
+ * A B-slot becomes "bslot" when its resolved value is non-null. Otherwise it becomes
+ * "gap", except B0 and B3 which are omitted entirely when empty (no edge gap-band).
+ */
+function buildSlots(cycleDay,daymeta,cfg){
+  const day=(cfg&&cfg.timetable&&cfg.timetable[cycleDay])||{};
+  const overrides=(daymeta&&daymeta.overrides)||{};
+  const mm=(daymeta&&daymeta.mmType)||"tutor";
+  const useAsm=!!(MMT[mm]&&MMT[mm].asm);
+  const T=useAsm?ASM_T:STD_T;
+  const Tb=useAsm?BSLOT_T_ASM:BSLOT_T_STD;
+  const resolve=code=>(code in overrides)?overrides[code]:(day[code]||null);
+  const isOver=code=>(code in overrides)&&!valEq(overrides[code],day[code]||null);
+  const period=pid=>({type:"period",id:pid,label:pid,start:T[pid.toLowerCase()].s,end:T[pid.toLowerCase()].e});
+  const bslot=code=>{
+    const v=resolve(code);const t=Tb[code];
+    if(v===null){
+      if(code==="B0"||code==="B3")return null;
+      return{type:"gap",id:"gap-"+code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e};
+    }
+    return{type:"bslot",id:code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e,value:v,isOverride:isOver(code)};
+  };
+  const out=[];
+  let s;
+  if((s=bslot("B0")))out.push(s);
+  out.push(period("P1"),period("P2"));
+  if((s=bslot("B1a")))out.push(s);
+  if((s=bslot("B1b")))out.push(s);
+  out.push(period("P3"),period("P4"));
+  if((s=bslot("B2a")))out.push(s);
+  if((s=bslot("B2b")))out.push(s);
+  out.push(period("P5"),period("P6"));
+  if((s=bslot("B3")))out.push(s);
+  return out;
+}
 
 /* ═══ THEME ENGINE ═══════════════════════════════════════════════════════ */
 const LEVEL_XP=[0,100,300,600,1000,1800,3000];
@@ -893,13 +942,18 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g}){
   const prev=eng.nearSD(date,-1),next=eng.nearSD(date,1);
   const hms=useCallback(saved=>{if(dateKey)onMS(dateKey,saved)},[dateKey]);
   const as=useAutoSave(`daymeta:${dateKey}`,eM(),hms);const{data:meta,updateField,ss,hFoc,hBlr,save}=as;
-  const mm=meta&&meta.mmType||"tutor",periods=bldP(mm);
+  const mm=meta&&meta.mmType||"tutor";
+  const slots=buildSlots(cd,meta,{timetable:eng.timetable});
   return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
     <div style={{marginBottom:12,marginTop:10}}><div className="hd" style={{fontSize:"1.3rem",fontWeight:600,color:"var(--text)",lineHeight:1.2}}>{fmtF(date)}</div><div className="hd" style={{fontSize:".85rem",marginTop:4,color:isZ?"var(--dz-text)":sch?"var(--accent)":"var(--error)"}}>{isZ?"Day 0 \u2014 no class structure":sch?`Day ${cd} rotation`:eng.inT(date)?"Holiday / Weekend":"School Holiday"}{twn&&<span style={{color:"var(--text-secondary)",fontWeight:400}}> {"\u00B7"} Term {twn.tn}, Week {twn.wk}</span>}</div></div>
     <div className="np" style={{display:"flex",alignItems:"center",gap:7,marginBottom:14,flexWrap:"wrap"}}><Btn onClick={onBack}>{"\u2190"} Back</Btn><Btn onClick={()=>prev&&setDate(prev)} disabled={!prev}>{"\u2039"} Prev</Btn><Btn onClick={()=>next&&setDate(next)} disabled={!next}>Next {"\u203A"}</Btn><div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}><SvH ss={ss}/><Btn onClick={()=>window.print()}>{"\u{1F5A8}"} Print</Btn></div></div>
     {!sch?<div style={{color:"var(--text-secondary)",padding:30,textAlign:"center",fontSize:".88rem"}}>No classes scheduled.</div>
     :isZ?<div className="card" style={{padding:18,marginBottom:14,borderColor:"var(--dz-border)",background:"var(--dz-bg)"}}><div className="hd" style={{fontSize:".85rem",color:"var(--dz-text)",fontWeight:600,marginBottom:12}}>Day 0 \u2014 No class structure</div>{meta&&<div style={{display:"grid",gap:10}} onFocus={hFoc} onBlur={hBlr}><div><label className="fl">Label / Activity <SvH ss={ss}/></label><AInp data={meta} field="day0label" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="e.g. Orientation, EOTC"/></div><div><label className="flb">Notes</label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Notes" multi rows={3}/></div></div>}</div>
-    :<>{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH ss={ss}/></label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Meetings, reminders, duty" multi rows={2}/></div>}{meta&&<MMBar val={mm} onChange={t=>{updateField("mmType",t);setTimeout(save,0)}}/>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>{periods.map(p=>p.brk?<div key={p.id} className="brk"><span>{p.label}</span><span className="mn" style={{fontSize:".65rem"}}>{p.start}{"\u2013"}{p.end}</span></div>:<PCard key={`${dateKey}-${p.id}`} period={p} dateKey={dateKey} cDay={cd} initOpen={fp===p.id}/>)}</div><ReflectionsPanel meta={meta} updateField={updateField} hFoc={hFoc} hBlr={hBlr} ss={ss}/></>}
+    :<>{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH ss={ss}/></label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Meetings, reminders, duty" multi rows={2}/></div>}{meta&&<MMBar val={mm} onChange={t=>{updateField("mmType",t);setTimeout(save,0)}}/>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>{slots.map(s=>{
+  if(s.type==="period")return<PCard key={`${dateKey}-${s.id}`} period={s} dateKey={dateKey} cDay={cd} initOpen={fp===s.id}/>;
+  // bslot and gap render the same way for now (label + time range). Step 8 expands bslot rows into full chip+editor.
+  return<div key={s.id} className="brk"><span>{s.label}</span><span className="mn" style={{fontSize:".65rem"}}>{s.start}{s.end?"\u2013"+s.end:""}</span></div>;
+})}</div><ReflectionsPanel meta={meta} updateField={updateField} hFoc={hFoc} hBlr={hBlr} ss={ss}/></>}
   </div>;
 }
 
