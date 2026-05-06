@@ -150,6 +150,26 @@ textarea,input,button,select{font-family:'Inter',system-ui,sans-serif}
 .date-row .inp{max-width:160px}
 .tt-grid{display:grid;gap:4px;font-size:.72rem}
 .tt-grid select,.tt-grid input{padding:5px 7px;font-size:.72rem;text-align:center}
+.tt-grid .b-cell{cursor:pointer;display:flex;align-items:center;justify-content:center;min-height:30px;border-radius:4px;background:var(--surface);border:1px solid var(--border);user-select:none;padding:2px;font-size:.72rem;color:var(--border-strong);position:relative}
+.tt-grid .b-cell:hover{background:var(--accent-light)}
+.tt-grid .b-cell.has-value{color:var(--text)}
+.tt-add-row-btn{background:none;border:1px dashed var(--border-strong);border-radius:4px;padding:3px 10px;font-size:.66rem;color:var(--text-muted);cursor:pointer;font-family:inherit}
+.tt-add-row-btn:hover{color:var(--accent);border-color:var(--accent)}
+.tt-asm-btn{background:none;border:1px solid var(--border);border-radius:3px;padding:0 5px;font-size:.62rem;cursor:pointer;color:var(--text-muted);font-family:inherit;line-height:1.4;margin-left:4px}
+.tt-asm-btn.on{background:var(--mm-fullsch-bg);color:var(--mm-fullsch-text);border-color:var(--mm-fullsch-text)}
+.bs-popup{position:absolute;top:calc(100% + 4px);left:0;background:var(--card);border:1px solid var(--border-strong);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.18);padding:6px;min-width:180px;z-index:200;text-align:left}
+.bs-popup-label{font-size:.6rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;padding:2px 6px 5px;border-bottom:1px solid var(--border);margin-bottom:4px;white-space:nowrap}
+.bs-opt{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:4px;border:none;font-size:.72rem;font-family:inherit;cursor:pointer;text-align:left;background:transparent;color:var(--text);width:100%}
+.bs-opt:hover{background:var(--surface)}
+.bs-opt.active{background:var(--surface);font-weight:600}
+.bs-opt-clear{color:var(--text-muted);margin-top:3px;border-top:1px solid var(--border);padding-top:6px}
+.bs-popup-input{width:100%;padding:5px 7px;border:1px solid var(--border-strong);border-radius:4px;font-family:inherit;font-size:.72rem;color:var(--text);outline:none;background:var(--card);margin-bottom:4px;display:block;text-align:left}
+.bs-popup-input:focus{border-color:var(--accent)}
+.bs-popup-confirm{width:100%;padding:5px 7px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:.72rem;font-family:inherit;cursor:pointer;font-weight:600}
+.bs-popup-confirm:hover{filter:brightness(.92)}
+.bs-chip{font-size:.62rem;font-weight:600;padding:2px 6px;border-radius:3px;display:inline-flex;align-items:center;gap:3px;line-height:1.3;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.bs-chip-activity{background:var(--surface);color:var(--text-secondary);border-radius:10px;border:1.5px solid var(--border-strong)}
+.bs-chip-duty{border-radius:10px;border:1.5px solid currentColor}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:10px}
 .cal-cell{display:flex;align-items:center;justify-content:center;height:34px;border-radius:var(--radius-sm);font-size:.73rem;cursor:pointer;transition:background .12s,color .12s;border:1px solid transparent;position:relative}
 .cal-cell:hover:not(.cal-dis):not(.cal-lk){background:var(--cal-hover)}
@@ -1203,6 +1223,72 @@ function LabView({g}){
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8}}>{g.achs.map(a=><div key={a.id} className={`card ach${a.unlocked?" un":""}`} style={{padding:14,opacity:a.unlocked?1:.35}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><span style={{fontSize:"1.5rem",filter:a.unlocked?"none":"grayscale(1)"}}>{a.icon}</span><div style={{flex:1}}><div className="hd" style={{fontSize:".84rem",fontWeight:600,color:a.unlocked?"var(--text)":"var(--text-muted)"}}>{a.title}</div><div style={{fontSize:".62rem",color:a.unlocked?"var(--accent)":"var(--text-muted)"}}>{a.unlocked?`\u2713 +${a.xp} XP`:a.desc}</div></div></div><div style={{fontSize:".65rem",color:"var(--text-secondary)"}}>{a.desc}</div>{a.unlocked&&<div style={{fontSize:".6rem",color:"var(--text-muted)",fontStyle:"italic",marginTop:5,lineHeight:1.4,borderTop:"1px solid var(--border)",paddingTop:5}}>"{a.detail}"</div>}</div>)}</div></div>;
 }
 
+/* ═══ B-SLOT EDITOR ══════════════════════════════════════════════════════
+ * BSlotChip / BSlotCell / BSlotPopup are the SettingsView pieces for editing
+ * B-slot values in the timetable grid. They write straight into
+ * cfg.timetable[day][slotCode]; the duty submenu pulls from cfg.duties (added
+ * in step 7) and is hidden when the registry is empty.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+function BSlotChip({value,duties}){
+  if(!value)return null;
+  if(value.t==="b1"){
+    const t=B1_TYPES[value.c];if(!t)return null;
+    return<span className="bs-chip" style={{background:`var(${t.bgVar})`,color:`var(${t.txVar})`}}>{t.icon} {t.label}</span>;
+  }
+  if(value.t==="duty"){
+    const d=(duties||[]).find(x=>x.code===value.c);
+    const bg=d&&d.color||"var(--surface)";const tx=d&&d.textColor||"var(--text-secondary)";
+    return<span className="bs-chip bs-chip-duty" style={{background:bg,color:tx}}>{value.c}</span>;
+  }
+  if(value.t==="activity"){
+    return<span className="bs-chip bs-chip-activity" title={value.tx}>{"\u{1F4CC}"} {value.tx}</span>;
+  }
+  return null;
+}
+function BSlotPopup({slotCode,day,current,duties,onPick,onClose}){
+  const isB1=slotCode==="B1a";
+  const[view,setView]=useState("main");
+  const[actText,setActText]=useState("");
+  const popupRef=useRef(null);
+  useEffect(()=>{
+    const onDoc=e=>{if(popupRef.current&&!popupRef.current.contains(e.target))onClose()};
+    const onKey=e=>{if(e.key==="Escape")onClose()};
+    document.addEventListener("mousedown",onDoc);document.addEventListener("keydown",onKey);
+    return()=>{document.removeEventListener("mousedown",onDoc);document.removeEventListener("keydown",onKey)};
+  },[onClose]);
+  const lbl=BSLOT_LABELS[slotCode]||slotCode;
+  const hasDuties=(duties||[]).length>0;
+  const renderActivity=()=><><button className="bs-opt" onClick={()=>setView("main")}>{"←"} Back</button>
+    <div style={{padding:"4px 7px 3px",fontSize:".6rem",color:"var(--text-muted)",fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Describe activity</div>
+    <input className="bs-popup-input" autoFocus value={actText} onChange={e=>setActText(e.target.value)} placeholder="e.g. Chess club, Catchup" onKeyDown={e=>{if(e.key==="Enter"&&actText.trim()){onPick({t:"activity",tx:actText.trim()})}}}/>
+    <button className="bs-popup-confirm" disabled={!actText.trim()} onClick={()=>{if(actText.trim())onPick({t:"activity",tx:actText.trim()})}}>Add</button></>;
+  const renderDuty=()=><><button className="bs-opt" onClick={()=>setView("main")}>{"←"} Back</button>
+    {(duties||[]).map(d=><button key={d.code} className="bs-opt" onClick={()=>onPick({t:"duty",c:d.code})}><span style={{width:8,height:8,borderRadius:"50%",background:d.color||"var(--text-muted)",flexShrink:0}}/><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:".66rem",fontWeight:700}}>{d.code}</span><span style={{flex:1}}>{d.description||""}</span></button>)}</>;
+  const renderMain=()=><>{isB1&&Object.entries(B1_TYPES).map(([k,t])=>{
+    const a=current&&current.t==="b1"&&current.c===k;
+    return<button key={k} className={`bs-opt${a?" active":""}`} onClick={()=>onPick({t:"b1",c:k})}><span>{t.icon}</span><span>{t.label}</span></button>;
+  })}
+    {hasDuties&&<button className="bs-opt" onClick={()=>setView("duty")}>{"\u{1F6E1}"} Duty…</button>}
+    <button className="bs-opt" onClick={()=>setView("activity")}>{"\u{1F4CC}"} Activity…</button>
+    {current&&<button className="bs-opt bs-opt-clear" onClick={()=>onPick(null)}>— Clear</button>}</>;
+  return<div ref={popupRef} className="bs-popup" onClick={e=>e.stopPropagation()}>
+    <div className="bs-popup-label">{lbl} · Day {day}</div>
+    {view==="main"&&renderMain()}
+    {view==="duty"&&renderDuty()}
+    {view==="activity"&&renderActivity()}
+  </div>;
+}
+function BSlotCell({day,slotCode,value,duties,onChange}){
+  const[open,setOpen]=useState(false);
+  return<div className={`b-cell${value?" has-value":""}`} onClick={e=>{e.stopPropagation();setOpen(true)}}>
+    {value?<BSlotChip value={value} duties={duties}/>:<span>—</span>}
+    {open&&<BSlotPopup slotCode={slotCode} day={day} current={value} duties={duties} onPick={v=>{onChange(v);setOpen(false)}} onClose={()=>setOpen(false)}/>}
+  </div>;
+}
+function AsmToggle({on,onToggle}){
+  return<button className={`tt-asm-btn${on?" on":""}`} title="Full-school assembly day" onClick={e=>{e.stopPropagation();onToggle()}}>{"☀"}</button>;
+}
 /* ═══ SETTINGS VIEW ══════════════════════════════════════════════════════ */
 /* ═══ SETTINGS / SETUP VIEW ══════════════════════════════════════════════
  * SettingsView: the config editor. Each card edits one slice of cfg
@@ -1216,6 +1302,9 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
   const[cfg,setCfg]=useState(()=>migrateConfig(sGet("planner-config")||{}));
   const up=f=>{setCfg(c=>{const next={...c,...f};if(f.holidays)next.dayZeros=syncHolsToDZ(next.holidays,next.dayZeros);return next})};
   const[saved,setSaved]=useState(false);const termHint=(cfg.terms&&cfg.terms[0]&&cfg.terms[0].start)?cfg.terms[0].start:fmtISO(new Date());
+  // Edge-row visibility for the timetable grid: B0/B3 stay hidden until the user opts in
+  // OR the data already has a value for that slot on any cycle day (auto-shown).
+  const[showEdgeRows,setShowEdgeRows]=useState({B0:false,B3:false});
   const classes=cfg.classes||[];const usedColours=new Set(classes.map(c=>c.colour));
   const addClass=()=>{up({classes:[...classes,{code:"",description:"",colour:DEFAULT_PALETTE.find(c=>!usedColours.has(c))||DEFAULT_PALETTE[0]}]})};
   const updateClass=(i,field,val)=>{const cls=[...classes];cls[i]={...cls[i],[field]:val};up({classes:cls})};
@@ -1262,15 +1351,76 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
         <ColourPicker value={c.colour} onChange={col=>updateClass(i,"colour",col)} usedColours={usedColours}/></div>)}
       <button className="btn" onClick={addClass}>+ Add Class</button>{classes.length===0&&<div style={{fontSize:".7rem",color:"var(--text-muted)",marginTop:8,fontStyle:"italic"}}>No classes defined yet.</div>}</div>
 
-    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Timetable</div><div style={{fontSize:".68rem",color:"var(--text-secondary)",marginBottom:10}}>Select from your class list or type custom entries. Type "nc" for non-contact.</div>
-      <div className="tt-grid" style={{gridTemplateColumns:`60px repeat(${cfg.cycleDays||7},1fr)`,overflowX:"auto"}}>
-        <div/>
-        {Array.from({length:cfg.cycleDays||7},(_,i)=><div key={i+1} className="hd" style={{textAlign:"center",fontSize:".7rem",fontWeight:600,color:"var(--text-muted)"}}>Day {i+1}</div>)}
-        {["P1","P2","P3","P4","P5","P6"].map((pid,pi)=><React.Fragment key={pid}>
-          <div className="hd" style={{fontSize:".72rem",fontWeight:600,color:"var(--accent)",display:"flex",alignItems:"center"}}>P{pi+1}</div>
-          {Array.from({length:cfg.cycleDays||7},(_,di)=>{const day=di+1;const val=((cfg.timetable||{})[day]||{})[pid]||"";return <TTCombo key={`${day}-${pid}`} value={val} classes={classes} onChange={v=>{const tt={...(cfg.timetable||{})};if(!tt[day])tt[day]={};tt[day][pid]=v;up({timetable:tt})}}/> })}
-        </React.Fragment>)}
-      </div></div>
+    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Timetable</div><div style={{fontSize:".68rem",color:"var(--text-secondary)",marginBottom:10}}>Click a teaching-period cell to set a class (type "nc" for non-contact). Click a B-slot cell to set a morning structure, duty, or activity. Use ☀ on the day header for full-school assembly days.</div>
+      {(() => {
+        const nDays=cfg.cycleDays||7;
+        const tt=cfg.timetable||{};
+        const duties=cfg.duties||[];
+        // Determine whether B0/B3 should auto-show because some day has a value.
+        const anyB0=Array.from({length:nDays},(_,i)=>i+1).some(d=>(tt[d]||{}).B0);
+        const anyB3=Array.from({length:nDays},(_,i)=>i+1).some(d=>(tt[d]||{}).B3);
+        const showB0=showEdgeRows.B0||anyB0;
+        const showB3=showEdgeRows.B3||anyB3;
+        const setBSlot=(day,code,val)=>{
+          const next={...(cfg.timetable||{})};
+          if(!next[day])next[day]={};
+          next[day]={...next[day],[code]:val};
+          up({timetable:next});
+        };
+        const setP=(day,pid,v)=>{
+          const next={...(cfg.timetable||{})};
+          if(!next[day])next[day]={};
+          next[day]={...next[day],[pid]:v};
+          up({timetable:next});
+        };
+        const toggleAsm=day=>{
+          const next={...(cfg.timetable||{})};
+          if(!next[day])next[day]={};
+          if(next[day].assemblyDay){const{assemblyDay,...rest}=next[day];next[day]=rest}
+          else next[day]={...next[day],assemblyDay:true};
+          up({timetable:next});
+        };
+        const slotLabel=(rel,extra={})=><div className="hd" style={{fontSize:".66rem",fontWeight:600,color:"var(--text)",display:"flex",alignItems:"center",position:"relative",...extra}}>{rel}</div>;
+        const periodLabel=pid=><div className="hd" style={{fontFamily:"'JetBrains Mono',monospace",fontSize:".78rem",fontWeight:700,color:"var(--accent)",display:"flex",alignItems:"center"}}>{pid}</div>;
+        const renderBRow=(code,label,extra)=><React.Fragment key={code}>
+          {slotLabel(label,extra||{})}
+          {Array.from({length:nDays},(_,di)=>{const day=di+1;const val=(tt[day]||{})[code]||null;
+            return<BSlotCell key={`${day}-${code}`} day={day} slotCode={code} value={val} duties={duties} onChange={v=>setBSlot(day,code,v)}/>;
+          })}
+        </React.Fragment>;
+        const renderPRow=pid=><React.Fragment key={pid}>
+          {periodLabel(pid)}
+          {Array.from({length:nDays},(_,di)=>{const day=di+1;const val=((tt[day]||{})[pid])||"";
+            return<TTCombo key={`${day}-${pid}`} value={val} classes={classes} onChange={v=>setP(day,pid,v)}/>;
+          })}
+        </React.Fragment>;
+        return<>
+          {!showB0&&<button className="tt-add-row-btn" onClick={()=>setShowEdgeRows(s=>({...s,B0:true}))} style={{marginBottom:8}}>+ Before school</button>}
+          <div className="tt-grid" style={{gridTemplateColumns:`84px repeat(${nDays},1fr)`,overflowX:"auto"}}>
+            <div/>
+            {Array.from({length:nDays},(_,i)=>{const day=i+1;const isAsm=!!(tt[day]&&tt[day].assemblyDay);
+              return<div key={day} className="hd" style={{textAlign:"center",fontSize:".7rem",fontWeight:600,color:"var(--text-muted)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <span>Day {day}</span>
+                <AsmToggle on={isAsm} onToggle={()=>toggleAsm(day)}/>
+              </div>;
+            })}
+            {showB0&&renderBRow("B0","before school")}
+            {renderPRow("P1")}
+            {renderPRow("P2")}
+            {renderBRow("B1a","after 2")}
+            {renderBRow("B1b","before 3")}
+            {renderPRow("P3")}
+            {renderPRow("P4")}
+            {renderBRow("B2a","after 4")}
+            {renderBRow("B2b","before 5")}
+            {renderPRow("P5")}
+            {renderPRow("P6")}
+            {showB3&&renderBRow("B3","after school")}
+          </div>
+          {!showB3&&<button className="tt-add-row-btn" onClick={()=>setShowEdgeRows(s=>({...s,B3:true}))} style={{marginTop:8}}>+ After school</button>}
+        </>;
+      })()}
+    </div>
 
     <div style={{display:"flex",gap:8,alignItems:"center"}}><button className="btn-a" onClick={doSave}>Save Configuration</button>{saved&&<span style={{fontSize:".75rem",color:"var(--success)",fontWeight:600}}>{"\u2713"} Saved</span>}</div></div>;
 }
