@@ -197,8 +197,8 @@ textarea,input,button,select{font-family:'Inter',system-ui,sans-serif}
  *                          date format: YYYY-M-D (UNPADDED; produced by dk())
  *                          periodId: "p1".."p6"
  *
- *   daymeta:<date>          { mmType, dayNotes, day0label, reflections }
- *                          mmType is the mid-morning block type (tutor/deans/fullsch/chapel)
+ *   daymeta:<date>          { dayNotes, day0label, reflections, overrides }
+ *                          overrides is a map of B-slot code -> value (per-date deviations from cycle defaults)
  *
  *   planner-gh-token        GitHub PAT with `gist` scope (string)
  *   planner-gist-id         The Gist holding the cloud-sync copy (string)
@@ -298,11 +298,14 @@ function useCfg(){return useContext(CfgCtx)}
 const DEFAULT_PALETTE=["#E8C8C0","#EDD9B5","#C5D9C0","#B8CCE0","#D0C0E0","#D4B8A0","#A8C8C0","#E0C0D0","#C0C8A8","#E0D0A8","#B0C0D8","#D8B8B8"];
 const TEXT_FOR_BG={"#E8C8C0":"#7A3B30","#EDD9B5":"#7A5A20","#C5D9C0":"#2E5426","#B8CCE0":"#2A4A6B","#D0C0E0":"#4A2E6B","#D4B8A0":"#5C3D20","#A8C8C0":"#1A4A42","#E0C0D0":"#6B2A4A","#C0C8A8":"#3A4420","#E0D0A8":"#5A4A18","#B0C0D8":"#2A3A5A","#D8B8B8":"#5A2E2E"};
 
-const MMT={
-  tutor:{label:"Tutor",short:"T",icon:"\u{1F4CB}",slot1:"Tutor Time",slot2:"Morning Tea",asm:false},
-  deans:{label:"Dean's Assembly",short:"DA",icon:"\u{1F3EB}",slot1:"Dean's Assembly",slot2:"Morning Tea",asm:false},
-  fullsch:{label:"Full School Assembly",short:"FSA",icon:"\u{1F393}",slot1:"Full School Assembly",slot2:"Morning Tea",asm:true},
-  chapel:{label:"Chapel",short:"C",icon:"\u26EA",slot1:"Morning Tea",slot2:"Chapel",asm:false}
+// B1_TYPES: chip rendering data for the four B1a (morning structure) values.
+// Used by week/day views when a B-slot value has type "b1". The colour vars
+// (--mm-*) are reused from v1 since they already map onto Okabe-Ito hues.
+const B1_TYPES={
+  tutor: {label:"Tutor",  short:"T",  icon:"\u{1F4CB}",bgVar:"--mm-tutor-bg",  txVar:"--mm-tutor-text"},
+  chapel:{label:"Chapel", short:"C",  icon:"\u26EA",   bgVar:"--mm-chapel-bg", txVar:"--mm-chapel-text"},
+  fsa:   {label:"FSA",    short:"FSA",icon:"\u{1F393}",bgVar:"--mm-fullsch-bg",txVar:"--mm-fullsch-text"},
+  da:    {label:"DA",     short:"DA", icon:"\u{1F3EB}",bgVar:"--mm-deans-bg",  txVar:"--mm-deans-text"}
 };
 const STD_T={p1:{s:"08:30",e:"09:25"},p2:{s:"09:25",e:"10:20"},mt1:{s:"10:20",e:"10:45"},mt2:{s:"10:45",e:"11:10"},p3:{s:"11:10",e:"12:05"},p4:{s:"12:05",e:"12:55"},l:{s:"12:55",e:"13:50"},p5:{s:"13:50",e:"14:40"},p6:{s:"14:40",e:"15:30"}};
 const ASM_T={p1:{s:"08:30",e:"09:20"},p2:{s:"09:20",e:"10:10"},mt1:{s:"10:10",e:"10:50"},mt2:{s:"10:50",e:"11:20"},p3:{s:"11:20",e:"12:10"},p4:{s:"12:10",e:"13:00"},l:{s:"13:00",e:"13:50"},p5:{s:"13:50",e:"14:40"},p6:{s:"14:40",e:"15:30"}};
@@ -320,7 +323,7 @@ function bldP(isAsm){const T=isAsm?ASM_T:STD_T;return[{id:"P1",label:"P1",start:
 // rather than per-date so it stays a property of the rotation, not a one-off override.
 function isAsmDay(cycleDay,cfg){const day=cfg&&cfg.timetable&&cfg.timetable[cycleDay];return!!(day&&day.assemblyDay)}
 // B-slot timing tables. Step 4 will route these through cfg.timetable[D].assemblyDay
-// instead of mmType (preserved here so step 3 stays backward-compatible).
+// instead of mmType (which has been removed in step 5).
 const BSLOT_T_STD={B0:{s:"08:00",e:"08:30"},B1a:{s:"10:20",e:"10:45"},B1b:{s:"10:45",e:"11:10"},B2a:{s:"12:55",e:"13:20"},B2b:{s:"13:20",e:"13:50"},B3:{s:"15:30",e:""}};
 const BSLOT_T_ASM={B0:{s:"08:00",e:"08:30"},B1a:{s:"10:10",e:"10:50"},B1b:{s:"10:50",e:"11:20"},B2a:{s:"13:00",e:"13:25"},B2b:{s:"13:25",e:"13:50"},B3:{s:"15:30",e:""}};
 const BSLOT_LABELS={B0:"before school",B1a:"after 2",B1b:"before 3",B2a:"after 4",B2b:"before 5",B3:"after school"};
@@ -546,14 +549,9 @@ function migrateConfig(cfg){
 /* ═══ STORAGE MIGRATION ══════════════════════════════════════════════════
  * migrateStorage runs once at startup (after migrateConfig) and again after
  * a backup import. It re-keys v1 note entries (lower-case period IDs) to v2
- * upper-case, and seeds an empty overrides map on every daymeta entry.
- *
- * Note: mmType is intentionally preserved on existing daymeta entries during
- * step 1 so that MMBar continues to render the user's per-day choice until
- * the MMBar component is removed (step 5). At that point a follow-up pass
- * will strip mmType.
- *
- * Idempotent: a second run is a no-op.
+ * upper-case, seeds an empty overrides map on every daymeta entry, and
+ * strips the obsolete mmType field from every daymeta. Idempotent: a second
+ * run is a no-op.
  * ═══════════════════════════════════════════════════════════════════════
  */
 function migrateStorage(){
@@ -572,8 +570,12 @@ function migrateStorage(){
     if(!k.startsWith("daymeta:"))return;
     const v=sGet(k);
     if(!v||typeof v!=="object"||Array.isArray(v))return;
-    if(!("overrides" in v)||typeof v.overrides!=="object"||v.overrides===null){
-      sSet(k,{...v,overrides:{}});
+    const needsOverrides=!("overrides" in v)||typeof v.overrides!=="object"||v.overrides===null;
+    const hasMmType="mmType" in v;
+    if(needsOverrides||hasMmType){
+      const{mmType,...rest}=v;
+      if(needsOverrides)rest.overrides={};
+      sSet(k,rest);
     }
   });
 }
@@ -711,7 +713,7 @@ function makeDateEngine(cfg){
 
 /* ═══ DATA DEFAULTS ══════════════════════════════════════════════════════ */
 const eN=()=>({subject:"",notes:"",resources:"",status:""});
-const eM=()=>({mmType:"tutor",dayNotes:"",day0label:"",reflections:"",overrides:{}});
+const eM=()=>({dayNotes:"",day0label:"",reflections:"",overrides:{}});
 const nM=v=>({...eM(),...(v||{})});
 
 /* ═══ UNIVERSAL GAMIFICATION ENGINE ══════════════════════════════════════
@@ -894,15 +896,12 @@ const SvH=({ss})=>{if(!ss||ss==="idle")return null;const m={saving:["var(--text-
 const AInp=({data,field,updateField,hFoc,hBlr,ph,multi,rows})=>{const ref=useRef(null);const val=(data&&data[field])||"";useEffect(()=>{if(multi&&ref.current){ref.current.style.height="auto";ref.current.style.height=ref.current.scrollHeight+"px"}},[val,multi]);if(!multi)return<input className="inp" value={val} onChange={e=>updateField(field,e.target.value)} onFocus={hFoc} onBlur={hBlr} placeholder={ph||""}/>;return<textarea ref={ref} className="ta" value={val} onChange={e=>{updateField(field,e.target.value);if(ref.current){ref.current.style.height="auto";ref.current.style.height=ref.current.scrollHeight+"px"}}} onFocus={hFoc} onBlur={hBlr} placeholder={ph||""} rows={rows||3}/>};
 // CBadge: pill showing a class code with its theme colour. "nc" renders as "Non-contact".
 const CBadge=({cc,style={}})=>{const eng=useCfg();const nc=!cc||cc==="nc";const clr=nc?null:(eng&&eng.classMap[cc]);return<span className="mn" style={{padding:"2px 8px",borderRadius:4,fontSize:".75rem",fontWeight:700,background:nc?"var(--nc-bg)":(clr&&clr.bg)||"var(--nc-bg)",color:nc?"var(--nc-text)":(clr&&clr.tx)||"var(--nc-text)",minWidth:84,textAlign:"center",flexShrink:0,...style}}>{nc?"Non-contact":cc}</span>};
-// MTag: small mid-morning-type chip (Tutor / Dean's Assembly / Full School Assembly / Chapel).
-const MTag=({mm,style={}})=>{const m=MMT[mm]||MMT.tutor;return<span style={{padding:"1px 5px",borderRadius:3,fontSize:".57rem",display:"inline-block",background:`var(--mm-${mm}-bg)`,color:`var(--mm-${mm}-text)`,...style}}>{m.icon} {m.short}</span>};
 // XpStrip: level icon, level title, XP bar, total XP, and streak indicator.
 // Rendered at the top of every gamification-aware view (gated by g.showGam).
 const XpStrip=({g})=>{const prog=g.nxt?(g.xp-(g.levXp||0))/((g.nxtXp||1)-(g.levXp||0))*100:100;return<div className="xps np"><span style={{fontSize:".9rem"}}>{g.lev.icon}</span><span className="hd" style={{fontWeight:600,fontSize:".7rem",color:"var(--text)",whiteSpace:"nowrap"}}>{g.lev.title}</span><div className="xpbo"><div className="xpbf" style={{width:Math.min(100,prog)+"%"}}/></div><span className="mn" style={{fontSize:".6rem",color:"var(--text-muted)",whiteSpace:"nowrap"}}>{g.xp} XP</span>{g.sk>0&&<span style={{fontSize:".65rem",whiteSpace:"nowrap"}}>{"\u{1F525}"}{g.sk}</span>}</div>};
 // Badges: row of achievement chips (locked/unlocked) shown below XpStrip.
 const Badges=({achs})=><div className="bs np">{achs.map(a=><div key={a.id} className={`bm${a.unlocked?"":" lk"}`} style={a.unlocked?{background:"var(--surface)",borderColor:"var(--accent)"}:{}}><span>{a.icon}</span><div className="bt"><strong>{a.title}</strong>{a.unlocked?" \u2713":` ${a.desc}`}</div></div>)}</div>;
 const FlagBank=()=>{const[o,setO]=useState(false);return<div className="fwb"><span onClick={()=>setO(!o)} style={{cursor:"pointer",color:"var(--flag)"}}>{"\u2691"} flags {o?"\u25B4":"\u25BE"}</span>{o&&FWORDS.map(w=><span key={w} className="fw">{w}</span>)}</div>};
-const MMBar=({val,onChange})=>{const mt=MMT[val]||MMT.tutor;return<div className="card" style={{padding:"12px 16px",marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Mid-morning block</div><div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>{Object.entries(MMT).map(([k,m])=>{const a=k===val;return<button key={k} className="pill" onClick={()=>onChange(k)} style={a?{fontWeight:700,background:`var(--mm-${k}-bg)`,color:`var(--mm-${k}-text)`,border:`1px solid var(--mm-${k}-text)`}:{}}><span>{m.icon}</span><span>{m.short}</span></button>})}<div style={{marginLeft:"auto",textAlign:"right"}}><div style={{fontSize:".72rem",color:`var(--mm-${val}-text)`,fontWeight:600}}>{mt.label}</div><div style={{fontSize:".64rem",color:"var(--text-muted)"}}>{mt.slot1} {"\u00B7"} {mt.slot2}</div></div></div></div>};
 
 /* ═══ REFLECTIONS PANEL ══════════════════════════════════════════════════ */
 function ReflectionsPanel({meta,updateField,hFoc,hBlr,ss}){
@@ -950,14 +949,13 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g}){
   const prev=eng.nearSD(date,-1),next=eng.nearSD(date,1);
   const hms=useCallback(saved=>{if(dateKey)onMS(dateKey,saved)},[dateKey]);
   const as=useAutoSave(`daymeta:${dateKey}`,eM(),hms);const{data:meta,updateField,ss,hFoc,hBlr,save}=as;
-  const mm=meta&&meta.mmType||"tutor";
   const slots=buildSlots(cd,meta,{timetable:eng.timetable});
   return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
     <div style={{marginBottom:12,marginTop:10}}><div className="hd" style={{fontSize:"1.3rem",fontWeight:600,color:"var(--text)",lineHeight:1.2}}>{fmtF(date)}</div><div className="hd" style={{fontSize:".85rem",marginTop:4,color:isZ?"var(--dz-text)":sch?"var(--accent)":"var(--error)"}}>{isZ?"Day 0 \u2014 no class structure":sch?`Day ${cd} rotation`:eng.inT(date)?"Holiday / Weekend":"School Holiday"}{twn&&<span style={{color:"var(--text-secondary)",fontWeight:400}}> {"\u00B7"} Term {twn.tn}, Week {twn.wk}</span>}</div></div>
     <div className="np" style={{display:"flex",alignItems:"center",gap:7,marginBottom:14,flexWrap:"wrap"}}><Btn onClick={onBack}>{"\u2190"} Back</Btn><Btn onClick={()=>prev&&setDate(prev)} disabled={!prev}>{"\u2039"} Prev</Btn><Btn onClick={()=>next&&setDate(next)} disabled={!next}>Next {"\u203A"}</Btn><div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}><SvH ss={ss}/><Btn onClick={()=>window.print()}>{"\u{1F5A8}"} Print</Btn></div></div>
     {!sch?<div style={{color:"var(--text-secondary)",padding:30,textAlign:"center",fontSize:".88rem"}}>No classes scheduled.</div>
     :isZ?<div className="card" style={{padding:18,marginBottom:14,borderColor:"var(--dz-border)",background:"var(--dz-bg)"}}><div className="hd" style={{fontSize:".85rem",color:"var(--dz-text)",fontWeight:600,marginBottom:12}}>Day 0 \u2014 No class structure</div>{meta&&<div style={{display:"grid",gap:10}} onFocus={hFoc} onBlur={hBlr}><div><label className="fl">Label / Activity <SvH ss={ss}/></label><AInp data={meta} field="day0label" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="e.g. Orientation, EOTC"/></div><div><label className="flb">Notes</label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Notes" multi rows={3}/></div></div>}</div>
-    :<>{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH ss={ss}/></label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Meetings, reminders, duty" multi rows={2}/></div>}{meta&&<MMBar val={mm} onChange={t=>{updateField("mmType",t);setTimeout(save,0)}}/>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>{slots.map(s=>{
+    :<>{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH ss={ss}/></label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Meetings, reminders, duty" multi rows={2}/></div>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>{slots.map(s=>{
   if(s.type==="period")return<PCard key={`${dateKey}-${s.id}`} period={s} dateKey={dateKey} cDay={cd} initOpen={fp===s.id}/>;
   // bslot and gap render the same way for now (label + time range). Step 8 expands bslot rows into full chip+editor.
   return<div key={s.id} className="brk"><span>{s.label}</span><span className="mn" style={{fontSize:".65rem"}}>{s.start}{s.end?"\u2013"+s.end:""}</span></div>;
@@ -988,7 +986,7 @@ function TermView({onDay,onWk,mc,g,cfg}){
         return<div key={k} onClick={()=>onDay(d)} style={{background:isT?"var(--today-bg)":isZ?"var(--dz-bg)":"var(--card)",border:`1px solid ${isT?"var(--today-border)":isZ?"var(--dz-border)":"var(--border)"}`,borderRadius:"var(--radius-sm)",padding:"4px 5px",cursor:"pointer",minHeight:50}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:2}}><span className="hd" style={{fontSize:".76rem",fontWeight:700,color:isZ?"var(--dz-text)":isT?"var(--accent)":"var(--text)"}}>{d.getDate()}<span style={{fontSize:".55rem",fontWeight:400,color:"var(--text-muted)",marginLeft:2}}>{d.toLocaleDateString("en-NZ",{month:"short"})}</span></span><span className="mn" style={{fontSize:".55rem",fontWeight:600,color:isZ?"var(--dz-text)":"var(--accent)"}}>{isZ?"D0":`D${cd}`}</span></div>
           {isZ?<div style={{fontSize:".57rem",color:"var(--dz-text)",fontStyle:"italic",lineHeight:1.3,overflow:"hidden",maxHeight:26}}>{meta.day0label||(()=>{const dz=(cfg.dayZeros||[]).find(z=>(typeof z==="string"?z:z.date)===fmtISO(d));return dz&&typeof dz!=="string"?dz.label:"Day 0"})()}</div>
-          :<>{eng.PIDS&&<div style={{display:"flex",gap:2,flexWrap:"wrap",marginBottom:2}}>{eng.PIDS.map(pid=>{const cls=(eng.timetable[cd]||{})[pid]||"nc";const clr=cls!=="nc"&&eng.classMap[cls];return<div key={pid} style={{width:6,height:6,borderRadius:1,background:clr?clr.bg:"var(--nc-bg)"}}/>})}</div>}<div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><MTag mm={meta.mmType||"tutor"}/>{cv&&cv.t>0&&<span className="mn" style={{fontSize:".5rem",color:cv.p===cv.t?"var(--success)":"var(--text-muted)",fontWeight:700}}>{cv.p}/{cv.t}</span>}</div></>}
+          :<>{eng.PIDS&&<div style={{display:"flex",gap:2,flexWrap:"wrap",marginBottom:2}}>{eng.PIDS.map(pid=>{const cls=(eng.timetable[cd]||{})[pid]||"nc";const clr=cls!=="nc"&&eng.classMap[cls];return<div key={pid} style={{width:6,height:6,borderRadius:1,background:clr?clr.bg:"var(--nc-bg)"}}/>})}</div>}<div style={{display:"flex",justifyContent:"flex-end",alignItems:"center"}}>{cv&&cv.t>0&&<span className="mn" style={{fontSize:".5rem",color:cv.p===cv.t?"var(--success)":"var(--text-muted)",fontWeight:700}}>{cv.p}/{cv.t}</span>}</div></>}
         </div>})}</div>)}
     <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:14,alignItems:"center"}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c];return<span key={c} className="mn" style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"2px 7px",borderRadius:3,fontSize:".63rem",fontWeight:700}}>{c}</span>})}<span style={{fontSize:".62rem",color:"var(--text-muted)",marginLeft:4}}>dots=P1{"\u2192"}P6 {"\u00B7"} fraction=planned/teaching</span></div></div>;
 }
@@ -1015,7 +1013,7 @@ function buildWkTxt(style,days,wl,wkLabel,sum,mc,eng,wNotes){
     out+=sep+h2(fmtF(d));
     if(!sch){out+=(style==="md"?"*No school*":"No school")+"\n\n";return}
     if(isZ){out+=`Day 0${meta.day0label?": "+meta.day0label:""}\n\n`;if(meta.dayNotes)out+=meta.dayNotes+"\n\n";return}
-    out+=`Day ${cd} | ${(MMT[meta.mmType]||MMT.tutor).label}\n\n`;
+    out+=`Day ${cd}\n\n`;
     if(meta.dayNotes)out+=bq(meta.dayNotes)+"\n";
     eng.PIDS.forEach((pid,pi)=>{
       const cls=(eng.timetable[cd]||{})[pid]||"nc";const n=wNotes[`${key}:${pid}`];
@@ -1054,7 +1052,7 @@ function doDownload(content,filename){const blob=new Blob([content],{type:"text/
  * The export card lets you download or copy the week as text.
  * ═══════════════════════════════════════════════════════════════════════
  */
-function WeekView({base,setBase,onDet,mc,uM,mmO,setMmO,g}){
+function WeekView({base,setBase,onDet,mc,uM,g}){
   const eng=useCfg();const today=useToday();const days=getWDs(base),wn=eng.wkN(base);
   const twn=eng.termWkN(days);const wkLabel=twn?`Term ${twn.tn}, Week ${twn.wk}`:"School Holidays";
   const[spot,setSpot]=useState(null);const[qe,setQE]=useState(null);const[qv,setQV]=useState("");const[nr,setNR]=useState(0);
@@ -1080,7 +1078,7 @@ function WeekView({base,setBase,onDet,mc,uM,mmO,setMmO,g}){
     const bg=x=>x.isT?"var(--today-bg)":x.isZ?"var(--dz-bg)":x.sch?"var(--card)":"var(--surface)";
     const bd=x=>`1px solid ${x.isT?"var(--today-border)":x.isZ?"var(--dz-border)":"var(--border)"}`;
     cells.push(<div key="lh"/>);
-    dd.forEach((x,i)=>cells.push(<div key={`h${i}`} style={{background:bg(x),border:bd(x),borderRadius:"var(--radius-md) var(--radius-md) 0 0",padding:"6px 8px 4px"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><span className="hd" style={{fontSize:".78rem",fontWeight:600,color:x.sch?"var(--text)":"var(--text-muted)"}}>{x.d.toLocaleDateString("en-NZ",{weekday:"short"})} {x.d.getDate()}</span><span className="mn" style={{fontSize:".58rem",fontWeight:700,color:x.isZ?"var(--dz-text)":x.sch?"var(--accent)":"var(--text-muted)"}}>{x.sch?(x.isZ?"D0":`D${x.cd}`):isWE(x.d)?"\u2014":"Hol"}</span></div>{x.sch&&!x.isZ&&<MTag mm={x.meta.mmType||"tutor"} style={{marginTop:2}}/>}</div>));
+    dd.forEach((x,i)=>cells.push(<div key={`h${i}`} style={{background:bg(x),border:bd(x),borderRadius:"var(--radius-md) var(--radius-md) 0 0",padding:"6px 8px 4px"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><span className="hd" style={{fontSize:".78rem",fontWeight:600,color:x.sch?"var(--text)":"var(--text-muted)"}}>{x.d.toLocaleDateString("en-NZ",{weekday:"short"})} {x.d.getDate()}</span><span className="mn" style={{fontSize:".58rem",fontWeight:700,color:x.isZ?"var(--dz-text)":x.sch?"var(--accent)":"var(--text-muted)"}}>{x.sch?(x.isZ?"D0":`D${x.cd}`):isWE(x.d)?"\u2014":"Hol"}</span></div></div>));
     cells.push(<div key="ln" style={lS}><span className="hd" style={lT}>{"\u270D"}</span></div>);
     dd.forEach((x,i)=>{if(!x.sch){cells.push(<div key={`n${i}`} style={{background:"var(--surface)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",padding:4}}><span style={{fontSize:".6rem",color:"var(--text-muted)"}}>{isWE(x.d)?"Weekend":"Holiday"}</span></div>);return}
       if(x.isZ){cells.push(<div key={`n${i}`} onClick={()=>onDet(x.d)} style={{background:bg(x),border:bd(x),padding:4,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:".6rem",color:"var(--dz-text)",fontStyle:"italic"}}>{x.meta.day0label||"Day 0 \u2014 tap"}</span></div>);return}
@@ -1107,8 +1105,6 @@ function WeekView({base,setBase,onDet,mc,uM,mmO,setMmO,g}){
     <div className="card np" style={{padding:"10px 14px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6}}><div className="sl">Export week</div><div style={{display:"flex",gap:6}}>
       {(()=>{const refs=days.filter(d=>(mc[dk(d)]||eM()).reflections);const xst=(sGet("planner-config")||{}).exportStyle||"org";return refs.length>0?<Btn onClick={()=>{doDownload(buildReflTxt(xst,days,wl,mc),`reflections-${fmtISO(days[0])}.txt`)}} style={{padding:"3px 10px",fontSize:".68rem"}}>{"\u{1F4DD}"} Reflections ({refs.length})</Btn>:null})()}
       {(()=>{const xst=(sGet("planner-config")||{}).exportStyle||"org";const getTxt=()=>buildWkTxt(xst,days,wl,wkLabel,sum,mc,eng,wNotes);return<React.Fragment><Btn onClick={()=>doDownload(getTxt(),`week-plan-${fmtISO(days[0])}.txt`)} style={{padding:"3px 10px",fontSize:".68rem"}}>{"\u{1F4E5}"} Download</Btn><Btn onClick={()=>navigator.clipboard&&navigator.clipboard.writeText(getTxt())} style={{padding:"3px 10px",fontSize:".68rem"}}>{"\u{1F4CB}"} Copy</Btn></React.Fragment>})()}</div></div>
-    <div className="card np" style={{padding:"10px 14px",marginTop:10}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:mmO?8:0}}><div className="sl">Mid-morning setup {"\u00B7"} {wkLabel}</div><Btn onClick={()=>setMmO(o=>!o)} style={{padding:"2px 8px",fontSize:".66rem"}}>{mmO?"collapse \u25B2":"expand \u25BC"}</Btn></div>
-      {mmO&&<div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6}}>{days.map(d=>{const sch=eng.isSD(d),isZ=sch&&eng.isDZ(d),k=dk(d);if(!sch)return<div key={k} style={{opacity:.2,textAlign:"center",fontSize:".62rem",color:"var(--text-muted)",paddingTop:4}}>{d.toLocaleDateString("en-NZ",{weekday:"short"})}</div>;if(isZ)return<div key={k} style={{textAlign:"center",opacity:.5}}><div style={{fontSize:".62rem",color:"var(--text-muted)",marginBottom:4}}>{d.toLocaleDateString("en-NZ",{weekday:"short"})} {d.getDate()}</div><div style={{fontSize:".58rem",color:"var(--dz-text)",fontStyle:"italic",padding:"3px 4px",borderRadius:4,border:"1px solid var(--dz-border)",background:"var(--dz-bg)"}}>D0</div></div>;const mmt=(mc[k]||eM()).mmType;return<div key={k} style={{textAlign:"center"}}><div style={{fontSize:".62rem",color:"var(--text-secondary)",marginBottom:4}}>{d.toLocaleDateString("en-NZ",{weekday:"short"})} {d.getDate()}</div><div style={{display:"flex",flexDirection:"column",gap:3}}>{Object.entries(MMT).map(([mK,mt])=>{const a=mK===mmt;return<button key={mK} onClick={()=>uM(k,{mmType:mK})} style={{padding:"3px 0",borderRadius:4,cursor:"pointer",fontSize:".65rem",fontWeight:a?700:400,background:a?`var(--mm-${mK}-bg)`:"var(--surface)",color:a?`var(--mm-${mK}-text)`:"var(--text-muted)",border:a?`1px solid var(--mm-${mK}-text)`:"1px solid var(--border)"}}>{mt.icon} {mt.short}</button>})}</div></div>})}</div>}</div>
     {spot&&<div className="overlay" onClick={()=>setSpot(null)}><div onClick={e=>e.stopPropagation()} style={{background:"var(--card)",border:`2px solid ${eng.classMap[spot]&&eng.classMap[spot].bg}`,borderRadius:"var(--radius-lg)",padding:20,minWidth:280,maxWidth:360}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}><span className="mn" style={{background:eng.classMap[spot]&&eng.classMap[spot].bg,color:eng.classMap[spot]&&eng.classMap[spot].tx,padding:"4px 12px",borderRadius:6,fontWeight:700,fontSize:".98rem"}}>{spot}</span><button onClick={()=>setSpot(null)} style={{background:"none",border:"none",color:"var(--text-secondary)",fontSize:"1.2rem",cursor:"pointer"}}>{"\u2715"}</button></div>{spotHits.length===0?<div style={{color:"var(--text-muted)",fontSize:".83rem",padding:"10px 0"}}>No lessons this week.</div>:spotHits.map((h,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:"1px solid var(--border)"}}><div style={{background:eng.classMap[spot]&&eng.classMap[spot].bg,color:eng.classMap[spot]&&eng.classMap[spot].tx,borderRadius:4,padding:"2px 8px",fontSize:".73rem",fontWeight:700}}>{h.per&&h.per.label}</div><div><div style={{fontSize:".83rem",color:"var(--text)",fontWeight:600}}>{fmtS(h.d)}</div><div className="mn" style={{fontSize:".65rem",color:"var(--text-secondary)"}}>{h.per&&(h.per.start+"\u2013"+h.per.end)} {"\u00B7"} Day {h.cd}</div></div></div>)}</div></div>}
   </div>;
 }
@@ -1403,7 +1399,7 @@ function App(){
   const today=useToday();const[cfg,setCfg]=useState(()=>migrateConfig(sGet("planner-config")));
   const eng=useMemo(()=>makeDateEngine(cfg),[cfg]);const planMon=useMemo(()=>getPlanMon(today),[today]);const planWN=eng?eng.wkN(planMon):8;
   const[view,setView]=useState("week");const[base,setBase]=useState(planMon);const[detDate,setDetDate]=useState(null);
-  const[prevV,setPrevV]=useState("week");const[fp,setFP]=useState(null);const[mmO,setMmO]=useState(false);
+  const[prevV,setPrevV]=useState("week");const[fp,setFP]=useState(null);
   const[mc,setMC]=useState({});const mcR=useRef({});const[showDP,setShowDP]=useState(false);const[gr,setGR]=useState(0);
   // storageFailed: set when any sSet call hits a quota error. The ref mirrors the state so
   // triggerSync can read it synchronously without re-creating the useCallback. While true,
@@ -1576,7 +1572,7 @@ function App(){
     {(cfg&&(!cfg.classes||cfg.classes.length===0||!cfg.timetable||Object.keys(cfg.timetable).length===0))&&<div className="card" style={{padding:"14px 18px",marginBottom:14,border:"1px solid var(--dz-border)",background:"var(--dz-bg)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:"1.1rem"}}>{"\u{1F44B}"}</span><div style={{flex:1,minWidth:200}}><div className="hd" style={{fontSize:".85rem",fontWeight:600,color:"var(--dz-text)"}}>Welcome! Add your classes and timetable</div><div style={{fontSize:".7rem",color:"var(--dz-text)",opacity:.8}}>Term dates and holidays are already set up. Head to Setup to add your classes and timetable.</div></div><button className="btn-a" onClick={()=>{setView("setup");setGR(r=>r+1)}} style={{padding:"6px 14px",fontSize:".78rem"}}>Go to Setup {"\u2192"}</button></div>}
     {showDP&&<DataPanel onClose={()=>setShowDP(false)} onImported={handleImport} onSyncConn={(tok,gid)=>{setGhToken(tok);setGhGistId(gid);triggerSync()}} onSyncDisc={()=>{setGhToken("");setGhGistId("");clearTimeout(syncTimer.current);setSyncSt("idle");setLastSync(null)}} lastSync={lastSync} token={ghToken} gistId={ghGistId} setToken={setGhToken} setGistId={setGhGistId}/>}
     {view==="term"&&<TermView onDay={goDay} onWk={goWk} mc={mc} g={gam} cfg={cfg}/>}
-    {view==="week"&&<WeekView base={base} setBase={setBase} onDet={(d,pid)=>goDay(d,pid)} mc={mc} uM={uM} mmO={mmO} setMmO={setMmO} g={gam}/>}
+    {view==="week"&&<WeekView base={base} setBase={setBase} onDet={(d,pid)=>goDay(d,pid)} mc={mc} uM={uM} g={gam}/>}
     {view==="day"&&detDate&&<DayView date={detDate} setDate={d=>{setDetDate(d);setFP(null);setView("day")}} onBack={()=>{setFP(null);setGR(r=>r+1);setView(prevV==="day"?"week":prevV)}} mc={mc} onMS={onMS} fp={fp} g={gam}/>}
     {view==="class"&&<ClassView onDet={(d,pid)=>goDay(d,pid)} g={gam}/>}
     {view==="lab"&&<LabView g={gam}/>}
