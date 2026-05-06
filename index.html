@@ -155,8 +155,6 @@ textarea,input,button,select{font-family:'Inter',system-ui,sans-serif}
 .tt-grid .b-cell.has-value{color:var(--text)}
 .tt-add-row-btn{background:none;border:1px dashed var(--border-strong);border-radius:4px;padding:3px 10px;font-size:.66rem;color:var(--text-muted);cursor:pointer;font-family:inherit}
 .tt-add-row-btn:hover{color:var(--accent);border-color:var(--accent)}
-.tt-asm-btn{background:none;border:1px solid var(--border);border-radius:3px;padding:0 5px;font-size:.62rem;cursor:pointer;color:var(--text-muted);font-family:inherit;line-height:1.4;margin-left:4px}
-.tt-asm-btn.on{background:var(--mm-fullsch-bg);color:var(--mm-fullsch-text);border-color:var(--mm-fullsch-text)}
 .bs-popup{position:absolute;top:calc(100% + 4px);left:0;background:var(--card);border:1px solid var(--border-strong);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.18);padding:6px;min-width:180px;z-index:200;text-align:left}
 .bs-popup-label{font-size:.6rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;padding:2px 6px 5px;border-bottom:1px solid var(--border);margin-bottom:4px;white-space:nowrap}
 .bs-opt{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:4px;border:none;font-size:.72rem;font-family:inherit;cursor:pointer;text-align:left;background:transparent;color:var(--text);width:100%}
@@ -370,10 +368,14 @@ const hasF=t=>FRE.test(t||"");
 // entries (mt1/mt2/l) that were here in v1 have been removed; DayView now drives its
 // render from buildSlots and the remaining callers never look them up.
 function bldP(isAsm){const T=isAsm?ASM_T:STD_T;return[{id:"P1",label:"P1",start:T.p1.s,end:T.p1.e},{id:"P2",label:"P2",start:T.p2.s,end:T.p2.e},{id:"P3",label:"P3",start:T.p3.s,end:T.p3.e},{id:"P4",label:"P4",start:T.p4.s,end:T.p4.e},{id:"P5",label:"P5",start:T.p5.s,end:T.p5.e},{id:"P6",label:"P6",start:T.p6.s,end:T.p6.e}]}
-// isAsmDay: true if this cycle day is configured as a full-school assembly day. The
-// assembly bell schedule (ASM_T) shifts P1/P2 start times. Lives on cfg.timetable[D]
-// rather than per-date so it stays a property of the rotation, not a one-off override.
-function isAsmDay(cycleDay,cfg){const day=cfg&&cfg.timetable&&cfg.timetable[cycleDay];return!!(day&&day.assemblyDay)}
+// isAsmDay: true if this cycle day has an FSA (Full School Assembly) value in either
+// of its B1 slots. Derived directly from the timetable so the user does not need to
+// tick a separate flag — assembly = whichever cycle day they put FSA in.
+function isAsmDay(cycleDay,cfg){
+  const day=cfg&&cfg.timetable&&cfg.timetable[cycleDay];if(!day)return false;
+  const isFsa=v=>v&&v.t==="b1"&&v.c==="fsa";
+  return isFsa(day.B1a)||isFsa(day.B1b);
+}
 // B-slot timing tables. Step 4 will route these through cfg.timetable[D].assemblyDay
 // instead of mmType (which has been removed in step 5).
 const BSLOT_T_STD={B0:{s:"08:00",e:"08:30"},B1a:{s:"10:20",e:"10:45"},B1b:{s:"10:45",e:"11:10"},B2a:{s:"12:55",e:"13:20"},B2b:{s:"13:20",e:"13:50"},B3:{s:"15:30",e:""}};
@@ -580,6 +582,9 @@ function migrateConfig(cfg){
   if(cfg.classes)cfg.classes=cfg.classes.map(c=>({...c,description:c.description||""}));
   // Default theme for users who pre-date theme support.
   if(!cfg.theme)cfg.theme="physics";
+  // School name is fixed in this single-school deployment. Overwrite any prior value
+  // so existing users see the canonical name and the input no longer needs to exist.
+  cfg.school="Dio";
   // v2: period keys upper-cased (p1→P1) and B-slot keys (B0, B1a, B1b, B2a, B2b, B3) seeded per cycle day.
   // Idempotent: data already in v2 shape passes through unchanged.
   if(cfg.timetable&&typeof cfg.timetable==="object"){
@@ -1017,25 +1022,6 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
     updateField("overrides",next);
     setTimeout(save,0);
   };
-  // setCycleDefault: write into cfg.timetable[cd][slotCode] via the App-level
-  // onUpdateCfg callback. Also clears any matching per-date override on this
-  // date so the new cycle default is what shows.
-  const setCycleDefault=(slotCode,value)=>{
-    if(!onUpdateCfg)return;
-    onUpdateCfg(prev=>{
-      const tt={...(prev.timetable||{})};
-      if(!tt[cd])tt[cd]={};
-      tt[cd]={...tt[cd],[slotCode]:value};
-      return{...prev,timetable:tt};
-    });
-    // Drop a matching override on this date to avoid a stale dot.
-    const cur=(meta&&meta.overrides)||{};
-    if(slotCode in cur){
-      const next={...cur};delete next[slotCode];
-      updateField("overrides",next);
-      setTimeout(save,0);
-    }
-  };
   return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
     <div style={{marginBottom:12,marginTop:10}}><div className="hd" style={{fontSize:"1.3rem",fontWeight:600,color:"var(--text)",lineHeight:1.2}}>{fmtF(date)}</div><div className="hd" style={{fontSize:".85rem",marginTop:4,color:isZ?"var(--dz-text)":sch?"var(--accent)":"var(--error)"}}>{isZ?"Day 0 \u2014 no class structure":sch?`Day ${cd} rotation`:eng.inT(date)?"Holiday / Weekend":"School Holiday"}{twn&&<span style={{color:"var(--text-secondary)",fontWeight:400}}> {"\u00B7"} Term {twn.tn}, Week {twn.wk}</span>}</div></div>
     <div className="np" style={{display:"flex",alignItems:"center",gap:7,marginBottom:14,flexWrap:"wrap"}}><Btn onClick={onBack}>{"\u2190"} Back</Btn><Btn onClick={()=>prev&&setDate(prev)} disabled={!prev}>{"\u2039"} Prev</Btn><Btn onClick={()=>next&&setDate(next)} disabled={!next}>Next {"\u203A"}</Btn><div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}><SvH ss={ss}/><Btn onClick={()=>window.print()}>{"\u{1F5A8}"} Print</Btn></div></div>
@@ -1046,7 +1032,7 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
   const code=s.code;
   const cyc=((eng.timetable&&eng.timetable[cd])||{})[code]||null;
   const current=s.type==="bslot"?s.value:null;
-  return<BSlotRow key={`${dateKey}-${code}`} slot={s} dateKey={dateKey} cycleDay={cd} current={current} cycleDefault={cyc} isOverride={!!s.isOverride} duties={duties} onSaveToday={v=>setOverride(code,v)} onSaveCycle={v=>setCycleDefault(code,v)} hFoc={hFoc} hBlr={hBlr}/>;
+  return<BSlotRow key={`${dateKey}-${code}`} slot={s} dateKey={dateKey} cycleDay={cd} current={current} cycleDefault={cyc} isOverride={!!s.isOverride} duties={duties} onSaveToday={v=>setOverride(code,v)} hFoc={hFoc} hBlr={hBlr}/>;
 })}</div><ReflectionsPanel meta={meta} updateField={updateField} hFoc={hFoc} hBlr={hBlr} ss={ss}/></>}
   </div>;
 }
@@ -1253,12 +1239,6 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
         else next[code]=v;
         uM(dateKey,{overrides:next});
       };
-      const saveCycle=v=>{
-        if(!onUpdateCfg)return;
-        onUpdateCfg(prev=>{const tt={...(prev.timetable||{})};if(!tt[cd])tt[cd]={};tt[cd]={...tt[cd],[code]:v};return{...prev,timetable:tt}});
-        const cur=(mc[dateKey]||eM()).overrides||{};
-        if(code in cur){const n={...cur};delete n[code];uM(dateKey,{overrides:n})}
-      };
       // Compute overlay position based on the captured anchor rect.
       const a=bsEdit.anchor;const W=260;const Hmax=320;const pad=6;
       let left=a.left;
@@ -1269,7 +1249,7 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
       return<>
         <div onClick={()=>setBsEdit(null)} style={{position:"fixed",inset:0,zIndex:299}}/>
         <div className="wk-overlay" style={{top,left,width:W}} onClick={e=>e.stopPropagation()}>
-          <BSlotEditor slot={slot} cycleDay={cd} current={current} cycleDefault={cyc} duties={duties} onSaveToday={saveToday} onSaveCycle={saveCycle} onClose={()=>setBsEdit(null)}/>
+          <BSlotEditor slot={slot} cycleDay={cd} current={current} cycleDefault={cyc} duties={duties} onSaveToday={saveToday} onClose={()=>setBsEdit(null)}/>
         </div>
       </>;
     })()}
@@ -1395,7 +1375,7 @@ function BSlotChip({value,duties}){
   return null;
 }
 function BSlotPopup({slotCode,day,current,duties,onPick,onClose}){
-  const isB1=slotCode==="B1a";
+  const isB1=slotCode==="B1a"||slotCode==="B1b";
   const[view,setView]=useState("main");
   const[actText,setActText]=useState("");
   const popupRef=useRef(null);
@@ -1434,9 +1414,6 @@ function BSlotCell({day,slotCode,value,duties,onChange}){
     {open&&<BSlotPopup slotCode={slotCode} day={day} current={value} duties={duties} onPick={v=>{onChange(v);setOpen(false)}} onClose={()=>setOpen(false)}/>}
   </div>;
 }
-function AsmToggle({on,onToggle}){
-  return<button className={`tt-asm-btn${on?" on":""}`} title="Full-school assembly day" onClick={e=>{e.stopPropagation();onToggle()}}>{"☀"}</button>;
-}
 // describeValue: human-readable summary of a B-slot value, used in the cycle-default
 // caption shown above the editor and in override banners.
 function describeValue(v){
@@ -1451,11 +1428,11 @@ function describeValue(v){
  * or "D{cd}" (cycle default). No auto-save: the staged value lives only in
  * editor state until one of the two save buttons is pressed.
  */
-function BSlotEditor({slot,cycleDay,current,cycleDefault,duties,onSaveToday,onSaveCycle,onClose}){
+function BSlotEditor({slot,cycleDay,current,cycleDefault,duties,onSaveToday,onClose}){
   const[staged,setStaged]=useState(current);
   const[view,setView]=useState("main");
   const[actText,setActText]=useState(staged&&staged.t==="activity"?staged.tx:"");
-  const isB1=slot.code==="B1a";
+  const isB1=slot.code==="B1a"||slot.code==="B1b";
   const hasDuties=(duties||[]).length>0;
   const stagedDiffersFromDefault=!valEq(staged,cycleDefault);
   const stagedDiffersFromCurrent=!valEq(staged,current);
@@ -1490,7 +1467,6 @@ function BSlotEditor({slot,cycleDay,current,cycleDefault,duties,onSaveToday,onSa
     {stagedDiffersFromDefault&&<div className="bs-override-banner">{"⚠"} Differs from cycle default ({describeValue(cycleDefault)})</div>}
     <div className="bs-save-row">
       <button className="bs-cancel" onClick={onClose}>Cancel</button>
-      <button className="bs-save-cycle" disabled={!stagedDiffersFromCurrent} onClick={()=>{onSaveCycle(staged);onClose()}}>Save to D{cycleDay}</button>
       <button className="bs-save-today" disabled={!stagedDiffersFromCurrent} onClick={()=>{onSaveToday(staged);onClose()}}>Save today</button>
     </div>
   </>;
@@ -1499,7 +1475,7 @@ function BSlotEditor({slot,cycleDay,current,cycleDefault,duties,onSaveToday,onSa
  * override dot (if applicable). Expanded swaps in the inline BSlotEditor
  * plus a notes textarea backed by note:<date>:<slotCode>.
  */
-function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,duties,onSaveToday,onSaveCycle,hFoc,hBlr}){
+function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,duties,onSaveToday,hFoc,hBlr}){
   const[expanded,setExpanded]=useState(false);
   const noteKey=`note:${dateKey}:${slot.code}`;
   const as=useAutoSave(noteKey,eN());
@@ -1517,7 +1493,7 @@ function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,duties,
   return<>
     {summary}
     <div className="bs-row-editor">
-      <BSlotEditor slot={slot} cycleDay={cycleDay} current={current} cycleDefault={cycleDefault} duties={duties} onSaveToday={onSaveToday} onSaveCycle={onSaveCycle} onClose={()=>setExpanded(false)}/>
+      <BSlotEditor slot={slot} cycleDay={cycleDay} current={current} cycleDefault={cycleDefault} duties={duties} onSaveToday={onSaveToday} onClose={()=>setExpanded(false)}/>
       <div className="bs-note-area">
         <label className="fl" style={{fontSize:".68rem"}}>Notes <SvH ss={noteSs}/></label>
         <AInp data={note} field="notes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Notes for this slot today" multi rows={2}/>
@@ -1571,7 +1547,7 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
 
     <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>School & Cycle</div>
       <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:10}}><div style={{flex:1,minWidth:180}}><label className="fl">Your Name (optional)</label><input className="inp" value={cfg.userName||""} onChange={e=>up({userName:e.target.value})} placeholder="e.g. Ms Smith"/></div></div>
-      <div style={{display:"flex",gap:12,flexWrap:"wrap"}}><div style={{flex:1,minWidth:180}}><label className="fl">School Name</label><input className="inp" value={cfg.school||""} onChange={e=>up({school:e.target.value})}/></div><div style={{minWidth:120}}><label className="fl">Cycle Length</label><select className="inp" value={cfg.cycleDays||7} onChange={e=>up({cycleDays:Number(e.target.value)})}>{[5,6,7,8,9,10].map(n=><option key={n} value={n}>{n}-day</option>)}</select></div></div>
+      <div style={{display:"flex",gap:12,flexWrap:"wrap"}}><div style={{minWidth:120}}><label className="fl">Cycle Length</label><select className="inp" value={cfg.cycleDays||7} onChange={e=>up({cycleDays:Number(e.target.value)})}>{[5,6,7,8,9,10].map(n=><option key={n} value={n}>{n}-day</option>)}</select></div></div>
       <div style={{fontSize:".68rem",color:"var(--text-muted)",marginTop:10,lineHeight:1.5}}>Your school uses a rotating timetable where the cycle advances one day for each teaching day. Weekends, public holidays, and Day 0 events pause the cycle {"\u2014"} it picks up where it left off on the next teaching day.</div></div>
 
     <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Export Format</div>
@@ -1603,7 +1579,7 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
         <ColourPicker value={c.colour} onChange={col=>updateClass(i,"colour",col)} usedColours={usedColours}/></div>)}
       <button className="btn" onClick={addClass}>+ Add Class</button>{classes.length===0&&<div style={{fontSize:".7rem",color:"var(--text-muted)",marginTop:8,fontStyle:"italic"}}>No classes defined yet.</div>}</div>
 
-    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Timetable</div><div style={{fontSize:".68rem",color:"var(--text-secondary)",marginBottom:10}}>Click a teaching-period cell to set a class (type "nc" for non-contact). Click a B-slot cell to set a morning structure, duty, or activity. Use ☀ on the day header for full-school assembly days.</div>
+    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Timetable</div><div style={{fontSize:".68rem",color:"var(--text-secondary)",marginBottom:10}}>Click a teaching-period cell to set a class (type "nc" for non-contact). Click a B-slot cell to set a morning structure, duty, or activity. The day with FSA picks up the assembly bell schedule automatically.</div>
       {(() => {
         const nDays=cfg.cycleDays||7;
         const tt=cfg.timetable||{};
@@ -1625,13 +1601,6 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
           next[day]={...next[day],[pid]:v};
           up({timetable:next});
         };
-        const toggleAsm=day=>{
-          const next={...(cfg.timetable||{})};
-          if(!next[day])next[day]={};
-          if(next[day].assemblyDay){const{assemblyDay,...rest}=next[day];next[day]=rest}
-          else next[day]={...next[day],assemblyDay:true};
-          up({timetable:next});
-        };
         const slotLabel=(rel,extra={})=><div className="hd" style={{fontSize:".66rem",fontWeight:600,color:"var(--text)",display:"flex",alignItems:"center",position:"relative",...extra}}>{rel}</div>;
         const periodLabel=pid=><div className="hd" style={{fontFamily:"'JetBrains Mono',monospace",fontSize:".78rem",fontWeight:700,color:"var(--accent)",display:"flex",alignItems:"center"}}>{pid}</div>;
         const renderBRow=(code,label,extra)=><React.Fragment key={code}>
@@ -1650,10 +1619,10 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
           {!showB0&&<button className="tt-add-row-btn" onClick={()=>setShowEdgeRows(s=>({...s,B0:true}))} style={{marginBottom:8}}>+ Before school</button>}
           <div className="tt-grid" style={{gridTemplateColumns:`84px repeat(${nDays},1fr)`,overflowX:"auto"}}>
             <div/>
-            {Array.from({length:nDays},(_,i)=>{const day=i+1;const isAsm=!!(tt[day]&&tt[day].assemblyDay);
-              return<div key={day} className="hd" style={{textAlign:"center",fontSize:".7rem",fontWeight:600,color:"var(--text-muted)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            {Array.from({length:nDays},(_,i)=>{const day=i+1;const isAsm=isAsmDay(day,{timetable:tt});
+              return<div key={day} className="hd" style={{textAlign:"center",fontSize:".7rem",fontWeight:600,color:"var(--text-muted)",display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
                 <span>Day {day}</span>
-                <AsmToggle on={isAsm} onToggle={()=>toggleAsm(day)}/>
+                {isAsm&&<span title="Assembly bell schedule (FSA on this day)" style={{color:"var(--mm-fullsch-text)",fontSize:".7rem"}}>{"☀"}</span>}
               </div>;
             })}
             {showB0&&renderBRow("B0","before school")}
@@ -1967,7 +1936,7 @@ function App(){
       {date:"2026-08-31",label:"Teacher Only Day 2",source:"manual"},
       {date:"2026-10-26",label:"Labour Day",source:"statutory"},
       {date:"2026-12-07",label:"Final Days",source:"manual"},{date:"2026-12-08",label:"Final Days",source:"manual"}],
-    anchor:{date:"2026-04-02",day:2},timetable:{},classes:[],theme:"",userName:""};sSet("planner-config",blank);setCfg(blank)}},[cfg]);
+    anchor:{date:"2026-04-02",day:2},timetable:{},classes:[],duties:[],theme:"coffee",exportStyle:"plain",school:"Dio",userName:""};sSet("planner-config",blank);setCfg(blank)}},[cfg]);
   if(!cfg||!eng)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>Loading...</div>;
 
   return<CfgCtx.Provider value={eng}><div style={{minHeight:"100vh",padding:16}}><div style={{maxWidth:720,margin:"0 auto"}}>

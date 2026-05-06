@@ -6,6 +6,25 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.1.0 — 2026-05-07
+
+### Behaviour changes
+
+- **B-slot editors no longer write the cycle default.** Both the DayView in-row editor and the WeekView cell-zoom overlay drop the "Save to D{cd}" button. Only "Save today" and "Cancel" remain. Cycle-default edits live in Setup, where they belong; the planner views are for per-date overrides only. Less surface area, less chance of an accidental cycle-wide change.
+- **B1b accepts the morning-structure options.** Tutor / Chapel / FSA / DA were previously offered only on B1a. Some teachers run morning structure in either window, so both B1a and B1b now expose the same option set. B0, B2a, B2b, B3 stay duty/activity only.
+- **Assembly bell schedule is derived, not configured.** The per-cycle-day "☀" toggle in the Setup grid is gone. `isAsmDay(cycleDay, cfg)` now returns true iff that cycle day has an FSA value in either B1a or B1b. Pick FSA somewhere in the cycle day and the assembly timing follows automatically. The day-header sun icon now appears as a read-only indicator, not a button.
+- **School name is fixed to "Dio".** The Setup input for it is removed; `migrateConfig` overwrites any prior value on load. Single-school deployment.
+
+### Defaults for new installs
+
+- Theme: `coffee`
+- Export format: Plain text
+- School: `Dio`
+
+(These only affect a brand-new profile. Existing users keep whatever they set, except for the school name, which is forced to "Dio" on load.)
+
+---
+
 ## 2.0.0 — 2026-05-07
 
 ### Major: 12-slot model and per-date overrides
