@@ -1308,6 +1308,22 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
   const classes=cfg.classes||[];const usedColours=new Set(classes.map(c=>c.colour));
   const addClass=()=>{up({classes:[...classes,{code:"",description:"",colour:DEFAULT_PALETTE.find(c=>!usedColours.has(c))||DEFAULT_PALETTE[0]}]})};
   const updateClass=(i,field,val)=>{const cls=[...classes];cls[i]={...cls[i],[field]:val};up({classes:cls})};
+  // Duties registry. Same data-shape pattern as classes but with `color`/`textColor`
+  // explicit so chips can render outside of the classMap lookup. textColor is auto-derived
+  // from TEXT_FOR_BG when the colour swatch changes; the user does not pick it directly.
+  const duties=cfg.duties||[];
+  const usedDutyColours=new Set(duties.map(d=>d.color));
+  const addDuty=()=>{
+    const c=DEFAULT_PALETTE.find(x=>!usedDutyColours.has(x))||DEFAULT_PALETTE[0];
+    up({duties:[...duties,{code:"",description:"",color:c,textColor:TEXT_FOR_BG[c]||"#000"}]});
+  };
+  const updateDuty=(i,field,val)=>{
+    const ds=[...duties];
+    ds[i]={...ds[i],[field]:val};
+    if(field==="color")ds[i].textColor=TEXT_FOR_BG[val]||"#000";
+    up({duties:ds});
+  };
+  const moveDuty=(i,dir)=>{const ds=[...duties];const ni=i+dir;if(ni<0||ni>=ds.length)return;[ds[i],ds[ni]]=[ds[ni],ds[i]];up({duties:ds})};
   const doSave=()=>{sSet("planner-config",cfg);onSave(cfg);setSaved(true);setTimeout(()=>setSaved(false),2000);if(window._plannerSync)window._plannerSync()};
 
   return<div style={{paddingBottom:120}}><div className="hd" style={{fontSize:"1.15rem",fontWeight:600,color:"var(--accent)",marginBottom:14}}>{"\u2699\uFE0F"} School Setup</div>
@@ -1421,6 +1437,15 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
         </>;
       })()}
     </div>
+
+    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Duties</div><div style={{fontSize:".68rem",color:"var(--text-secondary)",marginBottom:10}}>Duty codes appear as pill chips in the B-slot popup above. Code is short (e.g. "GD"); description shows in Day View.</div>
+      {duties.map((d,i)=><div key={i} style={{marginBottom:10,padding:10,background:"var(--surface)",borderRadius:"var(--radius-md)",border:"1px solid var(--border)"}}><div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:4}}><button className="btn" onClick={()=>moveDuty(i,-1)} disabled={i===0} style={{padding:"2px 6px",fontSize:".65rem"}}>{"\u25b2"}</button><button className="btn" onClick={()=>moveDuty(i,1)} disabled={i===duties.length-1} style={{padding:"2px 6px",fontSize:".65rem"}}>{"\u25bc"}</button></div>
+        <div style={{flex:"0 0 84px"}}><input className="inp mn" value={d.code} onChange={e=>updateDuty(i,"code",e.target.value.toUpperCase().replace(/\s/g,""))} placeholder="GD" style={{fontSize:".78rem",fontWeight:700,textAlign:"center",background:d.color,color:d.textColor||TEXT_FOR_BG[d.color]||"#000",borderRadius:10}}/></div>
+        <div style={{flex:1,minWidth:140}}><input className="inp" value={d.description} onChange={e=>updateDuty(i,"description",e.target.value)} placeholder="Description (e.g. Gate duty)" style={{fontSize:".72rem"}}/></div>
+        <button className="btn" onClick={()=>up({duties:duties.filter((_,j)=>j!==i)})} style={{padding:"2px 8px",color:"var(--error)",fontSize:".7rem"}}>{"\u2715"}</button></div>
+        <ColourPicker value={d.color} onChange={col=>updateDuty(i,"color",col)} usedColours={usedDutyColours}/></div>)}
+      <button className="btn" onClick={addDuty}>+ Add duty</button>{duties.length===0&&<div style={{fontSize:".7rem",color:"var(--text-muted)",marginTop:8,fontStyle:"italic"}}>No duties defined yet.</div>}</div>
 
     <div style={{display:"flex",gap:8,alignItems:"center"}}><button className="btn-a" onClick={doSave}>Save Configuration</button>{saved&&<span style={{fontSize:".75rem",color:"var(--success)",fontWeight:600}}>{"\u2713"} Saved</span>}</div></div>;
 }
