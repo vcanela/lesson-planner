@@ -6,6 +6,64 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.1.0 — 2026-05-07
+
+### Behaviour changes
+
+- **B-slot editors no longer write the cycle default.** Both the DayView in-row editor and the WeekView cell-zoom overlay drop the "Save to D{cd}" button. Only "Save today" and "Cancel" remain. Cycle-default edits live in Setup, where they belong; the planner views are for per-date overrides only. Less surface area, less chance of an accidental cycle-wide change.
+- **B1b accepts the morning-structure options.** Tutor / Chapel / FSA / DA were previously offered only on B1a. Some teachers run morning structure in either window, so both B1a and B1b now expose the same option set. B0, B2a, B2b, B3 stay duty/activity only.
+- **Assembly bell schedule is derived, not configured.** The per-cycle-day "☀" toggle in the Setup grid is gone. `isAsmDay(cycleDay, cfg)` now returns true iff that cycle day has an FSA value in either B1a or B1b. Pick FSA somewhere in the cycle day and the assembly timing follows automatically. The day-header sun icon now appears as a read-only indicator, not a button.
+- **School name is fixed to "Dio".** The Setup input for it is removed; `migrateConfig` overwrites any prior value on load. Single-school deployment.
+
+### Defaults for new installs
+
+- Theme: `coffee`
+- Export format: Plain text
+- School: `Dio`
+
+(These only affect a brand-new profile. Existing users keep whatever they set, except for the school name, which is forced to "Dio" on load.)
+
+---
+
+## 2.0.0 — 2026-05-07
+
+### Major: 12-slot model and per-date overrides
+
+The data model is rebuilt around twelve named time-blocks per day: B0 (before school), P1, P2, B1a (after 2), B1b (before 3), P3, P4, B2a (after 4), B2b (before 5), P5, P6, B3 (after school). The cosmetic mid-morning selector (`mmType`) and its derived "Tutor / Morning Tea / Lunch" break rows are gone; their content moves into proper B-slot values that the planner can hold, edit, override per date, and annotate with notes.
+
+`SCHEMA_VERSION` bumps from 1 to 2. v1 backups still import cleanly: `migrateConfig` upper-cases period keys (`p1`-`p6` → `P1`-`P6`), seeds the six B-slot keys per cycle day, and strips the obsolete `mmType` from any leaked top-level config; a new `migrateStorage` re-keys note entries from `note:<date>:p[1-6]` to `note:<date>:P[1-6]`, seeds `overrides:{}` on every daymeta, and removes the `mmType` field. Both migrations are idempotent and run once at startup plus once after any backup import. v1 clients cannot read v2 backups (the existing `version > SCHEMA_VERSION` guard refuses them).
+
+### Setup
+
+- **New 12-slot timetable grid** with B-slot rows interleaved between teaching periods. B0 and B3 are toggleable via "+ Before school" / "+ After school" affordances; B1a/B1b/B2a/B2b are always visible. Slot labels show only the wordy relational phrase ("after 2", "before 3"); the B-codes stay internal.
+- **Per-cycle-day assembly toggle** (sun icon in each day column header) replaces the v1 `mmType=fullsch` shortcut. When on, P1/P2/P3/P4 use the assembly bell schedule (`ASM_T`); P5/P6 are unchanged.
+- **B-slot cell editor popup** (Tutor/Chapel/FSA/DA + Duty/Activity/Clear) opens anchored to the clicked cell. Period cells keep TTCombo.
+- **New Duties registry card** beneath the timetable: code, description, colour swatch, reorder, delete. Duty codes added here populate the Duty submenu in B-slot editors across Setup, Day, and Week views.
+
+### Day View
+
+- **B-slot rows** render from `buildSlots`, replacing the cosmetic break dividers. Each row shows the chip (when set), an orange override dot when the value differs from the cycle default, a paperclip when there are notes, and the time range.
+- **In-row expansion editor** for any B-slot. Stages a value from the slot-aware option set, surfaces a "Differs from cycle default" banner, and commits via two save buttons: "Save today" writes a per-date override into `daymeta.overrides[code]`; "Save to D{cd}" writes the cycle default into `cfg.timetable[cd][code]`.
+- **B-slot notes** at `note:<date>:<slotCode>` (e.g. `note:2026-5-7:B1a`), backed by the same autosave-on-blur as period notes.
+
+### Week View
+
+- **B-slot rows** appear in the grid only when at least one school day in the visible week has a non-null resolved value for that slot. Empty cells inside a visible row show diagonal hatching (with a today-tinted variant) so the missing schedule reads as "exists but unscheduled".
+- **Cell-zoom overlay editor** anchored to the clicked B-cell with viewport clamping and flip-up. Reuses the same staged-value editor and save-button split as Day View. Click outside to close.
+
+### Removed
+
+- `MMBar`, `MMT` constant, `MTag` mini-component, the "Mid-morning Setup" expand panel under the week grid, and the App-level `mmO` state.
+- The `mt1`/`mt2`/`l` cosmetic break entries in `bldP` (DayView no longer iterates them; the three remaining call sites only need P1-P6 timing).
+- `mmType` from `eM()` defaults and from existing daymeta entries (stripped by `migrateStorage`).
+
+### Notes
+
+- B-slot codes (B0/B1a/B1b/B2a/B2b/B3) are intentionally hidden from user-facing surfaces; they appear only in data, source, and storage keys.
+- Override revert is informational by design: the orange dot signals the difference, but reverting is done by re-picking the cycle-default value in the editor and saving today.
+
+---
+
 ## 1.6.1 — 2026-05-01
 
 ### Fixes
