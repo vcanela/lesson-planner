@@ -192,6 +192,16 @@ textarea,input,button,select{font-family:'Inter',system-ui,sans-serif}
 .bs-save-cycle:disabled{opacity:.4;cursor:not-allowed}
 .bs-cancel{background:transparent;color:var(--text-muted);border:none;padding:5px 8px;font-size:.7rem;cursor:pointer;font-family:inherit}
 .bs-note-area{margin-top:10px;padding-top:8px;border-top:1px dashed var(--border)}
+.wk-blabel{display:flex;align-items:center;justify-content:flex-end;padding:4px 4px 4px 0;font-size:.52rem;color:var(--text-muted);font-style:italic;line-height:1.1;text-align:right}
+.wk-bcell{display:flex;align-items:center;justify-content:center;padding:3px 4px;cursor:pointer;border:1px solid var(--border);border-radius:0;min-height:24px;position:relative;gap:3px}
+.wk-bcell:hover{background:var(--accent-light)}
+.wk-bcell .bs-chip{font-size:.56rem;padding:1px 4px;line-height:1.2}
+.wk-bcell .bs-override-dot{width:4px;height:4px}
+.wk-bcell.empty-hatch{background:repeating-linear-gradient(-45deg,transparent 0 5px,rgba(122,114,104,.10) 5px 10px)}
+.wk-bcell.empty-hatch:hover{background:repeating-linear-gradient(-45deg,var(--accent-light) 0 5px,rgba(122,114,104,.12) 5px 10px)}
+.wk-bcell.today{background:var(--today-bg)}
+.wk-bcell.today.empty-hatch{background:repeating-linear-gradient(-45deg,var(--today-bg) 0 5px,rgba(213,160,74,.18) 5px 10px)}
+.wk-overlay{position:fixed;background:var(--card);border:1px solid var(--border-strong);border-radius:6px;box-shadow:0 6px 22px rgba(0,0,0,.22);padding:10px 12px;min-width:220px;max-width:280px;z-index:300}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:10px}
 .cal-cell{display:flex;align-items:center;justify-content:center;height:34px;border-radius:var(--radius-sm);font-size:.73rem;cursor:pointer;transition:background .12s,color .12s;border:1px solid transparent;position:relative}
 .cal-cell:hover:not(.cal-dis):not(.cal-lk){background:var(--cal-hover)}
@@ -1130,10 +1140,13 @@ function doDownload(content,filename){const blob=new Blob([content],{type:"text/
  * The export card lets you download or copy the week as text.
  * ═══════════════════════════════════════════════════════════════════════
  */
-function WeekView({base,setBase,onDet,mc,uM,g}){
+function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
   const eng=useCfg();const today=useToday();const days=getWDs(base),wn=eng.wkN(base);
   const twn=eng.termWkN(days);const wkLabel=twn?`Term ${twn.tn}, Week ${twn.wk}`:"School Holidays";
   const[spot,setSpot]=useState(null);const[qe,setQE]=useState(null);const[qv,setQV]=useState("");const[nr,setNR]=useState(0);
+  // B-slot week overlay state. {date, slotCode, anchor:DOMRect} when a B-cell is clicked.
+  const[bsEdit,setBsEdit]=useState(null);
+  const duties=(cfg&&cfg.duties)||[];
   // Captures `qe` at mousedown time, before the input's blur handler clears it.
   // Used by the period cell's onClick to make the same-period toggle robust:
   // if qe was open at mousedown on this cell, treat the click as "close".
@@ -1162,13 +1175,54 @@ function WeekView({base,setBase,onDet,mc,uM,g}){
       if(x.isZ){cells.push(<div key={`n${i}`} onClick={()=>onDet(x.d)} style={{background:bg(x),border:bd(x),padding:4,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:".6rem",color:"var(--dz-text)",fontStyle:"italic"}}>{x.meta.day0label||"Day 0 \u2014 tap"}</span></div>);return}
       const val=x.meta.dayNotes||"";cells.push(<div key={`n${i}`} style={{background:bg(x),border:bd(x),padding:"3px 4px",display:"flex",alignItems:"stretch"}}><textarea className="ta" value={val} onChange={e=>uM(x.k,{dayNotes:e.target.value})} placeholder="Day notes" rows={1} style={{fontSize:".6rem",padding:"2px 4px",borderRadius:3,background:val?"var(--surface-open)":"transparent",borderColor:val?"var(--accent)":"var(--border)",minHeight:28,lineHeight:1.3,width:"100%",maxWidth:"100%",boxSizing:"border-box"}}/></div>);
     });
-    eng.PIDS.forEach((pid,pi)=>{const lastP=pi===eng.PIDS.length-1;cells.push(<div key={`l${pid}`} style={lS}><span className="hd" style={lT}>P{pi+1}</span></div>);
+    // Resolve a B-slot value for one day: per-date override > cycle default > null.
+    const resolveBSlot=(x,code)=>{const ovr=(x.meta&&x.meta.overrides)||{};return(code in ovr)?ovr[code]:(eng.timetable[x.cd]||{})[code]||null};
+    const isOverrideBSlot=(x,code)=>{const ovr=(x.meta&&x.meta.overrides)||{};if(!(code in ovr))return false;const cyc=(eng.timetable[x.cd]||{})[code]||null;return!valEq(ovr[code],cyc)};
+    // Visibility rule: a B-row renders if at least one school day in the week has
+    // a non-null resolved value for it. B0/B3 follow the same rule; they stay
+    // hidden when nothing is scheduled, matching the migration doc.
+    const bRowVisible=code=>dd.some(x=>x.sch&&!x.isZ&&resolveBSlot(x,code)!==null);
+    const bSlotRow=code=>{
+      cells.push(<div key={`l${code}`} className="wk-blabel">{BSLOT_LABELS[code]}</div>);
+      dd.forEach((x,i)=>{
+        const ck=`${code}-${i}`;
+        if(!x.sch||x.isZ){cells.push(<div key={ck} style={{background:bg(x),border:bd(x)}}/>);return}
+        const v=resolveBSlot(x,code);
+        const ov=isOverrideBSlot(x,code);
+        const isEmpty=v===null;
+        const handleClick=e=>{
+          e.stopPropagation();
+          const r=e.currentTarget.getBoundingClientRect();
+          setBsEdit({date:x.d,dateKey:x.k,cycleDay:x.cd,slotCode:code,anchor:{top:r.top,left:r.left,bottom:r.bottom,right:r.right,width:r.width,height:r.height}});
+        };
+        cells.push(<div key={ck} className={`wk-bcell${isEmpty?" empty-hatch":""}${x.isT?" today":""}`} onClick={handleClick}>
+          {v&&<BSlotChip value={v} duties={duties}/>}
+          {ov&&<span className="bs-override-dot" title="Override"/>}
+        </div>);
+      });
+    };
+    const pSlotRow=(pid,pi)=>{
+      const lastP=pi===eng.PIDS.length-1;
+      cells.push(<div key={`l${pid}`} style={lS}><span className="hd" style={lT}>P{pi+1}</span></div>);
       dd.forEach((x,i)=>{const ck=`${pid}-${i}`;if(!x.sch||x.isZ){cells.push(<div key={ck} style={{background:bg(x),border:bd(x),borderRadius:lastP?`0 0 var(--radius-md) var(--radius-md)`:"0"}}/>);return}
         const cls=(eng.timetable[x.cd]||{})[pid]||"nc",isNc=cls==="nc",clr=isNc?null:eng.classMap[cls];const nk=`${x.k}:${pid}`,n=wNotes[nk];const isNl=!isNc&&n&&n.status==="nl";const filled=!isNc&&n&&(n.subject||n.notes||isNl),fl=n&&(hasF(n.notes)||hasF(n.subject));
         cells.push(<div key={ck} style={{background:bg(x),border:bd(x),padding:"0 4px",borderRadius:lastP?`0 0 var(--radius-md) var(--radius-md)`:"0",paddingBottom:lastP?4:0}}><div className={`pb${isNc?" pb-nc":""}${!isNc&&!filled?" pb-e":""}`} style={isNc?{}:{background:clr?clr.bg:"",color:clr?clr.tx:"",...(!filled?{background:"transparent"}:{})}} onMouseDown={()=>{qeAtMouseDownRef.current=qe}} onClick={e=>{e.stopPropagation();const wasOpen=qeAtMouseDownRef.current;qeAtMouseDownRef.current=null;if(wasOpen&&wasOpen.dk===x.k&&wasOpen.pid===pid){setQE(null)}else{oQE(x.k,pid,cls,x.d)}}}><div style={{display:"flex",alignItems:"center",gap:4,width:"100%"}}><span className="mn" style={{fontSize:".58rem",fontWeight:700}}>{isNc?"NC":cls}</span><span style={{flex:1}}/>{fl&&<span style={{color:isNc?"var(--flag)":clr&&clr.tx,fontSize:".6rem"}}>{"\u2691"}</span>}{filled&&!fl&&!isNl&&<span style={{width:5,height:5,borderRadius:"50%",background:isNc?"var(--success)":clr&&clr.tx,opacity:.6}}/>}{isNl&&<span style={{fontSize:".48rem",fontWeight:700,opacity:.7}}>NL</span>}</div><div style={{fontSize:".57rem",fontWeight:400,opacity:filled?.8:.65,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",width:"100%"}}>{isNl?(n&&n.subject?`No lesson \u2014 ${n.subject}`:"No lesson"):n&&n.subject||"\u2014"}</div></div></div>);
       });
-    });return cells;
-  },[days,today,mc,wNotes,eng]);
+    };
+    // Interleave B-slot rows with P-rows: B0 above P1; B1a/B1b between P2/P3;
+    // B2a/B2b between P4/P5; B3 below P6. B-rows render only when at least
+    // one day in the week has a value for that slot.
+    if(bRowVisible("B0"))bSlotRow("B0");
+    pSlotRow("P1",0);pSlotRow("P2",1);
+    if(bRowVisible("B1a"))bSlotRow("B1a");
+    if(bRowVisible("B1b"))bSlotRow("B1b");
+    pSlotRow("P3",2);pSlotRow("P4",3);
+    if(bRowVisible("B2a"))bSlotRow("B2a");
+    if(bRowVisible("B2b"))bSlotRow("B2b");
+    pSlotRow("P5",4);pSlotRow("P6",5);
+    if(bRowVisible("B3"))bSlotRow("B3");
+    return cells;
+  },[days,today,mc,wNotes,eng,duties]);
 
   const flags=useMemo(()=>{const fl=[];days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;const key=dk(d);eng.PIDS.forEach(pid=>{const n=wNotes[`${key}:${pid}`];if(n&&(hasF(n.notes)||hasF(n.subject))){const cls=(eng.timetable[cd]||{})[pid]||"nc";fl.push({date:d,pid,cls,subject:n.subject||"",notes:n.notes||""})}})});return fl},[days,wNotes]);
   const spotHits=useMemo(()=>{if(!spot)return[];const h=[];days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{if((eng.timetable[cd]||{})[pid]===spot){const per=bldP(isAsmDay(cd,{timetable:eng.timetable})).find(p=>p.id===pid);h.push({d,per,cd})}})});return h},[spot,days]);
@@ -1183,6 +1237,42 @@ function WeekView({base,setBase,onDet,mc,uM,g}){
     <div className="card np" style={{padding:"10px 14px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6}}><div className="sl">Export week</div><div style={{display:"flex",gap:6}}>
       {(()=>{const refs=days.filter(d=>(mc[dk(d)]||eM()).reflections);const xst=(sGet("planner-config")||{}).exportStyle||"org";return refs.length>0?<Btn onClick={()=>{doDownload(buildReflTxt(xst,days,wl,mc),`reflections-${fmtISO(days[0])}.txt`)}} style={{padding:"3px 10px",fontSize:".68rem"}}>{"\u{1F4DD}"} Reflections ({refs.length})</Btn>:null})()}
       {(()=>{const xst=(sGet("planner-config")||{}).exportStyle||"org";const getTxt=()=>buildWkTxt(xst,days,wl,wkLabel,sum,mc,eng,wNotes);return<React.Fragment><Btn onClick={()=>doDownload(getTxt(),`week-plan-${fmtISO(days[0])}.txt`)} style={{padding:"3px 10px",fontSize:".68rem"}}>{"\u{1F4E5}"} Download</Btn><Btn onClick={()=>navigator.clipboard&&navigator.clipboard.writeText(getTxt())} style={{padding:"3px 10px",fontSize:".68rem"}}>{"\u{1F4CB}"} Copy</Btn></React.Fragment>})()}</div></div>
+    {bsEdit&&(()=>{
+      const cd=bsEdit.cycleDay;
+      const code=bsEdit.slotCode;
+      const dateKey=bsEdit.dateKey;
+      const meta=mc[dateKey]||eM();
+      const cyc=((eng.timetable&&eng.timetable[cd])||{})[code]||null;
+      const overrides=meta.overrides||{};
+      const current=(code in overrides)?overrides[code]:cyc;
+      const slot={code,label:BSLOT_LABELS[code]};
+      const saveToday=v=>{
+        const cur=(mc[dateKey]||eM()).overrides||{};
+        const next={...cur};
+        if(valEq(v,cyc))delete next[code];
+        else next[code]=v;
+        uM(dateKey,{overrides:next});
+      };
+      const saveCycle=v=>{
+        if(!onUpdateCfg)return;
+        onUpdateCfg(prev=>{const tt={...(prev.timetable||{})};if(!tt[cd])tt[cd]={};tt[cd]={...tt[cd],[code]:v};return{...prev,timetable:tt}});
+        const cur=(mc[dateKey]||eM()).overrides||{};
+        if(code in cur){const n={...cur};delete n[code];uM(dateKey,{overrides:n})}
+      };
+      // Compute overlay position based on the captured anchor rect.
+      const a=bsEdit.anchor;const W=260;const Hmax=320;const pad=6;
+      let left=a.left;
+      let top=a.bottom+pad;
+      if(left+W>window.innerWidth-8)left=window.innerWidth-W-8;
+      if(left<8)left=8;
+      if(top+Hmax>window.innerHeight-8)top=Math.max(8,a.top-Hmax-pad);
+      return<>
+        <div onClick={()=>setBsEdit(null)} style={{position:"fixed",inset:0,zIndex:299}}/>
+        <div className="wk-overlay" style={{top,left,width:W}} onClick={e=>e.stopPropagation()}>
+          <BSlotEditor slot={slot} cycleDay={cd} current={current} cycleDefault={cyc} duties={duties} onSaveToday={saveToday} onSaveCycle={saveCycle} onClose={()=>setBsEdit(null)}/>
+        </div>
+      </>;
+    })()}
     {spot&&<div className="overlay" onClick={()=>setSpot(null)}><div onClick={e=>e.stopPropagation()} style={{background:"var(--card)",border:`2px solid ${eng.classMap[spot]&&eng.classMap[spot].bg}`,borderRadius:"var(--radius-lg)",padding:20,minWidth:280,maxWidth:360}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}><span className="mn" style={{background:eng.classMap[spot]&&eng.classMap[spot].bg,color:eng.classMap[spot]&&eng.classMap[spot].tx,padding:"4px 12px",borderRadius:6,fontWeight:700,fontSize:".98rem"}}>{spot}</span><button onClick={()=>setSpot(null)} style={{background:"none",border:"none",color:"var(--text-secondary)",fontSize:"1.2rem",cursor:"pointer"}}>{"\u2715"}</button></div>{spotHits.length===0?<div style={{color:"var(--text-muted)",fontSize:".83rem",padding:"10px 0"}}>No lessons this week.</div>:spotHits.map((h,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:"1px solid var(--border)"}}><div style={{background:eng.classMap[spot]&&eng.classMap[spot].bg,color:eng.classMap[spot]&&eng.classMap[spot].tx,borderRadius:4,padding:"2px 8px",fontSize:".73rem",fontWeight:700}}>{h.per&&h.per.label}</div><div><div style={{fontSize:".83rem",color:"var(--text)",fontWeight:600}}>{fmtS(h.d)}</div><div className="mn" style={{fontSize:".65rem",color:"var(--text-secondary)"}}>{h.per&&(h.per.start+"\u2013"+h.per.end)} {"\u00B7"} Day {h.cd}</div></div></div>)}</div></div>}
   </div>;
 }
@@ -1898,7 +1988,7 @@ function App(){
     {(cfg&&(!cfg.classes||cfg.classes.length===0||!cfg.timetable||Object.keys(cfg.timetable).length===0))&&<div className="card" style={{padding:"14px 18px",marginBottom:14,border:"1px solid var(--dz-border)",background:"var(--dz-bg)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:"1.1rem"}}>{"\u{1F44B}"}</span><div style={{flex:1,minWidth:200}}><div className="hd" style={{fontSize:".85rem",fontWeight:600,color:"var(--dz-text)"}}>Welcome! Add your classes and timetable</div><div style={{fontSize:".7rem",color:"var(--dz-text)",opacity:.8}}>Term dates and holidays are already set up. Head to Setup to add your classes and timetable.</div></div><button className="btn-a" onClick={()=>{setView("setup");setGR(r=>r+1)}} style={{padding:"6px 14px",fontSize:".78rem"}}>Go to Setup {"\u2192"}</button></div>}
     {showDP&&<DataPanel onClose={()=>setShowDP(false)} onImported={handleImport} onSyncConn={(tok,gid)=>{setGhToken(tok);setGhGistId(gid);triggerSync()}} onSyncDisc={()=>{setGhToken("");setGhGistId("");clearTimeout(syncTimer.current);setSyncSt("idle");setLastSync(null)}} lastSync={lastSync} token={ghToken} gistId={ghGistId} setToken={setGhToken} setGistId={setGhGistId}/>}
     {view==="term"&&<TermView onDay={goDay} onWk={goWk} mc={mc} g={gam} cfg={cfg}/>}
-    {view==="week"&&<WeekView base={base} setBase={setBase} onDet={(d,pid)=>goDay(d,pid)} mc={mc} uM={uM} g={gam}/>}
+    {view==="week"&&<WeekView base={base} setBase={setBase} onDet={(d,pid)=>goDay(d,pid)} mc={mc} uM={uM} g={gam} onUpdateCfg={onUpdateCfg} cfg={cfg}/>}
     {view==="day"&&detDate&&<DayView date={detDate} setDate={d=>{setDetDate(d);setFP(null);setView("day")}} onBack={()=>{setFP(null);setGR(r=>r+1);setView(prevV==="day"?"week":prevV)}} mc={mc} onMS={onMS} fp={fp} g={gam} onUpdateCfg={onUpdateCfg} cfg={cfg}/>}
     {view==="class"&&<ClassView onDet={(d,pid)=>goDay(d,pid)} g={gam}/>}
     {view==="lab"&&<LabView g={gam}/>}
