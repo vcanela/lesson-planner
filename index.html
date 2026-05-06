@@ -170,6 +170,28 @@ textarea,input,button,select{font-family:'Inter',system-ui,sans-serif}
 .bs-chip{font-size:.62rem;font-weight:600;padding:2px 6px;border-radius:3px;display:inline-flex;align-items:center;gap:3px;line-height:1.3;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .bs-chip-activity{background:var(--surface);color:var(--text-secondary);border-radius:10px;border:1.5px solid var(--border-strong)}
 .bs-chip-duty{border-radius:10px;border:1.5px solid currentColor}
+.bs-row{cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);user-select:none}
+.bs-row:hover{background:var(--surface)}
+.bs-row.gap{color:var(--text-muted)}
+.bs-row .bs-row-label{font-weight:600;font-size:.78rem}
+.bs-row.gap .bs-row-label{font-style:italic;font-weight:500}
+.bs-row .bs-row-time{margin-left:auto;font-size:.65rem;color:var(--text-muted)}
+.bs-row-editor{padding:10px 12px;background:var(--surface);border-bottom:1px solid var(--border)}
+.bs-row-editor h4{font-size:.72rem;font-weight:600;color:var(--text);margin-bottom:6px}
+.bs-row-default{font-size:.62rem;color:var(--text-muted);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.bs-override-dot{width:6px;height:6px;border-radius:50%;background:var(--error);display:inline-block;flex-shrink:0}
+.bs-override-banner{font-size:.62rem;color:var(--error);font-style:italic;margin:6px 0;padding:4px 8px;background:rgba(213,94,0,.08);border-radius:4px}
+.bs-edit-options{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.bs-edit-options button{background:var(--card);border:1px solid var(--border);border-radius:4px;padding:4px 10px;font-size:.7rem;cursor:pointer;color:var(--text);font-family:inherit;display:inline-flex;align-items:center;gap:4px}
+.bs-edit-options button:hover{background:var(--accent-light);border-color:var(--accent)}
+.bs-edit-options button.staged{background:var(--accent-light);border-color:var(--accent);font-weight:600}
+.bs-save-row{display:flex;gap:6px;justify-content:flex-end;margin-top:8px;flex-wrap:wrap}
+.bs-save-today{background:var(--accent);color:#fff;border:none;border-radius:4px;padding:5px 12px;font-size:.72rem;cursor:pointer;font-family:inherit;font-weight:600}
+.bs-save-today:disabled{opacity:.4;cursor:not-allowed}
+.bs-save-cycle{background:var(--card);color:var(--text);border:1px solid var(--border-strong);border-radius:4px;padding:5px 10px;font-size:.72rem;cursor:pointer;font-family:inherit}
+.bs-save-cycle:disabled{opacity:.4;cursor:not-allowed}
+.bs-cancel{background:transparent;color:var(--text-muted);border:none;padding:5px 8px;font-size:.7rem;cursor:pointer;font-family:inherit}
+.bs-note-area{margin-top:10px;padding-top:8px;border-top:1px dashed var(--border)}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:10px}
 .cal-cell{display:flex;align-items:center;justify-content:center;height:34px;border-radius:var(--radius-sm);font-size:.73rem;cursor:pointer;transition:background .12s,color .12s;border:1px solid transparent;position:relative}
 .cal-cell:hover:not(.cal-dis):not(.cal-lk){background:var(--cal-hover)}
@@ -373,7 +395,7 @@ function buildSlots(cycleDay,daymeta,cfg){
     const v=resolve(code);const t=Tb[code];
     if(v===null){
       if(code==="B0"||code==="B3")return null;
-      return{type:"gap",id:"gap-"+code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e};
+      return{type:"gap",id:"gap-"+code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e,isOverride:isOver(code)};
     }
     return{type:"bslot",id:code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e,value:v,isOverride:isOver(code)};
   };
@@ -963,13 +985,47 @@ function PCard({period,dateKey,cDay,initOpen}){
  * Week View's "Full detail" link).
  * ═══════════════════════════════════════════════════════════════════════
  */
-function DayView({date,setDate,onBack,mc,onMS,fp,g}){
+function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
   const eng=useCfg();const cd=eng.cycD(date),dateKey=dk(date),isZ=cd===0,sch=eng.isSD(date);
   const twn=eng.termWkN(getWDs(date));
   const prev=eng.nearSD(date,-1),next=eng.nearSD(date,1);
   const hms=useCallback(saved=>{if(dateKey)onMS(dateKey,saved)},[dateKey]);
   const as=useAutoSave(`daymeta:${dateKey}`,eM(),hms);const{data:meta,updateField,ss,hFoc,hBlr,save}=as;
   const slots=buildSlots(cd,meta,{timetable:eng.timetable});
+  const duties=(cfg&&cfg.duties)||[];
+  // setOverride: write a per-date override for one B-slot into daymeta.overrides.
+  // If the chosen value matches the cycle default, drop the override key entirely
+  // so isOverride goes back to false (no orange dot). updateField only updates the
+  // in-memory ref/state; we call save() after so the daymeta lands in localStorage
+  // and the gist sync fires.
+  const setOverride=(slotCode,value)=>{
+    const cyc=((eng.timetable&&eng.timetable[cd])||{})[slotCode]||null;
+    const cur=(meta&&meta.overrides)||{};
+    const next={...cur};
+    if(valEq(value,cyc))delete next[slotCode];
+    else next[slotCode]=value;
+    updateField("overrides",next);
+    setTimeout(save,0);
+  };
+  // setCycleDefault: write into cfg.timetable[cd][slotCode] via the App-level
+  // onUpdateCfg callback. Also clears any matching per-date override on this
+  // date so the new cycle default is what shows.
+  const setCycleDefault=(slotCode,value)=>{
+    if(!onUpdateCfg)return;
+    onUpdateCfg(prev=>{
+      const tt={...(prev.timetable||{})};
+      if(!tt[cd])tt[cd]={};
+      tt[cd]={...tt[cd],[slotCode]:value};
+      return{...prev,timetable:tt};
+    });
+    // Drop a matching override on this date to avoid a stale dot.
+    const cur=(meta&&meta.overrides)||{};
+    if(slotCode in cur){
+      const next={...cur};delete next[slotCode];
+      updateField("overrides",next);
+      setTimeout(save,0);
+    }
+  };
   return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
     <div style={{marginBottom:12,marginTop:10}}><div className="hd" style={{fontSize:"1.3rem",fontWeight:600,color:"var(--text)",lineHeight:1.2}}>{fmtF(date)}</div><div className="hd" style={{fontSize:".85rem",marginTop:4,color:isZ?"var(--dz-text)":sch?"var(--accent)":"var(--error)"}}>{isZ?"Day 0 \u2014 no class structure":sch?`Day ${cd} rotation`:eng.inT(date)?"Holiday / Weekend":"School Holiday"}{twn&&<span style={{color:"var(--text-secondary)",fontWeight:400}}> {"\u00B7"} Term {twn.tn}, Week {twn.wk}</span>}</div></div>
     <div className="np" style={{display:"flex",alignItems:"center",gap:7,marginBottom:14,flexWrap:"wrap"}}><Btn onClick={onBack}>{"\u2190"} Back</Btn><Btn onClick={()=>prev&&setDate(prev)} disabled={!prev}>{"\u2039"} Prev</Btn><Btn onClick={()=>next&&setDate(next)} disabled={!next}>Next {"\u203A"}</Btn><div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}><SvH ss={ss}/><Btn onClick={()=>window.print()}>{"\u{1F5A8}"} Print</Btn></div></div>
@@ -977,8 +1033,10 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g}){
     :isZ?<div className="card" style={{padding:18,marginBottom:14,borderColor:"var(--dz-border)",background:"var(--dz-bg)"}}><div className="hd" style={{fontSize:".85rem",color:"var(--dz-text)",fontWeight:600,marginBottom:12}}>Day 0 \u2014 No class structure</div>{meta&&<div style={{display:"grid",gap:10}} onFocus={hFoc} onBlur={hBlr}><div><label className="fl">Label / Activity <SvH ss={ss}/></label><AInp data={meta} field="day0label" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="e.g. Orientation, EOTC"/></div><div><label className="flb">Notes</label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Notes" multi rows={3}/></div></div>}</div>
     :<>{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH ss={ss}/></label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Meetings, reminders, duty" multi rows={2}/></div>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>{slots.map(s=>{
   if(s.type==="period")return<PCard key={`${dateKey}-${s.id}`} period={s} dateKey={dateKey} cDay={cd} initOpen={fp===s.id}/>;
-  // bslot and gap render the same way for now (label + time range). Step 8 expands bslot rows into full chip+editor.
-  return<div key={s.id} className="brk"><span>{s.label}</span><span className="mn" style={{fontSize:".65rem"}}>{s.start}{s.end?"\u2013"+s.end:""}</span></div>;
+  const code=s.code;
+  const cyc=((eng.timetable&&eng.timetable[cd])||{})[code]||null;
+  const current=s.type==="bslot"?s.value:null;
+  return<BSlotRow key={`${dateKey}-${code}`} slot={s} dateKey={dateKey} cycleDay={cd} current={current} cycleDefault={cyc} isOverride={!!s.isOverride} duties={duties} onSaveToday={v=>setOverride(code,v)} onSaveCycle={v=>setCycleDefault(code,v)} hFoc={hFoc} hBlr={hBlr}/>;
 })}</div><ReflectionsPanel meta={meta} updateField={updateField} hFoc={hFoc} hBlr={hBlr} ss={ss}/></>}
   </div>;
 }
@@ -1288,6 +1346,94 @@ function BSlotCell({day,slotCode,value,duties,onChange}){
 }
 function AsmToggle({on,onToggle}){
   return<button className={`tt-asm-btn${on?" on":""}`} title="Full-school assembly day" onClick={e=>{e.stopPropagation();onToggle()}}>{"☀"}</button>;
+}
+// describeValue: human-readable summary of a B-slot value, used in the cycle-default
+// caption shown above the editor and in override banners.
+function describeValue(v){
+  if(!v)return"free";
+  if(v.t==="b1"){const t=B1_TYPES[v.c];return t?t.label:v.c}
+  if(v.t==="duty")return v.c;
+  if(v.t==="activity")return`Activity: ${v.tx}`;
+  return"";
+}
+/* BSlotEditor: the inline editor inside an expanded BSlotRow. Stages a value
+ * as the user clicks options, then commits via "Save today" (per-date override)
+ * or "D{cd}" (cycle default). No auto-save: the staged value lives only in
+ * editor state until one of the two save buttons is pressed.
+ */
+function BSlotEditor({slot,cycleDay,current,cycleDefault,duties,onSaveToday,onSaveCycle,onClose}){
+  const[staged,setStaged]=useState(current);
+  const[view,setView]=useState("main");
+  const[actText,setActText]=useState(staged&&staged.t==="activity"?staged.tx:"");
+  const isB1=slot.code==="B1a";
+  const hasDuties=(duties||[]).length>0;
+  const stagedDiffersFromDefault=!valEq(staged,cycleDefault);
+  const stagedDiffersFromCurrent=!valEq(staged,current);
+  const renderMain=()=><div className="bs-edit-options">
+    {isB1&&Object.entries(B1_TYPES).map(([k,t])=>{
+      const a=staged&&staged.t==="b1"&&staged.c===k;
+      return<button key={k} className={a?"staged":""} onClick={()=>setStaged({t:"b1",c:k})}>{t.icon} {t.label}</button>;
+    })}
+    {hasDuties&&<button onClick={()=>setView("duty")}>{"\u{1F6E1}"} Duty…</button>}
+    <button onClick={()=>setView("activity")}>{"\u{1F4CC}"} Activity…</button>
+    <button className={staged===null?"staged":""} onClick={()=>setStaged(null)}>Free</button>
+  </div>;
+  const renderDuty=()=><div className="bs-edit-options">
+    <button onClick={()=>setView("main")}>{"←"} Back</button>
+    {(duties||[]).map(d=>{const a=staged&&staged.t==="duty"&&staged.c===d.code;
+      return<button key={d.code} className={a?"staged":""} onClick={()=>{setStaged({t:"duty",c:d.code});setView("main")}} style={{background:d.color,color:d.textColor||"#000",borderRadius:10}}>{d.code}</button>;
+    })}
+  </div>;
+  const renderActivity=()=><div style={{margin:"8px 0"}}>
+    <input className="bs-popup-input" autoFocus value={actText} onChange={e=>setActText(e.target.value)} placeholder="e.g. Chess club, Catchup" onKeyDown={e=>{if(e.key==="Enter"&&actText.trim()){setStaged({t:"activity",tx:actText.trim()});setView("main")}}}/>
+    <div style={{display:"flex",gap:6}}>
+      <button className="bs-save-today" disabled={!actText.trim()} onClick={()=>{if(actText.trim()){setStaged({t:"activity",tx:actText.trim()});setView("main")}}}>Set</button>
+      <button className="bs-cancel" onClick={()=>setView("main")}>Cancel</button>
+    </div>
+  </div>;
+  return<>
+    <h4>{slot.label}</h4>
+    <div className="bs-row-default">Cycle default · D{cycleDay}: <strong>{describeValue(cycleDefault)}</strong></div>
+    {view==="main"&&renderMain()}
+    {view==="duty"&&renderDuty()}
+    {view==="activity"&&renderActivity()}
+    {stagedDiffersFromDefault&&<div className="bs-override-banner">{"⚠"} Differs from cycle default ({describeValue(cycleDefault)})</div>}
+    <div className="bs-save-row">
+      <button className="bs-cancel" onClick={onClose}>Cancel</button>
+      <button className="bs-save-cycle" disabled={!stagedDiffersFromCurrent} onClick={()=>{onSaveCycle(staged);onClose()}}>Save to D{cycleDay}</button>
+      <button className="bs-save-today" disabled={!stagedDiffersFromCurrent} onClick={()=>{onSaveToday(staged);onClose()}}>Save today</button>
+    </div>
+  </>;
+}
+/* BSlotRow: one B-slot row in DayView. Collapsed shows chip + label + time +
+ * override dot (if applicable). Expanded swaps in the inline BSlotEditor
+ * plus a notes textarea backed by note:<date>:<slotCode>.
+ */
+function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,duties,onSaveToday,onSaveCycle,hFoc,hBlr}){
+  const[expanded,setExpanded]=useState(false);
+  const noteKey=`note:${dateKey}:${slot.code}`;
+  const as=useAutoSave(noteKey,eN());
+  const{data:note,updateField,ss:noteSs}=as;
+  const hasNote=!!(note&&note.notes&&note.notes.trim());
+  const isGap=!current;
+  const summary=<div className={`bs-row${isGap?" gap":""}`} onClick={()=>setExpanded(e=>!e)}>
+    <span className="bs-row-label">{slot.label}</span>
+    {current&&<BSlotChip value={current} duties={duties}/>}
+    {isOverride&&<span className="bs-override-dot" title="Override (different from cycle default)"/>}
+    {hasNote&&<span title="Has notes" style={{fontSize:".7rem"}}>{"\u{1F4DD}"}</span>}
+    <span className="bs-row-time mn">{slot.start}{slot.end?"–"+slot.end:""}</span>
+  </div>;
+  if(!expanded)return summary;
+  return<>
+    {summary}
+    <div className="bs-row-editor">
+      <BSlotEditor slot={slot} cycleDay={cycleDay} current={current} cycleDefault={cycleDefault} duties={duties} onSaveToday={onSaveToday} onSaveCycle={onSaveCycle} onClose={()=>setExpanded(false)}/>
+      <div className="bs-note-area">
+        <label className="fl" style={{fontSize:".68rem"}}>Notes <SvH ss={noteSs}/></label>
+        <AInp data={note} field="notes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Notes for this slot today" multi rows={2}/>
+      </div>
+    </div>
+  </>;
 }
 /* ═══ SETTINGS VIEW ══════════════════════════════════════════════════════ */
 /* ═══ SETTINGS / SETUP VIEW ══════════════════════════════════════════════
@@ -1691,6 +1837,11 @@ function App(){
   const themeKey=cfg&&cfg.theme||"physics";
   const gam=useMemo(()=>({...compGam(eng,planWN,themeKey),showGam:cfg?.showGam!==false}),[gr,view,planWN,eng,themeKey,cfg]);
   const uM=useCallback((key,ch)=>{const cur=mcR.current[key]||eM(),u={...cur,...ch};mcR.current={...mcR.current,[key]:u};setMC(c=>({...c,[key]:u}));sSet(`daymeta:${key}`,u);triggerSync()},[triggerSync]);
+  // onUpdateCfg: lets a non-Settings view (e.g. DayView's "Save to D{cd}") write
+  // a partial change into cfg.timetable. Persists to localStorage and bumps the
+  // gamification refresh counter so any view that reads through eng picks up the
+  // new shape on the next render.
+  const onUpdateCfg=useCallback(updater=>{setCfg(prev=>{const next=updater(prev);sSet("planner-config",next);return next});setGR(r=>r+1);triggerSync()},[triggerSync]);
   const onMS=useCallback((key,m)=>{mcR.current={...mcR.current,[key]:m};setMC(c=>({...c,[key]:m}));triggerSync()},[triggerSync]);
   const goDay=(d,pid)=>{setPrevV(view);setDetDate(d);setFP(pid||null);setView("day")};
   const goWk=d=>{setBase(d);setView("week")};
@@ -1748,7 +1899,7 @@ function App(){
     {showDP&&<DataPanel onClose={()=>setShowDP(false)} onImported={handleImport} onSyncConn={(tok,gid)=>{setGhToken(tok);setGhGistId(gid);triggerSync()}} onSyncDisc={()=>{setGhToken("");setGhGistId("");clearTimeout(syncTimer.current);setSyncSt("idle");setLastSync(null)}} lastSync={lastSync} token={ghToken} gistId={ghGistId} setToken={setGhToken} setGistId={setGhGistId}/>}
     {view==="term"&&<TermView onDay={goDay} onWk={goWk} mc={mc} g={gam} cfg={cfg}/>}
     {view==="week"&&<WeekView base={base} setBase={setBase} onDet={(d,pid)=>goDay(d,pid)} mc={mc} uM={uM} g={gam}/>}
-    {view==="day"&&detDate&&<DayView date={detDate} setDate={d=>{setDetDate(d);setFP(null);setView("day")}} onBack={()=>{setFP(null);setGR(r=>r+1);setView(prevV==="day"?"week":prevV)}} mc={mc} onMS={onMS} fp={fp} g={gam}/>}
+    {view==="day"&&detDate&&<DayView date={detDate} setDate={d=>{setDetDate(d);setFP(null);setView("day")}} onBack={()=>{setFP(null);setGR(r=>r+1);setView(prevV==="day"?"week":prevV)}} mc={mc} onMS={onMS} fp={fp} g={gam} onUpdateCfg={onUpdateCfg} cfg={cfg}/>}
     {view==="class"&&<ClassView onDet={(d,pid)=>goDay(d,pid)} g={gam}/>}
     {view==="lab"&&<LabView g={gam}/>}
     {view==="setup"&&<SettingsView onSave={newCfg=>{setCfg(newCfg);setGR(r=>r+1)}} displayMode={dispMode} setDisplayMode={setDispMode}/>}
