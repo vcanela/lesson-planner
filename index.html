@@ -309,7 +309,16 @@ const ASM_T={p1:{s:"08:30",e:"09:20"},p2:{s:"09:20",e:"10:10"},mt1:{s:"10:10",e:
 const FWORDS=["todo","prepare","tbc","tbd","check","remind","follow up","incomplete","print","photocopy"];
 const FRE=/\b(todo|prepare|tbc|tbd|check|remind|follow.?up|incomplete|print|photocopy)\b/i;
 const hasF=t=>FRE.test(t||"");
-function bldP(mm){const m=MMT[mm]||MMT.tutor,T=m.asm?ASM_T:STD_T;return[{id:"P1",label:"P1",start:T.p1.s,end:T.p1.e,brk:false},{id:"P2",label:"P2",start:T.p2.s,end:T.p2.e,brk:false},{id:"mt1",label:m.slot1,start:T.mt1.s,end:T.mt1.e,brk:true},{id:"mt2",label:m.slot2,start:T.mt2.s,end:T.mt2.e,brk:true},{id:"P3",label:"P3",start:T.p3.s,end:T.p3.e,brk:false},{id:"P4",label:"P4",start:T.p4.s,end:T.p4.e,brk:false},{id:"l",label:"Lunch",start:T.l.s,end:T.l.e,brk:true},{id:"P5",label:"P5",start:T.p5.s,end:T.p5.e,brk:false},{id:"P6",label:"P6",start:T.p6.s,end:T.p6.e,brk:false}]}
+// bldP: per-period start/end timings for the six teaching periods. Three call sites
+// (plain-text export, WeekView spotHits, ClassView lessons) use it as a point-lookup
+// `bldP(isAsm).find(p=>p.id===pid)` for one period at a time. The cosmetic break
+// entries (mt1/mt2/l) that were here in v1 have been removed; DayView now drives its
+// render from buildSlots and the remaining callers never look them up.
+function bldP(isAsm){const T=isAsm?ASM_T:STD_T;return[{id:"P1",label:"P1",start:T.p1.s,end:T.p1.e},{id:"P2",label:"P2",start:T.p2.s,end:T.p2.e},{id:"P3",label:"P3",start:T.p3.s,end:T.p3.e},{id:"P4",label:"P4",start:T.p4.s,end:T.p4.e},{id:"P5",label:"P5",start:T.p5.s,end:T.p5.e},{id:"P6",label:"P6",start:T.p6.s,end:T.p6.e}]}
+// isAsmDay: true if this cycle day is configured as a full-school assembly day. The
+// assembly bell schedule (ASM_T) shifts P1/P2 start times. Lives on cfg.timetable[D]
+// rather than per-date so it stays a property of the rotation, not a one-off override.
+function isAsmDay(cycleDay,cfg){const day=cfg&&cfg.timetable&&cfg.timetable[cycleDay];return!!(day&&day.assemblyDay)}
 // B-slot timing tables. Step 4 will route these through cfg.timetable[D].assemblyDay
 // instead of mmType (preserved here so step 3 stays backward-compatible).
 const BSLOT_T_STD={B0:{s:"08:00",e:"08:30"},B1a:{s:"10:20",e:"10:45"},B1b:{s:"10:45",e:"11:10"},B2a:{s:"12:55",e:"13:20"},B2b:{s:"13:20",e:"13:50"},B3:{s:"15:30",e:""}};
@@ -331,8 +340,7 @@ function valEq(a,b){if(!a&&!b)return true;if(!a||!b)return false;if(a.t!==b.t)re
 function buildSlots(cycleDay,daymeta,cfg){
   const day=(cfg&&cfg.timetable&&cfg.timetable[cycleDay])||{};
   const overrides=(daymeta&&daymeta.overrides)||{};
-  const mm=(daymeta&&daymeta.mmType)||"tutor";
-  const useAsm=!!(MMT[mm]&&MMT[mm].asm);
+  const useAsm=isAsmDay(cycleDay,cfg);
   const T=useAsm?ASM_T:STD_T;
   const Tb=useAsm?BSLOT_T_ASM:BSLOT_T_STD;
   const resolve=code=>(code in overrides)?overrides[code]:(day[code]||null);
@@ -1011,7 +1019,7 @@ function buildWkTxt(style,days,wl,wkLabel,sum,mc,eng,wNotes){
     if(meta.dayNotes)out+=bq(meta.dayNotes)+"\n";
     eng.PIDS.forEach((pid,pi)=>{
       const cls=(eng.timetable[cd]||{})[pid]||"nc";const n=wNotes[`${key}:${pid}`];
-      const per=bldP(meta.mmType||"tutor").find(p=>p.id===pid);
+      const per=bldP(isAsmDay(cd,{timetable:eng.timetable})).find(p=>p.id===pid);
       const lbl=`P${pi+1} (${per?per.start+"\u2013"+per.end:""})`;
       const nlTag=n&&n.status==="nl"?" \u2014 No lesson":"";
       if(cls==="nc"){
@@ -1087,7 +1095,7 @@ function WeekView({base,setBase,onDet,mc,uM,mmO,setMmO,g}){
   },[days,today,mc,wNotes,eng]);
 
   const flags=useMemo(()=>{const fl=[];days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;const key=dk(d);eng.PIDS.forEach(pid=>{const n=wNotes[`${key}:${pid}`];if(n&&(hasF(n.notes)||hasF(n.subject))){const cls=(eng.timetable[cd]||{})[pid]||"nc";fl.push({date:d,pid,cls,subject:n.subject||"",notes:n.notes||""})}})});return fl},[days,wNotes]);
-  const spotHits=useMemo(()=>{if(!spot)return[];const h=[];days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{if((eng.timetable[cd]||{})[pid]===spot){const per=bldP("tutor").find(p=>p.id===pid);h.push({d,per,cd})}})});return h},[spot,days]);
+  const spotHits=useMemo(()=>{if(!spot)return[];const h=[];days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{if((eng.timetable[cd]||{})[pid]===spot){const per=bldP(isAsmDay(cd,{timetable:eng.timetable})).find(p=>p.id===pid);h.push({d,per,cd})}})});return h},[spot,days]);
 
   return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
     <div className="np" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10,marginTop:10,flexWrap:"wrap"}}><div style={{display:"flex",alignItems:"center",gap:7}}><Btn onClick={()=>setBase(d=>addD(d,-7))} style={{padding:"4px 10px"}}>{"\u2039"}</Btn><div style={{textAlign:"center",width:"190px",flexShrink:0}}><div style={{fontSize:".8rem",color:"var(--text-secondary)"}}>{wl}</div><div className="hd" style={{fontSize:".7rem",color:"var(--accent)",fontWeight:600}}>{wkLabel}</div></div><Btn onClick={()=>setBase(d=>addD(d,7))} style={{padding:"4px 10px"}}>{"\u203A"}</Btn></div><Btn onClick={()=>setBase(getPlanMon(today))} style={{padding:"4px 10px",fontSize:".72rem"}}>Today</Btn></div>
@@ -1140,7 +1148,7 @@ function ClassView({onDet,g}){
     <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14,marginTop:10}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c],a=c===sel;return<span key={c} className="mn" onClick={()=>{setSel(c);setQE(null)}} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"4px 12px",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer",outline:a?"2px solid var(--accent)":"none",outlineOffset:2}}>{c}</span>})}</div>
     <div style={{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"}}><button onClick={()=>setTermIdx(-1)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:".76rem",fontWeight:termIdx===-1?600:400,background:termIdx===-1?"var(--accent)":"var(--surface)",color:termIdx===-1?"var(--on-accent)":"var(--text-secondary)"}}>All terms</button>{eng.terms.map((t,i)=><button key={i} onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:".76rem",fontWeight:termIdx===i?600:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div>
     <div style={{marginBottom:14}}><div className="hd" style={{fontSize:"1.1rem",fontWeight:600,color:clr.tx}}><span style={{background:clr.bg,padding:"2px 10px",borderRadius:5}}>{sel}</span></div>{clr.desc&&<div style={{fontSize:".75rem",color:"var(--text-secondary)",marginTop:4}}>{clr.desc}</div>}<div style={{fontSize:".73rem",color:"var(--text-secondary)",marginTop:4}}>{lessons.length} lessons {"\u00B7"} <strong className="mn" style={{color:planned===lessons.length?"var(--success)":"var(--text)"}}>{planned} planned</strong> {"\u00B7"} {lessons.length-planned} empty{flagged>0&&<span style={{color:"var(--flag)",marginLeft:6}}>{"\u2691"} {flagged}</span>}</div></div>
-    <div className="card" style={{overflow:"hidden"}}>{lessons.map((l,i)=>{const ld=new Date(l.date);ld.setHours(0,0,0,0);const isT=ld.toDateString()===today.toDateString(),isPast=ld<today,isNl=l.notes.status==="nl",empty=!l.notes.subject&&!l.notes.notes&&!isNl,fl=hasF(l.notes.notes)||hasF(l.notes.subject),isN=i===nxtI&&!isT,per=bldP("tutor").find(p=>p.id===l.pid),isEd=qe&&qe.i===i;
+    <div className="card" style={{overflow:"hidden"}}>{lessons.map((l,i)=>{const ld=new Date(l.date);ld.setHours(0,0,0,0);const isT=ld.toDateString()===today.toDateString(),isPast=ld<today,isNl=l.notes.status==="nl",empty=!l.notes.subject&&!l.notes.notes&&!isNl,fl=hasF(l.notes.notes)||hasF(l.notes.subject),isN=i===nxtI&&!isT,per=bldP(isAsmDay(l.cd,{timetable:eng.timetable})).find(p=>p.id===l.pid),isEd=qe&&qe.i===i;
       return<React.Fragment key={i}>
         {(()=>{const wkDays=getWDs(l.date);const tw=eng.termWkN(wkDays);const prevL=lessons[i-1];const ptw=prevL?eng.termWkN(getWDs(prevL.date)):null;const show=tw&&(!ptw||ptw.wk!==tw.wk||ptw.tn!==tw.tn);return show?<div style={{padding:"6px 12px",background:"var(--surface)",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:6}}><span className="hd" style={{fontSize:".74rem",fontWeight:600,color:"var(--accent)"}}>Week {tw.wk}</span><span style={{fontSize:".62rem",color:"var(--text-muted)"}}>Term {tw.tn}</span></div>:null})()}
         <div className={`cv${empty?" empty":""}`} onMouseDown={()=>{qeAtMouseDownRef.current=qe}} onClick={()=>{const wasOpen=qeAtMouseDownRef.current;qeAtMouseDownRef.current=null;if(wasOpen&&wasOpen.i===i){setQE(null)}else{oQE(i,l)}}} style={{background:isT?"var(--today-bg)":isN?"var(--surface-open)":"transparent",borderLeft:isT?"3px solid var(--today-border)":isN?"3px solid var(--accent)":"3px solid transparent"}}>
