@@ -368,15 +368,22 @@ a:hover{text-decoration:underline}
 
 <div class="step-card">
   <h3>Step 2 — Build your timetable</h3>
-  <p>Scroll to the <strong>Timetable</strong> section. You'll see a grid with days across the top (Day 1 through Day 7) and periods down the side (P1 through P6).</p>
+  <p>Scroll to the <strong>Timetable</strong> section. The grid runs days across the top (Day 1 through Day 7) and slots down the side. Teaching periods are labelled P1–P6; the rows in between (<em>after 2</em>, <em>before 3</em>, <em>after 4</em>, <em>before 5</em>) are <strong>B-slots</strong> — the morning, lunch, and after-school windows.</p>
   <ul>
-    <li><strong>Click a cell</strong> and select one of your classes from the dropdown, or type the class code directly</li>
-    <li>For periods where you don't have a class, type <code>nc</code> (non-contact)</li>
+    <li><strong>Teaching period cells:</strong> click and pick a class from the dropdown, or type the code directly. Use <code>nc</code> for non-contact.</li>
+    <li><strong>B-slot cells:</strong> click to set a morning structure (Tutor, Chapel, FSA, DA on B1a or B1b), a duty pill, or a free-text activity. Empty stays empty.</li>
+    <li><strong>Before/after school:</strong> click <em>+ Before school</em> or <em>+ After school</em> to surface those rows when you need them.</li>
+    <li><strong>Assembly day:</strong> the cycle day with FSA picks up the assembly bell schedule automatically. A small ☀ appears in that day header.</li>
   </ul>
 </div>
 
 <div class="step-card">
-  <h3>Step 3 — Choose your display mode</h3>
+  <h3>Step 3 — Define your duties</h3>
+  <p>Below the timetable, the <strong>Duties</strong> card is where you register the duty codes used elsewhere (Gate duty, Library, Bus, …). Each duty has a short code, a description, and a colour swatch. Add them once; they appear as options in every B-slot popup.</p>
+</div>
+
+<div class="step-card">
+  <h3>Step 4 — Choose your display mode</h3>
   <ul>
     <li><strong>Light</strong> — light background, easy on the eyes</li>
     <li><strong>Dark</strong> — dark background, good for evening planning</li>
@@ -387,7 +394,7 @@ a:hover{text-decoration:underline}
 </div>
 
 <div class="step-card">
-  <h3>Step 4 — Choose a theme (optional)</h3>
+  <h3>Step 5 — Choose a theme (optional)</h3>
   <p>This only affects the <strong>Planning Lab</strong> — a motivational tracker. It has zero impact on how the planner works.</p>
   <ul>
     <li>Physics &#128300;</li>
@@ -399,7 +406,7 @@ a:hover{text-decoration:underline}
 </div>
 
 <div class="step-card">
-  <h3>Step 5 — Save</h3>
+  <h3>Step 6 — Save</h3>
   <p>Scroll to the bottom of the Setup page and click <strong>Save Configuration</strong>.</p>
   <p>You're done. Head to the <strong>Week</strong> tab and start planning.</p>
 </div>
@@ -441,37 +448,37 @@ a:hover{text-decoration:underline}
   <li>Which day of the cycle each date falls on</li>
   <li>Day 0 events (highlighted with their label)</li>
   <li>Holidays and weekends (greyed out)</li>
-  <li>The mid-morning type for each day (Tutor, Dean's Assembly, etc.)</li>
   <li>A small fraction on each tile (e.g. <code>3/5</code>) showing how many teaching periods you've planned vs how many you have that day</li>
   <li>Coloured dots across the top of each tile representing your P1-P6 classes for that day</li>
 </ul>
 <p>You can switch between terms using the buttons at the top. <strong>Clicking a day</strong> opens it in Day View. <strong>Clicking a week number</strong> (on the left) jumps to that week in Week View.</p>
 
 <h2>Week View &#128467;&#65039;</h2>
-<p>This is your main workspace. It shows Monday to Friday with your full timetable laid out in a grid. Each column shows the date, the cycle day number (D3, D5, etc.), and the mid-morning type. Each cell shows the class code, the topic if entered, a flag icon if your notes contain a flag word, and a green dot if the period has been planned.</p>
+<p>This is your main workspace. It shows Monday to Friday with your full timetable laid out in a grid. Each column shows the date and the cycle day number (D3, D5, etc.). Each teaching-period cell shows the class code, the topic if entered, a flag icon if your notes contain a flag word, and a green dot if the period has been planned.</p>
+<p>The <em>planned</em> count shown above the grid (e.g. <code>21/30</code>) only counts your teaching periods. Non-contacts are excluded.</p>
 <p><strong>Clicking any cell</strong> opens a quick-edit box at the bottom of the screen where you can type a topic and press Enter.</p>
 <p><strong>Clicking "Full detail"</strong> in the quick-edit box takes you to Day View for that specific period.</p>
 <p>Other things you can do in Week View:</p>
 <ul>
   <li><strong>Day notes row:</strong> a small text area per day for meetings, reminders, or duty notes</li>
+  <li><strong>B-slot rows:</strong> if any cycle day has a value for a B-slot (morning structure, duty, or activity), that row appears across the week. Empty cells in a visible row are diagonally hatched. Click any B-slot cell for an editor anchored to that cell — the change saves as a per-date override.</li>
   <li><strong>Class spotlighting:</strong> click any class badge above the grid to highlight where that class appears during the week — a popup shows the exact periods and times</li>
-  <li><strong>Mid-morning setup panel:</strong> expand this at the bottom to set the mid-morning type for each day of the week at once</li>
   <li><strong>Navigate:</strong> use the left/right arrows to move between weeks, or hit "Today" to jump back to the current week</li>
   <li><strong>Export:</strong> at the bottom, download the full week or just your reflections as a text file</li>
 </ul>
 
 <h2>Day View &#128203;</h2>
-<p>The most detailed view. Shows every period of a single day in order, including break times. For each teaching period you'll see the class code, start time, and period label.</p>
+<p>The most detailed view. Shows every slot of a single day in order. Each teaching period shows the class code, start time, and topic; each B-slot shows its chip (when set) plus the relational label and time range.</p>
 <p><strong>Clicking a period</strong> expands it. You can choose:</p>
 <ul>
   <li><strong>Quick mode</strong> — a single text field for the topic. Good for a one-liner.</li>
   <li><strong>Detailed mode</strong> — three fields: Topic/Subject, Notes and Tasks, and Resources and Links.</li>
 </ul>
 <p>At the top of the expanded period, a <strong>lesson context</strong> strip tells you the lesson number for that class this term (e.g. "Lesson 12/48"), and the dates of the previous and next lessons with that class.</p>
+<p><strong>Clicking a B-slot row</strong> expands it to an editor: pick a value (Tutor, Chapel, FSA, DA, a duty pill, an activity, or Free), add notes for that slot, and hit <em>Save today</em>. The change is a one-day override — the cycle-day default in Setup is untouched. If today's value differs from the cycle default, a small orange dot marks the row.</p>
 <p>Other features:</p>
 <ul>
   <li><strong>Day notes:</strong> a text area at the top for meetings or reminders</li>
-  <li><strong>Mid-morning block:</strong> choose the type for that day — this adjusts break labels and timings accordingly</li>
   <li><strong>Reflections panel:</strong> expandable section at the bottom for end-of-day thoughts</li>
   <li><strong>Day 0 dates:</strong> the timetable disappears and you get a simple label and notes field instead</li>
   <li><strong>Print:</strong> a print button gives a clean printout of the day with navigation hidden</li>
@@ -513,15 +520,20 @@ a:hover{text-decoration:underline}
 <h2>Day notes</h2>
 <p>At the top of each day (in both Day View and Week View) there's a text area for things that aren't tied to a specific period — staff meetings, duty, reminders, anything you want to see when you look at that day.</p>
 
-<h2>Mid-morning block</h2>
-<p>Each day has a mid-morning block type that controls the labels and timings for the two slots between P2 and P3:</p>
+<h2>B-slots: morning structure, duties, activities</h2>
+<p>The non-teaching windows in your day are <strong>B-slots</strong>. There are six of them per day:</p>
 <ul>
-  <li><strong>Tutor (T)</strong> — Tutor Time + Morning Tea</li>
-  <li><strong>Dean's Assembly (DA)</strong> — Dean's Assembly + Morning Tea</li>
-  <li><strong>Full School Assembly (FSA)</strong> — Full School Assembly + Morning Tea (note: this shifts all period times slightly to accommodate the longer assembly)</li>
-  <li><strong>Chapel (C)</strong> — Morning Tea + Chapel</li>
+  <li><em>before school</em>, <em>after 2</em>, <em>before 3</em>, <em>after 4</em>, <em>before 5</em>, <em>after school</em></li>
 </ul>
-<p>Set this per day in Day View, or for the whole week at once using the "Mid-morning setup" panel at the bottom of Week View.</p>
+<p>Each B-slot can hold one of:</p>
+<ul>
+  <li><strong>Morning structure</strong> (B1a or B1b only): Tutor, Chapel, FSA, DA</li>
+  <li><strong>Duty</strong>: a pill from the duties registry you defined in Setup</li>
+  <li><strong>Activity</strong>: free-form text up to about 30 characters (e.g. "Chess club", "Scholarship catchup")</li>
+  <li><strong>Empty</strong>: nothing scheduled</li>
+</ul>
+<p><strong>Cycle defaults</strong> live in Setup. <strong>Per-date changes</strong> happen in Day View or Week View by clicking the row or cell, picking a value, and hitting <em>Save today</em>. An orange dot marks any row whose value differs from the cycle default. To revert, edit the row and re-pick the cycle-default value.</p>
+<p>The <strong>full-school-assembly bell schedule</strong> is automatic: whichever cycle day has FSA on it picks up the shifted P1/P2/P3/P4 times. No separate toggle.</p>
 
 <h2>Reflections</h2>
 <p>At the bottom of Day View there's an expandable <strong>Reflections</strong> panel — a space for end-of-day thoughts about what went well and what you'd change. Reflections are optional, but if you use them:</p>
@@ -598,7 +610,7 @@ a:hover{text-decoration:underline}
 <p class="section-intro">A few ways to get your plans out of the app and into other formats.</p>
 
 <h2>Export a full week</h2>
-<p>At the bottom of Week View, click "Full week" to download a text file containing everything for that week: each day's date, cycle day, and mid-morning type; day notes; every period with its class, topic, notes, and resources; and any reflections you've written.</p>
+<p>At the bottom of Week View, click "Full week" to download a text file containing everything for that week: each day's date and cycle day; day notes; every period with its class, topic, notes, and resources; and any reflections you've written.</p>
 
 <h2>Export reflections</h2>
 <p>If you've written reflections during the week, a "Reflections" button appears in the export panel. This downloads just your reflections — useful for keeping a teaching journal or sharing with a mentor or appraiser. The button only appears if at least one day that week has a reflection written.</p>
@@ -896,6 +908,17 @@ a:hover{text-decoration:underline}
 <div class="section" id="whats-new">
 <h1>What's New</h1>
 <p class="section-intro">Recent updates to the planner.</p>
+
+<h2>7 May 2026 — v2.1</h2>
+<ul>
+  <li><strong>12-slot model.</strong> The day is now a strict twelve-slot sequence: B0, P1, P2, B1a, B1b, P3, P4, B2a, B2b, P5, P6, B3. The four middle B-slots show as <em>after 2</em>, <em>before 3</em>, <em>after 4</em>, <em>before 5</em>. B0 (before school) and B3 (after school) are toggleable.</li>
+  <li><strong>B-slots hold real values.</strong> Morning structure (Tutor, Chapel, FSA, DA), duty pills, or free-text activities. Both B1a and B1b accept morning-structure values, so chapel-on-B1a teachers and chapel-on-B1b teachers are both covered.</li>
+  <li><strong>Per-date overrides.</strong> Clicking a B-slot row in Day View or Week View opens an editor with a single <em>Save today</em> action — the change applies only to that date and is marked with an orange dot. Cycle-default edits live in Setup.</li>
+  <li><strong>Duties registry.</strong> A new card in Setup where you define the duty codes (GD, LD, Bus, …) used everywhere else.</li>
+  <li><strong>Assembly bell schedule is automatic.</strong> Whichever cycle day has FSA on it picks up the shifted P1/P2 timing — no separate toggle.</li>
+  <li><strong>Goodbye, Mid-morning Block.</strong> The MMBar selector and the bottom-of-Week-View setup panel are gone, replaced by per-slot editing in Day and Week views.</li>
+  <li><strong>Existing data migrates automatically.</strong> Old backups (v1) import cleanly into the new schema. Period note keys are re-cased and B-slot defaults are seeded.</li>
+</ul>
 
 <h2>1 May 2026</h2>
 <ul>
