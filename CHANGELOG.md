@@ -6,6 +6,17 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.1.1 — 2026-05-07
+
+### Fixes
+- **Week View planned/total now excludes non-contacts.** The summary line at the top of Week View used to read e.g. "21/30 planned" where the 30 counted every period across the week, including NCs. It now matches the per-day fraction and the Lab's coverage bar: only contact periods are counted in the denominator. Same fix carries through to the plain-text week export.
+
+### Docs
+- **Guide rewritten for v2.** Step 2 of the setup walkthrough explains B-slot rows and the +Before/+After school toggles; a new Step 3 covers the Duties registry. Week View and Day View descriptions drop their Mid-morning Block references and gain B-slot row coverage, including the per-date override semantics. The old "Mid-morning block" section is replaced by a compact "B-slots: morning structure, duties, activities" reference.
+- **What's New** has a v2.1 entry summarising the model change for teachers seeing it for the first time.
+
+---
+
 ## 2.1.0 — 2026-05-07
 
 ### Behaviour changes
