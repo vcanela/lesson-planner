@@ -909,6 +909,11 @@ a:hover{text-decoration:underline}
 <h1>What's New</h1>
 <p class="section-intro">Recent updates to the planner.</p>
 
+<h2>13 May 2026 — v2.1.3</h2>
+<ul>
+  <li><strong>Empty timetable cells no longer count as teaching periods.</strong> The Setup grid shows an "nc" placeholder in any unfilled period cell, which looked the same as a real non-contact, but the underlying value was an empty string. Those cells were quietly inflating the "planned/total" count in Week View. Empty cells now resolve to "nc" automatically — on blur in Setup, and once-on-load for any pre-existing data.</li>
+</ul>
+
 <h2>13 May 2026 — v2.1.2</h2>
 <ul>
   <li><strong>Class spotlight splits by today.</strong> Clicking a class badge in Week View opens the same popup as before, but lessons already past this week are dimmed above a "Still this week" divider, and lessons still to come sit below at full opacity. Today's lessons count as upcoming.</li>

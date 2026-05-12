@@ -597,6 +597,10 @@ function migrateConfig(cfg){
         if(lo in day)delete day[lo];
       }
       ["B0","B1a","B1b","B2a","B2b","B3"].forEach(b=>{if(!(b in day))day[b]=null});
+      // Coerce empty/missing P-cells to "nc" so the planned/total counts are honest:
+      // an unfilled cell renders with a "nc" placeholder in the timetable input, which
+      // teachers read as "set to nc" even when the underlying value was still empty.
+      for(let i=1;i<=6;i++){const k="P"+i;if(!day[k])day[k]="nc"}
     });
   }
   // mmType was per-day state in daymeta; defensively strip if it ever leaked into top-level config.
@@ -939,7 +943,7 @@ function TTCombo({value,onChange,classes}){
   // Decide flip direction based on the input's distance from the viewport bottom.
   // 220px = .tt-dd max-height (200) plus a small breathing margin.
   const measureFlip=()=>{if(inputRef.current){const r=inputRef.current.getBoundingClientRect();setFlipUp((window.innerHeight-r.bottom)<220&&r.top>220)}};
-  return<div className="tt-combo"><input ref={inputRef} className="inp" value={text} onChange={e=>{setText(e.target.value);if(!open){measureFlip();setOpen(true)}}} onFocus={()=>{measureFlip();setOpen(true)}} onBlur={()=>{setTimeout(()=>setOpen(false),150);if(text!==value)onChange(text.trim())}} onKeyDown={e=>{if(e.key==="Enter"){e.target.blur();commit(text.trim())}if(e.key==="Escape"){setText(value||"");setOpen(false);e.target.blur()}}} placeholder="nc" style={{padding:"4px 3px",fontSize:".72rem",textAlign:"center",background:bgC||undefined,color:txC||undefined,fontWeight:clsMatch?700:400}}/>
+  return<div className="tt-combo"><input ref={inputRef} className="inp" value={text} onChange={e=>{setText(e.target.value);if(!open){measureFlip();setOpen(true)}}} onFocus={()=>{measureFlip();setOpen(true)}} onBlur={()=>{setTimeout(()=>setOpen(false),150);const v=text.trim()||"nc";if(v!==value)onChange(v)}} onKeyDown={e=>{if(e.key==="Enter"){e.target.blur();commit(text.trim())}if(e.key==="Escape"){setText(value||"");setOpen(false);e.target.blur()}}} placeholder="nc" style={{padding:"4px 3px",fontSize:".72rem",textAlign:"center",background:bgC||undefined,color:txC||undefined,fontWeight:clsMatch?700:400}}/>
     {open&&<div className={`tt-dd${flipUp?" up":""}`}><div className="tt-opt" onMouseDown={e=>{e.preventDefault();commit("nc")}} style={{color:"var(--nc-text)"}}><span style={{width:12,height:12,borderRadius:2,background:"var(--nc-bg)"}}/>nc</div>{classes.map(c=><div key={c.code} className="tt-opt" onMouseDown={e=>{e.preventDefault();commit(c.code)}}><span style={{width:12,height:12,borderRadius:2,background:c.colour}}/><span className="mn" style={{fontWeight:700,fontSize:".7rem",color:TEXT_FOR_BG[c.colour]||"#000",background:c.colour,padding:"0 4px",borderRadius:2}}>{c.code}</span>{c.description&&<span style={{fontSize:".6rem",color:"var(--text-muted)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.description}</span>}</div>)}{text.trim()&&!classes.find(c=>c.code===text.trim())&&text.trim()!=="nc"&&<div className="tt-opt" onMouseDown={e=>{e.preventDefault();commit(text.trim())}} style={{borderTop:"1px solid var(--border)"}}><span style={{fontSize:".65rem",color:"var(--text-muted)"}}>Use: "<strong>{text.trim()}</strong>"</span></div>}</div>}</div>;
 }
 
@@ -1049,7 +1053,7 @@ function TermView({onDay,onWk,mc,g,cfg}){
   const term=eng.terms[termIdx];const weeks=useMemo(()=>term?eng.getTermWks(term):[],[term]);
   const ts=useMemo(()=>{if(!term)return new Date();const d=new Date(term.start);d.setHours(0,0,0,0);return d},[term]);
   const te=useMemo(()=>{if(!term)return new Date();const d=new Date(term.end);d.setHours(23,59,59,999);return d},[term]);
-  const cov=useMemo(()=>{const c={};weeks.flat().forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;const key=dk(d);let p=0,t=0;eng.PIDS.forEach(pid=>{if((eng.timetable[cd]||{})[pid]==="nc")return;t++;const n=sGet(`note:${key}:${pid}`);if(n&&(n.subject||n.notes||n.status==="nl"))p++});c[key]={p,t}});return c},[weeks]);
+  const cov=useMemo(()=>{const c={};weeks.flat().forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;const key=dk(d);let p=0,t=0;eng.PIDS.forEach(pid=>{const cls=(eng.timetable[cd]||{})[pid];if(!cls||cls==="nc")return;t++;const n=sGet(`note:${key}:${pid}`);if(n&&(n.subject||n.notes||n.status==="nl"))p++});c[key]={p,t}});return c},[weeks]);
   if(!term)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>No terms configured. Head to Setup to get started.</div>;
   return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
     <div style={{marginBottom:14,marginTop:10}}><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4}}>{eng.terms.map((t,i)=><button key={i} className="hd" onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:".8rem",fontWeight:termIdx===i?700:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div><div style={{fontSize:".72rem",color:"var(--text-muted)"}}>{term.start.toLocaleDateString("en-NZ",{day:"numeric",month:"short"})} {"\u2013"} {term.end.toLocaleDateString("en-NZ",{day:"numeric",month:"short",year:"numeric"})}</div></div>
@@ -1138,7 +1142,7 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
   // if qe was open at mousedown on this cell, treat the click as "close".
   const qeAtMouseDownRef=useRef(null);
   const wNotes=useMemo(()=>{const m={};days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;const key=dk(d);eng.PIDS.forEach(pid=>{const n=sGet(`note:${key}:${pid}`);m[`${key}:${pid}`]={...eN(),...(n||{})}})});return m},[days.map(dk).join(","),nr]);
-  const sum=useMemo(()=>{let p=0,t=0,f=0;days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{if((eng.timetable[cd]||{})[pid]==="nc")return;t++;const n=wNotes[`${dk(d)}:${pid}`];if(n&&(n.subject||n.notes||n.status==="nl"))p++;if(n&&(hasF(n.notes)||hasF(n.subject)))f++})});let ud=0;days.forEach(d=>{if(eng.cycD(d)===0){const m=mc[dk(d)];if(!m||!m.day0label)ud++}});return{p,t,f,ud}},[days,wNotes,mc]);
+  const sum=useMemo(()=>{let p=0,t=0,f=0;days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{const cls=(eng.timetable[cd]||{})[pid];if(!cls||cls==="nc")return;t++;const n=wNotes[`${dk(d)}:${pid}`];if(n&&(n.subject||n.notes||n.status==="nl"))p++;if(n&&(hasF(n.notes)||hasF(n.subject)))f++})});let ud=0;days.forEach(d=>{if(eng.cycD(d)===0){const m=mc[dk(d)];if(!m||!m.day0label)ud++}});return{p,t,f,ud}},[days,wNotes,mc]);
   const oQE=(key,pid,cls,date)=>{const n=wNotes[`${key}:${pid}`];setQV(n&&n.subject||"");setQE({dk:key,pid,cc:cls,date});setNlConfirm(false)};
   // sQE saves the typed input. It preserves the existing status (so editing the
   // reason of a no-lesson period does not silently downgrade it back to a topic).

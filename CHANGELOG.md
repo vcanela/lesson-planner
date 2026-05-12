@@ -6,6 +6,16 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.1.3 — 2026-05-13
+
+### Fixes
+- **Empty P-cells now resolve to "nc" cleanly.** The Setup timetable input rendered an empty cell with a "nc" placeholder, which read as "this period is non-contact" even though the underlying value was an empty string. Downstream counters that compared strictly to `"nc"` then double-counted those cells as teaching periods and inflated the "planned/total" denominator in Week View. Three layers of fix:
+  1. `TTCombo` onBlur now writes `"nc"` instead of an empty string when the input is empty (or whitespace-only). New cells canonicalise the moment focus leaves.
+  2. `migrateConfig` runs a one-time sweep on load: any empty/missing P-cell in an existing cycle day is coerced to `"nc"`. Idempotent, so subsequent loads are no-ops.
+  3. `sum` and `cov` in WeekView now match `compGam`'s defensive idiom (`if (!cls || cls === "nc") return`), so even if a stray empty slips through it is excluded from the count rather than inflating it.
+
+---
+
 ## 2.1.2 — 2026-05-13
 
 ### Features
