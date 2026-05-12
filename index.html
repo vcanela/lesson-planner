@@ -1253,7 +1253,22 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
         </div>
       </>;
     })()}
-    {spot&&<div className="overlay" onClick={()=>setSpot(null)}><div onClick={e=>e.stopPropagation()} style={{background:"var(--card)",border:`2px solid ${eng.classMap[spot]&&eng.classMap[spot].bg}`,borderRadius:"var(--radius-lg)",padding:20,minWidth:280,maxWidth:360}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}><span className="mn" style={{background:eng.classMap[spot]&&eng.classMap[spot].bg,color:eng.classMap[spot]&&eng.classMap[spot].tx,padding:"4px 12px",borderRadius:6,fontWeight:700,fontSize:".98rem"}}>{spot}</span><button onClick={()=>setSpot(null)} style={{background:"none",border:"none",color:"var(--text-secondary)",fontSize:"1.2rem",cursor:"pointer"}}>{"\u2715"}</button></div>{spotHits.length===0?<div style={{color:"var(--text-muted)",fontSize:".83rem",padding:"10px 0"}}>No lessons this week.</div>:spotHits.map((h,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:"1px solid var(--border)"}}><div style={{background:eng.classMap[spot]&&eng.classMap[spot].bg,color:eng.classMap[spot]&&eng.classMap[spot].tx,borderRadius:4,padding:"2px 8px",fontSize:".73rem",fontWeight:700}}>{h.per&&h.per.label}</div><div><div style={{fontSize:".83rem",color:"var(--text)",fontWeight:600}}>{fmtS(h.d)}</div><div className="mn" style={{fontSize:".65rem",color:"var(--text-secondary)"}}>{h.per&&(h.per.start+"\u2013"+h.per.end)} {"\u00B7"} Day {h.cd}</div></div></div>)}</div></div>}
+    {spot&&(()=>{
+      // Split this week's hits into past (before today) and upcoming (today and after) so
+      // the popup answers "how many of these are still ahead of me this week". Today's
+      // lessons fall into upcoming regardless of wall-clock time; teacher reads start times.
+      const t0=new Date(today);t0.setHours(0,0,0,0);
+      const past=spotHits.filter(h=>{const d=new Date(h.d);d.setHours(0,0,0,0);return d<t0});
+      const upcoming=spotHits.filter(h=>{const d=new Date(h.d);d.setHours(0,0,0,0);return d>=t0});
+      const renderRow=(h,i,prefix)=><div key={`${prefix}${i}`} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:"1px solid var(--border)",opacity:prefix==="p"?.55:1}}><div style={{background:eng.classMap[spot]&&eng.classMap[spot].bg,color:eng.classMap[spot]&&eng.classMap[spot].tx,borderRadius:4,padding:"2px 8px",fontSize:".73rem",fontWeight:700}}>{h.per&&h.per.label}</div><div><div style={{fontSize:".83rem",color:"var(--text)",fontWeight:600}}>{fmtS(h.d)}</div><div className="mn" style={{fontSize:".65rem",color:"var(--text-secondary)"}}>{h.per&&(h.per.start+"\u2013"+h.per.end)} {"\u00B7"} Day {h.cd}</div></div></div>;
+      return<div className="overlay" onClick={()=>setSpot(null)}><div onClick={e=>e.stopPropagation()} style={{background:"var(--card)",border:`2px solid ${eng.classMap[spot]&&eng.classMap[spot].bg}`,borderRadius:"var(--radius-lg)",padding:20,minWidth:280,maxWidth:360}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}><span className="mn" style={{background:eng.classMap[spot]&&eng.classMap[spot].bg,color:eng.classMap[spot]&&eng.classMap[spot].tx,padding:"4px 12px",borderRadius:6,fontWeight:700,fontSize:".98rem"}}>{spot}</span><button onClick={()=>setSpot(null)} style={{background:"none",border:"none",color:"var(--text-secondary)",fontSize:"1.2rem",cursor:"pointer"}}>{"\u2715"}</button></div>
+        {spotHits.length===0?<div style={{color:"var(--text-muted)",fontSize:".83rem",padding:"10px 0"}}>No lessons this week.</div>:<>
+          {past.map((h,i)=>renderRow(h,i,"p"))}
+          {past.length>0&&upcoming.length>0&&<div style={{display:"flex",alignItems:"center",gap:8,margin:"8px 0 4px",fontSize:".62rem",color:"var(--text-muted)",fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}><span style={{flex:1,height:1,background:"var(--border)"}}/>Still this week<span style={{flex:1,height:1,background:"var(--border)"}}/></div>}
+          {upcoming.map((h,i)=>renderRow(h,i,"u"))}
+        </>}
+      </div></div>;
+    })()}
   </div>;
 }
 

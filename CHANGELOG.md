@@ -6,6 +6,16 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.1.2 — 2026-05-13
+
+### Features
+- **Class spotlight popup now splits by today.** Clicking a class badge above the Week grid still shows every appearance of that class during the visible week, but the list is now split: lessons before today are dimmed above a "Still this week" divider, lessons today-and-after sit below it at full opacity. Today's lessons all count as "upcoming" regardless of wall-clock time — the teacher reads the start time. If everything is in the past or everything is upcoming, no divider; the list reads as before.
+
+### Docs
+- **`BACKUP_SCHEMA.md`** added at the repo root. Authoritative shape of a v2 backup file: top-level keys, date formats, every _config field, B-slot value shapes, common mistakes that fail silently, and a worked minimal example. Aimed at teachers who want to bootstrap a backup via an LLM from their published timetable PDF — paste the schema alongside the PDF and the workflow becomes one-shot.
+
+---
+
 ## 2.1.1 — 2026-05-07
 
 ### Fixes
