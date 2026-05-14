@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.1.4 — 2026-05-13
+
+### Fixes
+- **Em-dash in the Day View "Day 0" card now renders correctly.** The heading text "Day 0 — No class structure" was written as a literal `—` escape inside a JSX text node, so it appeared verbatim rather than as a real em-dash. Same class of bug as the Setup hint fixed in 2.0.1. One-line edit.
+
+---
+
 ## 2.1.3 — 2026-05-13
 
 ### Fixes
