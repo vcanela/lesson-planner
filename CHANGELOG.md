@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.1.5 — 2026-05-16
+
+### Fixes
+- **Back-to-top button in Setup.** Setup is long, and once the timetable is filled in there is a lot of scrolling to get back to the top. A floating circular button now fades in once you have scrolled past about one screen, and smooth-scrolls the page back to the top on click. Scoped to the Setup view; other views are unaffected.
+
+---
+
 ## 2.1.4 — 2026-05-13
 
 ### Fixes

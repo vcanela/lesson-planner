@@ -1536,6 +1536,10 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
   // Edge-row visibility for the timetable grid: B0/B3 stay hidden until the user opts in
   // OR the data already has a value for that slot on any cycle day (auto-shown).
   const[showEdgeRows,setShowEdgeRows]=useState({B0:false,B3:false});
+  // Back-to-top FAB: visible only once the user has scrolled past ~one screen, hidden
+  // when near the top so it does not clutter the initial Setup view.
+  const[showFab,setShowFab]=useState(false);
+  useEffect(()=>{const on=()=>setShowFab(window.scrollY>600);window.addEventListener("scroll",on,{passive:true});on();return()=>window.removeEventListener("scroll",on)},[]);
   const classes=cfg.classes||[];const usedColours=new Set(classes.map(c=>c.colour));
   const addClass=()=>{up({classes:[...classes,{code:"",description:"",colour:DEFAULT_PALETTE.find(c=>!usedColours.has(c))||DEFAULT_PALETTE[0]}]})};
   const updateClass=(i,field,val)=>{const cls=[...classes];cls[i]={...cls[i],[field]:val};up({classes:cls})};
@@ -1671,7 +1675,9 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
         <ColourPicker value={d.color} onChange={col=>updateDuty(i,"color",col)} usedColours={usedDutyColours}/></div>)}
       <button className="btn" onClick={addDuty}>+ Add duty</button>{duties.length===0&&<div style={{fontSize:".7rem",color:"var(--text-muted)",marginTop:8,fontStyle:"italic"}}>No duties defined yet.</div>}</div>
 
-    <div style={{display:"flex",gap:8,alignItems:"center"}}><button className="btn-a" onClick={doSave}>Save Configuration</button>{saved&&<span style={{fontSize:".75rem",color:"var(--success)",fontWeight:600}}>{"\u2713"} Saved</span>}</div></div>;
+    <div style={{display:"flex",gap:8,alignItems:"center"}}><button className="btn-a" onClick={doSave}>Save Configuration</button>{saved&&<span style={{fontSize:".75rem",color:"var(--success)",fontWeight:600}}>{"\u2713"} Saved</span>}</div>
+    {showFab&&<button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} title="Back to top" aria-label="Back to top" style={{position:"fixed",bottom:24,right:24,width:44,height:44,borderRadius:"50%",background:"var(--accent)",color:"var(--on-accent,#fff)",border:"none",cursor:"pointer",fontSize:"1.2rem",fontWeight:700,boxShadow:"0 4px 12px rgba(0,0,0,.18)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>{"\u2191"}</button>}
+    </div>;
 }
 
 /* ═══ DATA PANEL ═════════════════════════════════════════════════════════ */
