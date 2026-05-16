@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.2.1 — 2026-05-16
+
+### Fixes
+- **Setup label for the semester boundary clarified.** The date input in School & Cycle is now labelled "Semester 2 starts" instead of the more ambiguous "Semester boundary", and the explanatory caption underneath spells out that the boundary date is the first day of Semester 2 (S1 runs up to the day before). No data or behaviour change; the underlying `cfg.semesterBoundary` field shape is unchanged.
+
+---
+
 ## 2.2.0 — 2026-05-16
 
 ### Features
