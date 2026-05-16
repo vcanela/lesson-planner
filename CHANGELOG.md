@@ -6,6 +6,19 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.1.6 — 2026-05-16
+
+### Features
+- **Weekly activities.** A new Setup card lets teachers register recurring activities pinned to a weekday rather than a cycle day. Useful for things like "Chess Club every Wednesday after school" where the cycle day rotates but the calendar weekday stays fixed. Each entry sits in one B-slot (B0/B1a/B1b/B2a/B2b/B3) on one weekday and renders as an activity chip in Day View and Week View on every matching date. Activity-only; teaching periods are untouched.
+  - **Precedence**: cycle default < weekly activity < per-date override. A specific date's override always wins. A weekly activity beats a quiet cycle default.
+  - **Clash warning**: when a weekly activity is hiding a non-null cycle default on a given date, a small ⚠ glyph appears next to the chip in collapsed view, and the editor surfaces a full caption: "A weekly activity is showing today instead of the cycle default (X). The cycle default still applies on other dates."
+  - **Zero impact on non-users**: `cfg.weeklyEvents` defaults to an empty array. No UI affordance shows up in any view until the user adds an entry.
+
+### Refactor
+- B-slot resolution unified through a single `resolveSlot(slotCode, cycleDay, date, cfg, daymeta)` helper, used by both `buildSlots` (DayView) and WeekView's grid resolver. Same precedence rule everywhere by construction.
+
+---
+
 ## 2.1.5 — 2026-05-16
 
 ### Fixes

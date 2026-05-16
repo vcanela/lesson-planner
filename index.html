@@ -179,6 +179,8 @@ textarea,input,button,select{font-family:'Inter',system-ui,sans-serif}
 .bs-row-default{font-size:.62rem;color:var(--text-muted);margin-bottom:6px;display:flex;align-items:center;gap:6px}
 .bs-override-dot{width:6px;height:6px;border-radius:50%;background:var(--error);display:inline-block;flex-shrink:0}
 .bs-override-banner{font-size:.62rem;color:var(--error);font-style:italic;margin:6px 0;padding:4px 8px;background:rgba(213,94,0,.08);border-radius:4px}
+.bs-clash{font-size:.62rem;color:var(--flag);font-weight:700;display:inline-block;line-height:1;cursor:help}
+.bs-clash-banner{font-size:.62rem;color:var(--flag);font-style:italic;margin:6px 0;padding:4px 8px;background:rgba(230,159,0,.1);border-radius:4px}
 .bs-edit-options{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
 .bs-edit-options button{background:var(--card);border:1px solid var(--border);border-radius:4px;padding:4px 10px;font-size:.7rem;cursor:pointer;color:var(--text);font-family:inherit;display:inline-flex;align-items:center;gap:4px}
 .bs-edit-options button:hover{background:var(--accent-light);border-color:var(--accent)}
@@ -390,26 +392,47 @@ function valEq(a,b){if(!a&&!b)return true;if(!a||!b)return false;if(a.t!==b.t)re
  *   { type:"bslot",  id:"B1a", code:"B1a", label:"after 2", start, end, value, isOverride }
  *   { type:"gap",    id:"gap-B2a", code:"B2a", label:"after 4", start, end }
  *
- * Resolution order for B-slot values: per-date override > cycle-day default > null.
+ * Resolution order for B-slot values: per-date override > weekly activity > cycle default > null.
  * A B-slot becomes "bslot" when its resolved value is non-null. Otherwise it becomes
  * "gap", except B0 and B3 which are omitted entirely when empty (no edge gap-band).
+ *
+ * Clash flag: set true when a weekly activity displaces a non-null cycle default. The UI
+ * shows a small warning glyph so teachers know the calendar-bound activity is hiding
+ * their cycle-bound commitment for this date.
  */
-function buildSlots(cycleDay,daymeta,cfg){
-  const day=(cfg&&cfg.timetable&&cfg.timetable[cycleDay])||{};
+// resolveSlot: shared single source of truth for B-slot resolution. Used by both
+// buildSlots (DayView) and the WeekView cell logic so the precedence is identical
+// everywhere. Returns { value, isOverride, clash } where:
+//   value      - the chip value to render, or null if free.
+//   isOverride - per-date override exists and differs from the cycle default.
+//   clash      - a weekly activity is displacing a non-null cycle default.
+function resolveSlot(slotCode,cycleDay,date,cfg,daymeta){
   const overrides=(daymeta&&daymeta.overrides)||{};
+  const day=(cfg&&cfg.timetable&&cfg.timetable[cycleDay])||{};
+  const cyc=day[slotCode]||null;
+  if(slotCode in overrides){
+    const v=overrides[slotCode];
+    return{value:v,isOverride:!valEq(v,cyc),clash:false};
+  }
+  if(date&&cfg&&Array.isArray(cfg.weeklyEvents)){
+    const wd=date.getDay();
+    const ev=cfg.weeklyEvents.find(e=>e.weekday===wd&&e.slot===slotCode&&e.text&&e.text.trim());
+    if(ev)return{value:{t:"activity",tx:ev.text.trim()},isOverride:false,clash:cyc!==null};
+  }
+  return{value:cyc,isOverride:false,clash:false};
+}
+function buildSlots(cycleDay,daymeta,cfg,date){
   const useAsm=isAsmDay(cycleDay,cfg);
   const T=useAsm?ASM_T:STD_T;
   const Tb=useAsm?BSLOT_T_ASM:BSLOT_T_STD;
-  const resolve=code=>(code in overrides)?overrides[code]:(day[code]||null);
-  const isOver=code=>(code in overrides)&&!valEq(overrides[code],day[code]||null);
   const period=pid=>({type:"period",id:pid,label:pid,start:T[pid.toLowerCase()].s,end:T[pid.toLowerCase()].e});
   const bslot=code=>{
-    const v=resolve(code);const t=Tb[code];
-    if(v===null){
+    const r=resolveSlot(code,cycleDay,date,cfg,daymeta);const t=Tb[code];
+    if(r.value===null){
       if(code==="B0"||code==="B3")return null;
-      return{type:"gap",id:"gap-"+code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e,isOverride:isOver(code)};
+      return{type:"gap",id:"gap-"+code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e,isOverride:r.isOverride,clash:r.clash};
     }
-    return{type:"bslot",id:code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e,value:v,isOverride:isOver(code)};
+    return{type:"bslot",id:code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e,value:r.value,isOverride:r.isOverride,clash:r.clash};
   };
   const out=[];
   let s;
@@ -585,6 +608,9 @@ function migrateConfig(cfg){
   // School name is fixed in this single-school deployment. Overwrite any prior value
   // so existing users see the canonical name and the input no longer needs to exist.
   cfg.school="Dio";
+  // Weekly activities array exists once the user opens 2.1.6+. Defaults to [] so users
+  // who do not use this feature see no rendered chip, no clash chip, no extra UI.
+  if(!Array.isArray(cfg.weeklyEvents))cfg.weeklyEvents=[];
   // v2: period keys upper-cased (p1→P1) and B-slot keys (B0, B1a, B1b, B2a, B2b, B3) seeded per cycle day.
   // Idempotent: data already in v2 shape passes through unchanged.
   if(cfg.timetable&&typeof cfg.timetable==="object"){
@@ -1010,7 +1036,7 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
   const prev=eng.nearSD(date,-1),next=eng.nearSD(date,1);
   const hms=useCallback(saved=>{if(dateKey)onMS(dateKey,saved)},[dateKey]);
   const as=useAutoSave(`daymeta:${dateKey}`,eM(),hms);const{data:meta,updateField,ss,hFoc,hBlr,save}=as;
-  const slots=buildSlots(cd,meta,{timetable:eng.timetable});
+  const slots=buildSlots(cd,meta,{timetable:eng.timetable,weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},date);
   const duties=(cfg&&cfg.duties)||[];
   // setOverride: write a per-date override for one B-slot into daymeta.overrides.
   // If the chosen value matches the cycle default, drop the override key entirely
@@ -1036,7 +1062,7 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
   const code=s.code;
   const cyc=((eng.timetable&&eng.timetable[cd])||{})[code]||null;
   const current=s.type==="bslot"?s.value:null;
-  return<BSlotRow key={`${dateKey}-${code}`} slot={s} dateKey={dateKey} cycleDay={cd} current={current} cycleDefault={cyc} isOverride={!!s.isOverride} duties={duties} onSaveToday={v=>setOverride(code,v)} hFoc={hFoc} hBlr={hBlr}/>;
+  return<BSlotRow key={`${dateKey}-${code}`} slot={s} dateKey={dateKey} cycleDay={cd} current={current} cycleDefault={cyc} isOverride={!!s.isOverride} clash={!!s.clash} duties={duties} onSaveToday={v=>setOverride(code,v)} hFoc={hFoc} hBlr={hBlr}/>;
 })}</div><ReflectionsPanel meta={meta} updateField={updateField} hFoc={hFoc} hBlr={hBlr} ss={ss}/></>}
   </div>;
 }
@@ -1165,9 +1191,12 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
       if(x.isZ){cells.push(<div key={`n${i}`} onClick={()=>onDet(x.d)} style={{background:bg(x),border:bd(x),padding:4,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:".6rem",color:"var(--dz-text)",fontStyle:"italic"}}>{x.meta.day0label||"Day 0 \u2014 tap"}</span></div>);return}
       const val=x.meta.dayNotes||"";cells.push(<div key={`n${i}`} style={{background:bg(x),border:bd(x),padding:"3px 4px",display:"flex",alignItems:"stretch"}}><textarea className="ta" value={val} onChange={e=>uM(x.k,{dayNotes:e.target.value})} placeholder="Day notes" rows={1} style={{fontSize:".6rem",padding:"2px 4px",borderRadius:3,background:val?"var(--surface-open)":"transparent",borderColor:val?"var(--accent)":"var(--border)",minHeight:28,lineHeight:1.3,width:"100%",maxWidth:"100%",boxSizing:"border-box"}}/></div>);
     });
-    // Resolve a B-slot value for one day: per-date override > cycle default > null.
-    const resolveBSlot=(x,code)=>{const ovr=(x.meta&&x.meta.overrides)||{};return(code in ovr)?ovr[code]:(eng.timetable[x.cd]||{})[code]||null};
-    const isOverrideBSlot=(x,code)=>{const ovr=(x.meta&&x.meta.overrides)||{};if(!(code in ovr))return false;const cyc=(eng.timetable[x.cd]||{})[code]||null;return!valEq(ovr[code],cyc)};
+    // Resolve a B-slot value for one day. Shared resolveSlot helper handles
+    // override > weekly > cycle default precedence. Local wrappers return the bits the
+    // grid render uses: full result, just the value, and the override-only flag.
+    const slotFor=(x,code)=>resolveSlot(code,x.cd,x.d,{timetable:eng.timetable,weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},x.meta);
+    const resolveBSlot=(x,code)=>slotFor(x,code).value;
+    const isOverrideBSlot=(x,code)=>slotFor(x,code).isOverride;
     // Visibility rule: a B-row renders if at least one school day in the week has
     // a non-null resolved value for it. B0/B3 follow the same rule; they stay
     // hidden when nothing is scheduled, matching the migration doc.
@@ -1177,8 +1206,10 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
       dd.forEach((x,i)=>{
         const ck=`${code}-${i}`;
         if(!x.sch||x.isZ){cells.push(<div key={ck} style={{background:bg(x),border:bd(x)}}/>);return}
-        const v=resolveBSlot(x,code);
-        const ov=isOverrideBSlot(x,code);
+        const sl=slotFor(x,code);
+        const v=sl.value;
+        const ov=sl.isOverride;
+        const cl=sl.clash;
         const isEmpty=v===null;
         const handleClick=e=>{
           e.stopPropagation();
@@ -1188,6 +1219,7 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
         cells.push(<div key={ck} className={`wk-bcell${isEmpty?" empty-hatch":""}${x.isT?" today":""}`} onClick={handleClick}>
           {v&&<BSlotChip value={v} duties={duties}/>}
           {ov&&<span className="bs-override-dot" title="Override"/>}
+          {cl&&<span className="bs-clash" title="Weekly activity is hiding the cycle default for this slot. Open the editor to see what the cycle has scheduled.">{"⚠"}</span>}
         </div>);
       });
     };
@@ -1233,8 +1265,9 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
       const dateKey=bsEdit.dateKey;
       const meta=mc[dateKey]||eM();
       const cyc=((eng.timetable&&eng.timetable[cd])||{})[code]||null;
-      const overrides=meta.overrides||{};
-      const current=(code in overrides)?overrides[code]:cyc;
+      const r=resolveSlot(code,cd,bsEdit.date,{timetable:eng.timetable,weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta);
+      const current=r.value;
+      const clash=r.clash;
       const slot={code,label:BSLOT_LABELS[code]};
       const saveToday=v=>{
         const cur=(mc[dateKey]||eM()).overrides||{};
@@ -1253,7 +1286,7 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
       return<>
         <div onClick={()=>setBsEdit(null)} style={{position:"fixed",inset:0,zIndex:299}}/>
         <div className="wk-overlay" style={{top,left,width:W}} onClick={e=>e.stopPropagation()}>
-          <BSlotEditor slot={slot} cycleDay={cd} current={current} cycleDefault={cyc} duties={duties} onSaveToday={saveToday} onClose={()=>setBsEdit(null)}/>
+          <BSlotEditor slot={slot} cycleDay={cd} current={current} cycleDefault={cyc} clash={clash} duties={duties} onSaveToday={saveToday} onClose={()=>setBsEdit(null)}/>
         </div>
       </>;
     })()}
@@ -1447,7 +1480,7 @@ function describeValue(v){
  * or "D{cd}" (cycle default). No auto-save: the staged value lives only in
  * editor state until one of the two save buttons is pressed.
  */
-function BSlotEditor({slot,cycleDay,current,cycleDefault,duties,onSaveToday,onClose}){
+function BSlotEditor({slot,cycleDay,current,cycleDefault,clash,duties,onSaveToday,onClose}){
   const[staged,setStaged]=useState(current);
   const[view,setView]=useState("main");
   const[actText,setActText]=useState(staged&&staged.t==="activity"?staged.tx:"");
@@ -1480,6 +1513,7 @@ function BSlotEditor({slot,cycleDay,current,cycleDefault,duties,onSaveToday,onCl
   return<>
     <h4>{slot.label}</h4>
     <div className="bs-row-default">Cycle default · D{cycleDay}: <strong>{describeValue(cycleDefault)}</strong></div>
+    {clash&&<div className="bs-clash-banner">{"⚠"} A weekly activity is showing today instead of the cycle default ({describeValue(cycleDefault)}). The cycle default still applies on other dates.</div>}
     {view==="main"&&renderMain()}
     {view==="duty"&&renderDuty()}
     {view==="activity"&&renderActivity()}
@@ -1494,7 +1528,7 @@ function BSlotEditor({slot,cycleDay,current,cycleDefault,duties,onSaveToday,onCl
  * override dot (if applicable). Expanded swaps in the inline BSlotEditor
  * plus a notes textarea backed by note:<date>:<slotCode>.
  */
-function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,duties,onSaveToday,hFoc,hBlr}){
+function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,clash,duties,onSaveToday,hFoc,hBlr}){
   const[expanded,setExpanded]=useState(false);
   const noteKey=`note:${dateKey}:${slot.code}`;
   const as=useAutoSave(noteKey,eN());
@@ -1505,6 +1539,7 @@ function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,duties,
     <span className="bs-row-label">{slot.label}</span>
     {current&&<BSlotChip value={current} duties={duties}/>}
     {isOverride&&<span className="bs-override-dot" title="Override (different from cycle default)"/>}
+    {clash&&<span className="bs-clash" title="Weekly activity is hiding the cycle default for this slot. Expand the row for details.">{"⚠"}</span>}
     {hasNote&&<span title="Has notes" style={{fontSize:".7rem"}}>{"\u{1F4DD}"}</span>}
     <span className="bs-row-time mn">{slot.start}{slot.end?"–"+slot.end:""}</span>
   </div>;
@@ -1512,7 +1547,7 @@ function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,duties,
   return<>
     {summary}
     <div className="bs-row-editor">
-      <BSlotEditor slot={slot} cycleDay={cycleDay} current={current} cycleDefault={cycleDefault} duties={duties} onSaveToday={onSaveToday} onClose={()=>setExpanded(false)}/>
+      <BSlotEditor slot={slot} cycleDay={cycleDay} current={current} cycleDefault={cycleDefault} clash={clash} duties={duties} onSaveToday={onSaveToday} onClose={()=>setExpanded(false)}/>
       <div className="bs-note-area">
         <label className="fl" style={{fontSize:".68rem"}}>Notes <SvH ss={noteSs}/></label>
         <AInp data={note} field="notes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Notes for this slot today" multi rows={2}/>
@@ -1559,6 +1594,12 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
     up({duties:ds});
   };
   const moveDuty=(i,dir)=>{const ds=[...duties];const ni=i+dir;if(ni<0||ni>=ds.length)return;[ds[i],ds[ni]]=[ds[ni],ds[i]];up({duties:ds})};
+  // Weekly activities: recurring B-slot activities pinned to a weekday rather than a
+  // cycle day. Useful for "Chess Club every Wednesday" where the cycle day rotates.
+  const weeklyEvents=cfg.weeklyEvents||[];
+  const addWeekly=()=>up({weeklyEvents:[...weeklyEvents,{weekday:1,slot:"B3",text:""}]});
+  const updateWeekly=(i,field,val)=>{const arr=[...weeklyEvents];arr[i]={...arr[i],[field]:val};up({weeklyEvents:arr})};
+  const deleteWeekly=i=>up({weeklyEvents:weeklyEvents.filter((_,j)=>j!==i)});
   const doSave=()=>{sSet("planner-config",cfg);onSave(cfg);setSaved(true);setTimeout(()=>setSaved(false),2000);if(window._plannerSync)window._plannerSync()};
 
   return<div style={{paddingBottom:120}}><div className="hd" style={{fontSize:"1.15rem",fontWeight:600,color:"var(--accent)",marginBottom:14}}>{"\u2699\uFE0F"} School Setup</div>
@@ -1674,6 +1715,19 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
         <button className="btn" onClick={()=>up({duties:duties.filter((_,j)=>j!==i)})} style={{padding:"2px 8px",color:"var(--error)",fontSize:".7rem"}}>{"\u2715"}</button></div>
         <ColourPicker value={d.color} onChange={col=>updateDuty(i,"color",col)} usedColours={usedDutyColours}/></div>)}
       <button className="btn" onClick={addDuty}>+ Add duty</button>{duties.length===0&&<div style={{fontSize:".7rem",color:"var(--text-muted)",marginTop:8,fontStyle:"italic"}}>No duties defined yet.</div>}</div>
+
+    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Weekly activities</div><div style={{fontSize:".68rem",color:"var(--text-secondary)",marginBottom:10}}>Activities that repeat on a weekday regardless of cycle day (e.g. Chess Club every Wednesday). Each entry occupies one B-slot on one weekday. To repeat the same activity across multiple weekdays, add separate entries.</div>
+      {weeklyEvents.map((e,i)=><div key={i} style={{marginBottom:10,padding:10,background:"var(--surface)",borderRadius:"var(--radius-md)",border:"1px solid var(--border)",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <select className="inp" value={e.weekday} onChange={ev=>updateWeekly(i,"weekday",Number(ev.target.value))} style={{flex:"0 0 110px",fontSize:".75rem"}}>
+          {[[1,"Monday"],[2,"Tuesday"],[3,"Wednesday"],[4,"Thursday"],[5,"Friday"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+        </select>
+        <select className="inp" value={e.slot} onChange={ev=>updateWeekly(i,"slot",ev.target.value)} style={{flex:"0 0 130px",fontSize:".75rem"}}>
+          {["B0","B1a","B1b","B2a","B2b","B3"].map(c=><option key={c} value={c}>{BSLOT_LABELS[c]}</option>)}
+        </select>
+        <div style={{flex:1,minWidth:140}}><input className="inp" value={e.text} onChange={ev=>updateWeekly(i,"text",ev.target.value)} placeholder="e.g. Chess Club" style={{fontSize:".75rem"}}/></div>
+        <button className="btn" onClick={()=>deleteWeekly(i)} style={{padding:"2px 8px",color:"var(--error)",fontSize:".7rem"}}>{"✕"}</button>
+      </div>)}
+      <button className="btn" onClick={addWeekly}>+ Add weekly activity</button>{weeklyEvents.length===0&&<div style={{fontSize:".7rem",color:"var(--text-muted)",marginTop:8,fontStyle:"italic"}}>No weekly activities defined yet.</div>}</div>
 
     <div style={{display:"flex",gap:8,alignItems:"center"}}><button className="btn-a" onClick={doSave}>Save Configuration</button>{saved&&<span style={{fontSize:".75rem",color:"var(--success)",fontWeight:600}}>{"\u2713"} Saved</span>}</div>
     {showFab&&<button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} title="Back to top" aria-label="Back to top" style={{position:"fixed",bottom:24,right:24,width:44,height:44,borderRadius:"50%",background:"var(--accent)",color:"var(--on-accent,#fff)",border:"none",cursor:"pointer",fontSize:"1.2rem",fontWeight:700,boxShadow:"0 4px 12px rgba(0,0,0,.18)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>{"\u2191"}</button>}
