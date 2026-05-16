@@ -44,6 +44,8 @@ Single object with these top-level keys.
 | `classes` | array | See below. |
 | `duties` | array | See below. |
 | `timetable` | object | The 12-slot weekly grid, keyed by cycle day. |
+| `timetableS2` | object | Optional. Second timetable grid that applies on or after `semesterBoundary`. Same shape as `timetable`. Omit when the schedule does not change mid-year. |
+| `semesterBoundary` | string | Optional ISO date. The start of Semester 2. Pre-boundary dates use `timetable`; post-boundary dates use `timetableS2` if present, else fall back to `timetable`. Also drives the `classes[].semester` filter. |
 
 ### `terms`
 
@@ -84,8 +86,8 @@ Pins one date to one cycle day. The planner walks the calendar from the anchor (
 
 ```json
 [
-  { "code": "9SST5",  "description": "Year 9 Social Studies", "colour": "#C5D9C0" },
-  { "code": "12BSD3", "description": "",                       "colour": "#D0C0E0" }
+  { "code": "9SST5",  "description": "Year 9 Social Studies", "colour": "#C5D9C0", "semester": "full" },
+  { "code": "12BSD3", "description": "",                       "colour": "#D0C0E0", "semester": "S1" }
 ]
 ```
 
@@ -94,6 +96,7 @@ Pins one date to one cycle day. The planner walks the calendar from the anchor (
 - `colour` is one of the 12 Okabe-Ito-derived hex codes accepted by the planner:
   `#E8C8C0 #EDD9B5 #C5D9C0 #B8CCE0 #D0C0E0 #D4B8A0 #A8C8C0 #E0C0D0 #C0C8A8 #E0D0A8 #B0C0D8 #D8B8B8`.
   Reuse is allowed but the colour picker dims used colours.
+- `semester` is optional, one of `"full"` / `"S1"` / `"S2"`. Defaults to full-year. When set to `"S1"` the class is active only before `cfg.semesterBoundary`; `"S2"` only on or after. If no `semesterBoundary` is set, all classes are treated as full-year regardless. Lesson notes from past dates stay reachable even after a class is out of its active range.
 
 ### `duties`
 

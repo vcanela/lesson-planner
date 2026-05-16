@@ -726,9 +726,40 @@ function makeDateEngine(cfg){
   const terms=(cfg.terms||[]).filter(t=>t.start&&t.end).map(t=>({n:t.n,start:parseISO(t.start),end:parseISO(t.end)}));
   const anchor=(cfg.anchor&&cfg.anchor.date)?{date:parseISO(cfg.anchor.date),day:cfg.anchor.day}:null;
   const timetable=cfg.timetable||{};
+  const timetableS2=cfg.timetableS2||null;
+  const semesterBoundary=cfg.semesterBoundary?parseISO(cfg.semesterBoundary):null;
   const classes=(cfg.classes||[]);
-  const classMap={};classes.forEach(c=>{classMap[c.code]={bg:c.colour,tx:TEXT_FOR_BG[c.colour]||"#000",desc:c.description||""}});
+  const classMap={};classes.forEach(c=>{classMap[c.code]={bg:c.colour,tx:TEXT_FOR_BG[c.colour]||"#000",desc:c.description||"",semester:c.semester||"full"}});
   const classCodes=classes.map(c=>c.code);
+  // Pick the timetable grid that applies on `date`. If no semester boundary is set or
+  // no S2 grid exists, the regular timetable is used for every date.
+  function timetableForDate(date){
+    if(!semesterBoundary||!timetableS2||!date)return timetable;
+    const d=new Date(date);d.setHours(0,0,0,0);
+    return d>=semesterBoundary?timetableS2:timetable;
+  }
+  // True if class `code` is active on `date` per its semester field.
+  // A class with no semester field, or "full", is always active. Missing boundary date
+  // also degrades to always-active so non-users see no behavioural change.
+  function classActiveOn(code,date){
+    if(!code||code==="nc")return false;
+    const cls=classes.find(c=>c.code===code);
+    if(!cls||!cls.semester||cls.semester==="full")return true;
+    if(!semesterBoundary||!date)return true;
+    const d=new Date(date);d.setHours(0,0,0,0);
+    if(cls.semester==="S1")return d<semesterBoundary;
+    if(cls.semester==="S2")return d>=semesterBoundary;
+    return true;
+  }
+  // Single source of truth for "what class meets this cell on this date".
+  // Returns the class code if active and present; otherwise "nc".
+  function classAt(date,cd,pid){
+    const tt=timetableForDate(date);
+    const code=(tt[cd]||{})[pid];
+    if(!code||code==="nc")return"nc";
+    if(!classActiveOn(code,date))return"nc";
+    return code;
+  }
   const nCycle=cfg.cycleDays||7;
   const PIDS=[];for(let i=1;i<=6;i++)PIDS.push("P"+i);
   const isPH=d=>holSet.has(dck(d));const isDZ=d=>dzSet.has(dck(d));
@@ -793,9 +824,11 @@ function makeDateEngine(cfg){
     const ts=new Date(term.start);ts.setHours(0,0,0,0);const te=new Date(term.end);te.setHours(23,59,59,999);
     const ws=[];let d=getMon(ts);while(d<=te){const days=[0,1,2,3,4].map(i=>addD(d,i));if(days.some(x=>{const xn=new Date(x);xn.setHours(0,0,0,0);return xn>=ts&&xn<=te}))ws.push(days);d=addD(d,7)}return ws;
   }
-  function clsLessons(cc,ti=0){const term=terms[ti];if(!term)return[];const ls=[];getTermWks(term).flat().forEach(d=>{const cd=cycD(d);if(!cd||cd===0)return;PIDS.forEach(pid=>{if(timetable[cd]&&timetable[cd][pid]===cc)ls.push({date:new Date(d),dk:dk(d),pid,cd})})});return ls}
+  // clsLessons routes through classAt, so semester-bounded classes and S2 timetable
+  // variants are honoured: a date that no longer carries the class produces no entry.
+  function clsLessons(cc,ti=0){const term=terms[ti];if(!term)return[];const ls=[];getTermWks(term).flat().forEach(d=>{const cd=cycD(d);if(!cd||cd===0)return;PIDS.forEach(pid=>{if(classAt(d,cd,pid)===cc)ls.push({date:new Date(d),dk:dk(d),pid,cd})})});return ls}
   function lesCtx(cc,dateKey,pid,ti=0){if(!cc||cc==="nc")return null;const ls=clsLessons(cc,ti);const idx=ls.findIndex(l=>l.dk===dateKey&&l.pid===pid);if(idx===-1)return null;return{num:idx+1,total:ls.length,prev:ls[idx-1]||null,next:ls[idx+1]||null}}
-  return{isPH,isDZ,inT,isSD,isTD,wkN,termWkN,nearSD,cycD,getTermWks,clsLessons,lesCtx,terms,timetable,classMap,classCodes,PIDS,nCycle,school:cfg.school||"My School"};
+  return{isPH,isDZ,inT,isSD,isTD,wkN,termWkN,nearSD,cycD,getTermWks,clsLessons,lesCtx,terms,timetable,timetableForDate,classAt,classActiveOn,semesterBoundary,classMap,classCodes,PIDS,nCycle,school:cfg.school||"My School"};
 }
 
 /* ═══ DATA DEFAULTS ══════════════════════════════════════════════════════ */
@@ -844,7 +877,7 @@ function compGam(eng,pwn,themeKey){
     termList.forEach(term=>{eng.getTermWks(term).flat().forEach(d=>{
       const c=eng.cycD(d);if(!c||c===0)return;const key=dk(d),wn=eng.wkN(d);
       if(!wd[wn])wd[wn]={p:0,t:0};
-      eng.PIDS.forEach(pid=>{const cls=eng.timetable[c]&&eng.timetable[c][pid];if(!cls||cls==="nc")return;
+      eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,c,pid);if(cls==="nc")return;
         tl++;wd[wn].t++;if(!cd[cls])cd[cls]={p:0,t:0};cd[cls].t++;
         const n=sGet(`note:${key}:${pid}`);if(n&&(n.subject||n.notes||n.status==="nl")){tp++;wd[wn].p++;cd[cls].p++}});
     })});
@@ -1004,8 +1037,8 @@ function ReflectionsPanel({meta,updateField,hFoc,hBlr,ss}){
  * Reads/writes via useAutoSave on key `note:<dateKey>:<periodId>`.
  * ═══════════════════════════════════════════════════════════════════════
  */
-function PCard({period,dateKey,cDay,initOpen}){
-  const eng=useCfg();const cc=cDay?(eng.timetable[cDay]&&eng.timetable[cDay][period.id]||"nc"):null;const isNc=cc==="nc";
+function PCard({period,dateKey,cDay,date,initOpen}){
+  const eng=useCfg();const cc=cDay?eng.classAt(date,cDay,period.id):null;const isNc=cc==="nc";
   const[open,setOpen]=useState(initOpen||false);const[mode,setMode]=useState(initOpen?"detailed":"quick");
   const sk=(dateKey&&cDay)?`note:${dateKey}:${period.id}`:null;const as=useAutoSave(sk,eN());
   const{data,updateField,ss,hFoc,hBlr,save}=as;const isNl=!isNc&&data&&data.status==="nl";const has=data&&(data.subject||data.notes||data.resources||isNl);const fl=hasF(data&&data.notes)||hasF(data&&data.subject);
@@ -1036,7 +1069,7 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
   const prev=eng.nearSD(date,-1),next=eng.nearSD(date,1);
   const hms=useCallback(saved=>{if(dateKey)onMS(dateKey,saved)},[dateKey]);
   const as=useAutoSave(`daymeta:${dateKey}`,eM(),hms);const{data:meta,updateField,ss,hFoc,hBlr,save}=as;
-  const slots=buildSlots(cd,meta,{timetable:eng.timetable,weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},date);
+  const slots=buildSlots(cd,meta,{timetable:eng.timetableForDate(date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},date);
   const duties=(cfg&&cfg.duties)||[];
   // setOverride: write a per-date override for one B-slot into daymeta.overrides.
   // If the chosen value matches the cycle default, drop the override key entirely
@@ -1044,7 +1077,7 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
   // in-memory ref/state; we call save() after so the daymeta lands in localStorage
   // and the gist sync fires.
   const setOverride=(slotCode,value)=>{
-    const cyc=((eng.timetable&&eng.timetable[cd])||{})[slotCode]||null;
+    const cyc=((eng.timetableForDate(date)||{})[cd]||{})[slotCode]||null;
     const cur=(meta&&meta.overrides)||{};
     const next={...cur};
     if(valEq(value,cyc))delete next[slotCode];
@@ -1058,9 +1091,9 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
     {!sch?<div style={{color:"var(--text-secondary)",padding:30,textAlign:"center",fontSize:".88rem"}}>No classes scheduled.</div>
     :isZ?<div className="card" style={{padding:18,marginBottom:14,borderColor:"var(--dz-border)",background:"var(--dz-bg)"}}><div className="hd" style={{fontSize:".85rem",color:"var(--dz-text)",fontWeight:600,marginBottom:12}}>Day 0 {"\u2014"} No class structure</div>{meta&&<div style={{display:"grid",gap:10}} onFocus={hFoc} onBlur={hBlr}><div><label className="fl">Label / Activity <SvH ss={ss}/></label><AInp data={meta} field="day0label" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="e.g. Orientation, EOTC"/></div><div><label className="flb">Notes</label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Notes" multi rows={3}/></div></div>}</div>
     :<>{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH ss={ss}/></label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Meetings, reminders, duty" multi rows={2}/></div>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>{slots.map(s=>{
-  if(s.type==="period")return<PCard key={`${dateKey}-${s.id}`} period={s} dateKey={dateKey} cDay={cd} initOpen={fp===s.id}/>;
+  if(s.type==="period")return<PCard key={`${dateKey}-${s.id}`} period={s} dateKey={dateKey} cDay={cd} date={date} initOpen={fp===s.id}/>;
   const code=s.code;
-  const cyc=((eng.timetable&&eng.timetable[cd])||{})[code]||null;
+  const cyc=((eng.timetableForDate(date)||{})[cd]||{})[code]||null;
   const current=s.type==="bslot"?s.value:null;
   return<BSlotRow key={`${dateKey}-${code}`} slot={s} dateKey={dateKey} cycleDay={cd} current={current} cycleDefault={cyc} isOverride={!!s.isOverride} clash={!!s.clash} duties={duties} onSaveToday={v=>setOverride(code,v)} hFoc={hFoc} hBlr={hBlr}/>;
 })}</div><ReflectionsPanel meta={meta} updateField={updateField} hFoc={hFoc} hBlr={hBlr} ss={ss}/></>}
@@ -1079,7 +1112,7 @@ function TermView({onDay,onWk,mc,g,cfg}){
   const term=eng.terms[termIdx];const weeks=useMemo(()=>term?eng.getTermWks(term):[],[term]);
   const ts=useMemo(()=>{if(!term)return new Date();const d=new Date(term.start);d.setHours(0,0,0,0);return d},[term]);
   const te=useMemo(()=>{if(!term)return new Date();const d=new Date(term.end);d.setHours(23,59,59,999);return d},[term]);
-  const cov=useMemo(()=>{const c={};weeks.flat().forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;const key=dk(d);let p=0,t=0;eng.PIDS.forEach(pid=>{const cls=(eng.timetable[cd]||{})[pid];if(!cls||cls==="nc")return;t++;const n=sGet(`note:${key}:${pid}`);if(n&&(n.subject||n.notes||n.status==="nl"))p++});c[key]={p,t}});return c},[weeks]);
+  const cov=useMemo(()=>{const c={};weeks.flat().forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;const key=dk(d);let p=0,t=0;eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,cd,pid);if(cls==="nc")return;t++;const n=sGet(`note:${key}:${pid}`);if(n&&(n.subject||n.notes||n.status==="nl"))p++});c[key]={p,t}});return c},[weeks]);
   if(!term)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>No terms configured. Head to Setup to get started.</div>;
   return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
     <div style={{marginBottom:14,marginTop:10}}><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4}}>{eng.terms.map((t,i)=><button key={i} className="hd" onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:".8rem",fontWeight:termIdx===i?700:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div><div style={{fontSize:".72rem",color:"var(--text-muted)"}}>{term.start.toLocaleDateString("en-NZ",{day:"numeric",month:"short"})} {"\u2013"} {term.end.toLocaleDateString("en-NZ",{day:"numeric",month:"short",year:"numeric"})}</div></div>
@@ -1090,7 +1123,7 @@ function TermView({onDay,onWk,mc,g,cfg}){
         return<div key={k} onClick={()=>onDay(d)} style={{background:isT?"var(--today-bg)":isZ?"var(--dz-bg)":"var(--card)",border:`1px solid ${isT?"var(--today-border)":isZ?"var(--dz-border)":"var(--border)"}`,borderRadius:"var(--radius-sm)",padding:"4px 5px",cursor:"pointer",minHeight:50}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:2}}><span className="hd" style={{fontSize:".76rem",fontWeight:700,color:isZ?"var(--dz-text)":isT?"var(--accent)":"var(--text)"}}>{d.getDate()}<span style={{fontSize:".55rem",fontWeight:400,color:"var(--text-muted)",marginLeft:2}}>{d.toLocaleDateString("en-NZ",{month:"short"})}</span></span><span className="mn" style={{fontSize:".55rem",fontWeight:600,color:isZ?"var(--dz-text)":"var(--accent)"}}>{isZ?"D0":`D${cd}`}</span></div>
           {isZ?<div style={{fontSize:".57rem",color:"var(--dz-text)",fontStyle:"italic",lineHeight:1.3,overflow:"hidden",maxHeight:26}}>{meta.day0label||(()=>{const dz=(cfg.dayZeros||[]).find(z=>(typeof z==="string"?z:z.date)===fmtISO(d));return dz&&typeof dz!=="string"?dz.label:"Day 0"})()}</div>
-          :<>{eng.PIDS&&<div style={{display:"flex",gap:2,flexWrap:"wrap",marginBottom:2}}>{eng.PIDS.map(pid=>{const cls=(eng.timetable[cd]||{})[pid]||"nc";const clr=cls!=="nc"&&eng.classMap[cls];return<div key={pid} style={{width:6,height:6,borderRadius:1,background:clr?clr.bg:"var(--nc-bg)"}}/>})}</div>}<div style={{display:"flex",justifyContent:"flex-end",alignItems:"center"}}>{cv&&cv.t>0&&<span className="mn" style={{fontSize:".5rem",color:cv.p===cv.t?"var(--success)":"var(--text-muted)",fontWeight:700}}>{cv.p}/{cv.t}</span>}</div></>}
+          :<>{eng.PIDS&&<div style={{display:"flex",gap:2,flexWrap:"wrap",marginBottom:2}}>{eng.PIDS.map(pid=>{const cls=eng.classAt(d,cd,pid);const clr=cls!=="nc"&&eng.classMap[cls];return<div key={pid} style={{width:6,height:6,borderRadius:1,background:clr?clr.bg:"var(--nc-bg)"}}/>})}</div>}<div style={{display:"flex",justifyContent:"flex-end",alignItems:"center"}}>{cv&&cv.t>0&&<span className="mn" style={{fontSize:".5rem",color:cv.p===cv.t?"var(--success)":"var(--text-muted)",fontWeight:700}}>{cv.p}/{cv.t}</span>}</div></>}
         </div>})}</div>)}
     <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:14,alignItems:"center"}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c];return<span key={c} className="mn" style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"2px 7px",borderRadius:3,fontSize:".63rem",fontWeight:700}}>{c}</span>})}<span style={{fontSize:".62rem",color:"var(--text-muted)",marginLeft:4}}>dots=P1{"\u2192"}P6 {"\u00B7"} fraction=planned/teaching</span></div></div>;
 }
@@ -1120,8 +1153,8 @@ function buildWkTxt(style,days,wl,wkLabel,sum,mc,eng,wNotes){
     out+=`Day ${cd}\n\n`;
     if(meta.dayNotes)out+=bq(meta.dayNotes)+"\n";
     eng.PIDS.forEach((pid,pi)=>{
-      const cls=(eng.timetable[cd]||{})[pid]||"nc";const n=wNotes[`${key}:${pid}`];
-      const per=bldP(isAsmDay(cd,{timetable:eng.timetable})).find(p=>p.id===pid);
+      const cls=eng.classAt(d,cd,pid);const n=wNotes[`${key}:${pid}`];
+      const per=bldP(isAsmDay(cd,{timetable:eng.timetableForDate(d)})).find(p=>p.id===pid);
       const lbl=`P${pi+1} (${per?per.start+"\u2013"+per.end:""})`;
       const nlTag=n&&n.status==="nl"?" \u2014 No lesson":"";
       if(cls==="nc"){
@@ -1168,7 +1201,7 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
   // if qe was open at mousedown on this cell, treat the click as "close".
   const qeAtMouseDownRef=useRef(null);
   const wNotes=useMemo(()=>{const m={};days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;const key=dk(d);eng.PIDS.forEach(pid=>{const n=sGet(`note:${key}:${pid}`);m[`${key}:${pid}`]={...eN(),...(n||{})}})});return m},[days.map(dk).join(","),nr]);
-  const sum=useMemo(()=>{let p=0,t=0,f=0;days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{const cls=(eng.timetable[cd]||{})[pid];if(!cls||cls==="nc")return;t++;const n=wNotes[`${dk(d)}:${pid}`];if(n&&(n.subject||n.notes||n.status==="nl"))p++;if(n&&(hasF(n.notes)||hasF(n.subject)))f++})});let ud=0;days.forEach(d=>{if(eng.cycD(d)===0){const m=mc[dk(d)];if(!m||!m.day0label)ud++}});return{p,t,f,ud}},[days,wNotes,mc]);
+  const sum=useMemo(()=>{let p=0,t=0,f=0;days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,cd,pid);if(cls==="nc")return;t++;const n=wNotes[`${dk(d)}:${pid}`];if(n&&(n.subject||n.notes||n.status==="nl"))p++;if(n&&(hasF(n.notes)||hasF(n.subject)))f++})});let ud=0;days.forEach(d=>{if(eng.cycD(d)===0){const m=mc[dk(d)];if(!m||!m.day0label)ud++}});return{p,t,f,ud}},[days,wNotes,mc]);
   const oQE=(key,pid,cls,date)=>{const n=wNotes[`${key}:${pid}`];setQV(n&&n.subject||"");setQE({dk:key,pid,cc:cls,date});setNlConfirm(false)};
   // sQE saves the typed input. It preserves the existing status (so editing the
   // reason of a no-lesson period does not silently downgrade it back to a topic).
@@ -1194,7 +1227,7 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
     // Resolve a B-slot value for one day. Shared resolveSlot helper handles
     // override > weekly > cycle default precedence. Local wrappers return the bits the
     // grid render uses: full result, just the value, and the override-only flag.
-    const slotFor=(x,code)=>resolveSlot(code,x.cd,x.d,{timetable:eng.timetable,weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},x.meta);
+    const slotFor=(x,code)=>resolveSlot(code,x.cd,x.d,{timetable:eng.timetableForDate(x.d),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},x.meta);
     const resolveBSlot=(x,code)=>slotFor(x,code).value;
     const isOverrideBSlot=(x,code)=>slotFor(x,code).isOverride;
     // Visibility rule: a B-row renders if at least one school day in the week has
@@ -1227,7 +1260,7 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
       const lastP=pi===eng.PIDS.length-1;
       cells.push(<div key={`l${pid}`} style={lS}><span className="hd" style={lT}>P{pi+1}</span></div>);
       dd.forEach((x,i)=>{const ck=`${pid}-${i}`;if(!x.sch||x.isZ){cells.push(<div key={ck} style={{background:bg(x),border:bd(x),borderRadius:lastP?`0 0 var(--radius-md) var(--radius-md)`:"0"}}/>);return}
-        const cls=(eng.timetable[x.cd]||{})[pid]||"nc",isNc=cls==="nc",clr=isNc?null:eng.classMap[cls];const nk=`${x.k}:${pid}`,n=wNotes[nk];const isNl=!isNc&&n&&n.status==="nl";const filled=!isNc&&n&&(n.subject||n.notes||isNl),fl=n&&(hasF(n.notes)||hasF(n.subject));
+        const cls=eng.classAt(x.d,x.cd,pid),isNc=cls==="nc",clr=isNc?null:eng.classMap[cls];const nk=`${x.k}:${pid}`,n=wNotes[nk];const isNl=!isNc&&n&&n.status==="nl";const filled=!isNc&&n&&(n.subject||n.notes||isNl),fl=n&&(hasF(n.notes)||hasF(n.subject));
         cells.push(<div key={ck} style={{background:bg(x),border:bd(x),padding:"0 4px",borderRadius:lastP?`0 0 var(--radius-md) var(--radius-md)`:"0",paddingBottom:lastP?4:0}}><div className={`pb${isNc?" pb-nc":""}${!isNc&&!filled?" pb-e":""}`} style={isNc?{}:{background:clr?clr.bg:"",color:clr?clr.tx:"",...(!filled?{background:"transparent"}:{})}} onMouseDown={()=>{qeAtMouseDownRef.current=qe}} onClick={e=>{e.stopPropagation();const wasOpen=qeAtMouseDownRef.current;qeAtMouseDownRef.current=null;if(wasOpen&&wasOpen.dk===x.k&&wasOpen.pid===pid){setQE(null)}else{oQE(x.k,pid,cls,x.d)}}}><div style={{display:"flex",alignItems:"center",gap:4,width:"100%"}}><span className="mn" style={{fontSize:".58rem",fontWeight:700}}>{isNc?"NC":cls}</span><span style={{flex:1}}/>{fl&&<span style={{color:isNc?"var(--flag)":clr&&clr.tx,fontSize:".6rem"}}>{"\u2691"}</span>}{filled&&!fl&&!isNl&&<span style={{width:5,height:5,borderRadius:"50%",background:isNc?"var(--success)":clr&&clr.tx,opacity:.6}}/>}{isNl&&<span style={{fontSize:".48rem",fontWeight:700,opacity:.7}}>NL</span>}</div><div style={{fontSize:".57rem",fontWeight:400,opacity:filled?.8:.65,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",width:"100%"}}>{isNl?(n&&n.subject?`No lesson \u2014 ${n.subject}`:"No lesson"):n&&n.subject||"\u2014"}</div></div></div>);
       });
     };
@@ -1246,13 +1279,13 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
     return cells;
   },[days,today,mc,wNotes,eng,duties]);
 
-  const flags=useMemo(()=>{const fl=[];days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;const key=dk(d);eng.PIDS.forEach(pid=>{const n=wNotes[`${key}:${pid}`];if(n&&(hasF(n.notes)||hasF(n.subject))){const cls=(eng.timetable[cd]||{})[pid]||"nc";fl.push({date:d,pid,cls,subject:n.subject||"",notes:n.notes||""})}})});return fl},[days,wNotes]);
-  const spotHits=useMemo(()=>{if(!spot)return[];const h=[];days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{if((eng.timetable[cd]||{})[pid]===spot){const per=bldP(isAsmDay(cd,{timetable:eng.timetable})).find(p=>p.id===pid);h.push({d,per,cd})}})});return h},[spot,days]);
+  const flags=useMemo(()=>{const fl=[];days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;const key=dk(d);eng.PIDS.forEach(pid=>{const n=wNotes[`${key}:${pid}`];if(n&&(hasF(n.notes)||hasF(n.subject))){const cls=eng.classAt(d,cd,pid);fl.push({date:d,pid,cls,subject:n.subject||"",notes:n.notes||""})}})});return fl},[days,wNotes]);
+  const spotHits=useMemo(()=>{if(!spot)return[];const h=[];days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{if(eng.classAt(d,cd,pid)===spot){const per=bldP(isAsmDay(cd,{timetable:eng.timetableForDate(d)})).find(p=>p.id===pid);h.push({d,per,cd})}})});return h},[spot,days]);
 
   return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
     <div className="np" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10,marginTop:10,flexWrap:"wrap"}}><div style={{display:"flex",alignItems:"center",gap:7}}><Btn onClick={()=>setBase(d=>addD(d,-7))} style={{padding:"4px 10px"}}>{"\u2039"}</Btn><div style={{textAlign:"center",width:"190px",flexShrink:0}}><div style={{fontSize:".8rem",color:"var(--text-secondary)"}}>{wl}</div><div className="hd" style={{fontSize:".7rem",color:"var(--accent)",fontWeight:600}}>{wkLabel}</div></div><Btn onClick={()=>setBase(d=>addD(d,7))} style={{padding:"4px 10px"}}>{"\u203A"}</Btn></div><Btn onClick={()=>setBase(getPlanMon(today))} style={{padding:"4px 10px",fontSize:".72rem"}}>Today</Btn></div>
     <div style={{fontSize:".7rem",color:"var(--text-secondary)",marginBottom:10,padding:"6px 10px",background:"var(--surface)",borderRadius:"var(--radius-md)",display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}><span>{wkLabel} {"\u00B7"} <strong className="mn" style={{color:sum.p===sum.t?"var(--success)":"var(--text)"}}>{sum.p}/{sum.t}</strong> planned</span>{sum.f>0&&<span style={{color:"var(--flag)"}}>{"\u2691"} {sum.f} flagged</span>}{sum.ud>0&&<span style={{color:"var(--dz-text)"}}>{"\u26A0"} {sum.ud} unlabelled D0</span>}<span style={{marginLeft:"auto"}}><FlagBank/></span></div>
-    {eng.classCodes.length>0&&<div className="np" style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c];return<span key={c} className="mn" onClick={()=>setSpot(spot===c?null:c)} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"3px 10px",borderRadius:4,fontSize:".7rem",fontWeight:700,cursor:"pointer",outline:spot===c?"2px solid var(--accent)":"none"}}>{c}</span>})}</div>}
+    {eng.classCodes.length>0&&<div className="np" style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c];const activeThisWeek=eng.classActiveOn(c,days[0])||eng.classActiveOn(c,days[4]);return<span key={c} className="mn" title={activeThisWeek?undefined:"This class is not active this week (semester boundary)"} onClick={()=>setSpot(spot===c?null:c)} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"3px 10px",borderRadius:4,fontSize:".7rem",fontWeight:700,cursor:"pointer",outline:spot===c?"2px solid var(--accent)":"none",opacity:activeThisWeek?1:.35}}>{c}</span>})}</div>}
     <div className="wk-grid" style={{gridTemplateColumns:"66px repeat(5,1fr)",marginBottom:10}}>{gridCells}</div>
     {qe&&<div className="qe"><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}><div style={{display:"flex",alignItems:"center",gap:8}}><CBadge cc={qe.cc} style={{fontSize:".7rem",padding:"2px 6px",minWidth:0}}/><span style={{fontSize:".72rem",color:"var(--text-secondary)"}}>{qe.pid.toUpperCase()} {"\u00B7"} {fmtS(qe.date)}</span></div><div style={{display:"flex",gap:6}}><button onMouseDown={e=>{e.preventDefault();onDet(qe.date,qe.pid)}} style={{background:"none",border:"none",color:"var(--accent)",cursor:"pointer",fontSize:".7rem"}}>Full detail {"\u2192"}</button><button onMouseDown={e=>{e.preventDefault();setQE(null)}} style={{background:"none",border:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:".9rem"}}>{"\u2715"}</button></div></div><div style={{display:"flex",gap:6,alignItems:"center"}}><input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null)}} onBlur={sQE} autoFocus placeholder={wNotes[`${qe.dk}:${qe.pid}`]?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/><button onMouseDown={e=>{e.preventDefault();askNL()}} style={{background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-sm)",color:"var(--text-secondary)",cursor:"pointer",fontSize:".68rem",padding:"6px 10px",whiteSpace:"nowrap",flexShrink:0}}>No lesson</button></div>{nlConfirm&&<div style={{display:"flex",alignItems:"center",gap:6,fontSize:".66rem",color:"var(--flag)",marginTop:6,padding:"4px 0"}}><span>Replace your topic with No Lesson?</span><button onMouseDown={e=>{e.preventDefault();sNL("")}} style={{background:"var(--accent)",color:"var(--on-accent)",border:"none",borderRadius:"var(--radius-sm)",fontSize:".64rem",padding:"3px 10px",cursor:"pointer",fontWeight:600}}>Yes, mark No Lesson</button><button onMouseDown={e=>{e.preventDefault();setNlConfirm(false)}} style={{background:"none",border:"none",fontSize:".64rem",cursor:"pointer",color:"var(--text-muted)",padding:"0 4px"}}>Cancel</button></div>}</div>}
     {flags.length>0&&<div className="card" style={{padding:"10px 14px",marginBottom:10}}><div className="sl" style={{marginBottom:8}}>{"\u2691"} Flagged Items {"\u00B7"} <span className="mn">{flags.length}</span></div>{flags.map((f,i)=>{const clr=f.cls!=="nc"&&eng.classMap[f.cls];return<div key={i} onClick={()=>onDet(f.date,f.pid)} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:i>0?"1px solid var(--border)":"none",cursor:"pointer"}}><span className="mn" style={{fontSize:".62rem",fontWeight:700,padding:"1px 6px",borderRadius:3,background:clr?clr.bg:"var(--nc-bg)",color:clr?clr.tx:"var(--nc-text)"}}>{f.cls==="nc"?"NC":f.cls}</span><span style={{fontSize:".65rem",color:"var(--text-muted)"}}>{fmtS(f.date)} {f.pid.toUpperCase()}</span><span style={{fontSize:".68rem",color:"var(--text)",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.subject||f.notes}</span><span style={{color:"var(--flag)",fontSize:".65rem"}}>{"\u2691"}</span></div>})}</div>}
@@ -1264,8 +1297,8 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
       const code=bsEdit.slotCode;
       const dateKey=bsEdit.dateKey;
       const meta=mc[dateKey]||eM();
-      const cyc=((eng.timetable&&eng.timetable[cd])||{})[code]||null;
-      const r=resolveSlot(code,cd,bsEdit.date,{timetable:eng.timetable,weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta);
+      const cyc=((eng.timetableForDate(bsEdit.date)||{})[cd]||{})[code]||null;
+      const r=resolveSlot(code,cd,bsEdit.date,{timetable:eng.timetableForDate(bsEdit.date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta);
       const current=r.value;
       const clash=r.clash;
       const slot={code,label:BSLOT_LABELS[code]};
@@ -1341,7 +1374,7 @@ function ClassView({onDet,g}){
   const askNL=()=>{const cur=qe?lessons[qe.i]&&lessons[qe.i].notes:null;const isAlreadyNl=cur&&cur.status==="nl";if(isAlreadyNl){sNL(qv);return}if(qv||(cur&&cur.subject)){setNlConfirm(true)}else{sNL("")}};
   if(eng.classCodes.length===0)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>No classes configured. Head to Setup to add your classes.</div>;
   return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
-    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14,marginTop:10}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c],a=c===sel;return<span key={c} className="mn" onClick={()=>{setSel(c);setQE(null)}} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"4px 12px",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer",outline:a?"2px solid var(--accent)":"none",outlineOffset:2}}>{c}</span>})}</div>
+    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14,marginTop:10}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c],a=c===sel,sem=cl&&cl.semester;return<span key={c} className="mn" onClick={()=>{setSel(c);setQE(null)}} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"4px 12px",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer",outline:a?"2px solid var(--accent)":"none",outlineOffset:2}}>{c}{sem&&sem!=="full"&&<span style={{fontSize:".58rem",fontWeight:600,marginLeft:5,opacity:.7}}>{sem}</span>}</span>})}</div>
     <div style={{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"}}><button onClick={()=>setTermIdx(-1)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:".76rem",fontWeight:termIdx===-1?600:400,background:termIdx===-1?"var(--accent)":"var(--surface)",color:termIdx===-1?"var(--on-accent)":"var(--text-secondary)"}}>All terms</button>{eng.terms.map((t,i)=><button key={i} onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:".76rem",fontWeight:termIdx===i?600:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div>
     <div style={{marginBottom:14}}><div className="hd" style={{fontSize:"1.1rem",fontWeight:600,color:clr.tx}}><span style={{background:clr.bg,padding:"2px 10px",borderRadius:5}}>{sel}</span></div>{clr.desc&&<div style={{fontSize:".75rem",color:"var(--text-secondary)",marginTop:4}}>{clr.desc}</div>}<div style={{fontSize:".73rem",color:"var(--text-secondary)",marginTop:4}}>{lessons.length} lessons {"\u00B7"} <strong className="mn" style={{color:planned===lessons.length?"var(--success)":"var(--text)"}}>{planned} planned</strong> {"\u00B7"} {lessons.length-planned} empty{flagged>0&&<span style={{color:"var(--flag)",marginLeft:6}}>{"\u2691"} {flagged}</span>}</div></div>
     <div className="card" style={{overflow:"hidden"}}>{lessons.map((l,i)=>{const ld=new Date(l.date);ld.setHours(0,0,0,0);const isT=ld.toDateString()===today.toDateString(),isPast=ld<today,isNl=l.notes.status==="nl",empty=!l.notes.subject&&!l.notes.notes&&!isNl,fl=hasF(l.notes.notes)||hasF(l.notes.subject),isN=i===nxtI&&!isT,per=bldP(isAsmDay(l.cd,{timetable:eng.timetable})).find(p=>p.id===l.pid),isEd=qe&&qe.i===i;
@@ -1571,6 +1604,12 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
   // Edge-row visibility for the timetable grid: B0/B3 stay hidden until the user opts in
   // OR the data already has a value for that slot on any cycle day (auto-shown).
   const[showEdgeRows,setShowEdgeRows]=useState({B0:false,B3:false});
+  // Semester 1 vs Semester 2 tab in the timetable card. Only meaningful when
+  // cfg.semesterBoundary is set; "S1" is the default and edits cfg.timetable.
+  const[ttTab,setTtTab]=useState("S1");
+  const createS2=()=>{up({timetableS2:JSON.parse(JSON.stringify(cfg.timetable||{}))});setTtTab("S2")};
+  const resetS2=()=>{if(!window.confirm("Reset Semester 2 grid to a copy of Semester 1? Your S2-only changes will be overwritten."))return;up({timetableS2:JSON.parse(JSON.stringify(cfg.timetable||{}))})};
+  const removeS2=()=>{if(!window.confirm("Delete the Semester 2 variant? All S2-specific cells will be lost."))return;setCfg(c=>{const n={...c};delete n.timetableS2;return n});setTtTab("S1")};
   // Back-to-top FAB: visible only once the user has scrolled past ~one screen, hidden
   // when near the top so it does not clutter the initial Setup view.
   const[showFab,setShowFab]=useState(false);
@@ -1611,7 +1650,8 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
 
     <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>School & Cycle</div>
       <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:10}}><div style={{flex:1,minWidth:180}}><label className="fl">Your Name (optional)</label><input className="inp" value={cfg.userName||""} onChange={e=>up({userName:e.target.value})} placeholder="e.g. Ms Smith"/></div></div>
-      <div style={{display:"flex",gap:12,flexWrap:"wrap"}}><div style={{minWidth:120}}><label className="fl">Cycle Length</label><select className="inp" value={cfg.cycleDays||7} onChange={e=>up({cycleDays:Number(e.target.value)})}>{[5,6,7,8,9,10].map(n=><option key={n} value={n}>{n}-day</option>)}</select></div></div>
+      <div style={{display:"flex",gap:12,flexWrap:"wrap"}}><div style={{minWidth:120}}><label className="fl">Cycle Length</label><select className="inp" value={cfg.cycleDays||7} onChange={e=>up({cycleDays:Number(e.target.value)})}>{[5,6,7,8,9,10].map(n=><option key={n} value={n}>{n}-day</option>)}</select></div><div style={{minWidth:160}}><label className="fl">Semester boundary <span style={{color:"var(--text-muted)",fontWeight:400}}>(optional)</span></label><input className="inp" type="date" value={cfg.semesterBoundary||""} onChange={e=>up({semesterBoundary:e.target.value||undefined})}/></div></div>
+      {cfg.semesterBoundary&&<div style={{fontSize:".66rem",color:"var(--text-muted)",marginTop:6,lineHeight:1.5}}>Classes whose semester is set to S1 or S2 (in the Classes card) are filtered on this date. If your timetable also changes mid-year, create a Semester 2 variant of the grid below.</div>}
       <div style={{fontSize:".68rem",color:"var(--text-muted)",marginTop:10,lineHeight:1.5}}>Your school uses a rotating timetable where the cycle advances one day for each teaching day. Weekends, public holidays, and Day 0 events pause the cycle {"\u2014"} it picks up where it left off on the next teaching day.</div></div>
 
     <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Export Format</div>
@@ -1639,14 +1679,25 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
         <div style={{display:"flex",gap:4}}><button className="btn" onClick={()=>{const cls=[...classes];const ni=i-1;if(ni<0)return;[cls[i],cls[ni]]=[cls[ni],cls[i]];up({classes:cls})}} disabled={i===0} style={{padding:"2px 6px",fontSize:".65rem"}}>{"\u25B2"}</button><button className="btn" onClick={()=>{const cls=[...classes];const ni=i+1;if(ni>=cls.length)return;[cls[i],cls[ni]]=[cls[ni],cls[i]];up({classes:cls})}} disabled={i===classes.length-1} style={{padding:"2px 6px",fontSize:".65rem"}}>{"\u25BC"}</button></div>
         <div style={{flex:"0 0 100px"}}><input className="inp mn" value={c.code} onChange={e=>updateClass(i,"code",e.target.value.trim())} placeholder="e.g. 9SCI3" style={{fontSize:".78rem",fontWeight:700,textAlign:"center",background:c.colour,color:TEXT_FOR_BG[c.colour]||"#000"}}/></div>
         <div style={{flex:1,minWidth:140}}><input className="inp" value={c.description} onChange={e=>updateClass(i,"description",e.target.value)} placeholder="Description" style={{fontSize:".72rem"}}/></div>
+        {cfg.semesterBoundary&&<div style={{flex:"0 0 110px"}}><select className="inp" value={c.semester||"full"} onChange={e=>updateClass(i,"semester",e.target.value)} title="Which semester this class runs" style={{fontSize:".7rem"}}><option value="full">Full year</option><option value="S1">Semester 1</option><option value="S2">Semester 2</option></select></div>}
         <button className="btn" onClick={()=>up({classes:classes.filter((_,j)=>j!==i)})} style={{padding:"2px 8px",color:"var(--error)",fontSize:".7rem"}}>{"\u2715"}</button></div>
         <ColourPicker value={c.colour} onChange={col=>updateClass(i,"colour",col)} usedColours={usedColours}/></div>)}
       <button className="btn" onClick={addClass}>+ Add Class</button>{classes.length===0&&<div style={{fontSize:".7rem",color:"var(--text-muted)",marginTop:8,fontStyle:"italic"}}>No classes defined yet.</div>}</div>
 
     <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Timetable</div><div style={{fontSize:".68rem",color:"var(--text-secondary)",marginBottom:10}}>Click a teaching-period cell to set a class (type "nc" for non-contact). Click a B-slot cell to set a morning structure, duty, or activity. The day with FSA picks up the assembly bell schedule automatically.</div>
+      {cfg.semesterBoundary&&<div style={{display:"flex",gap:6,marginBottom:10,alignItems:"center",flexWrap:"wrap"}}>
+        <button onClick={()=>setTtTab("S1")} style={{padding:"4px 12px",borderRadius:4,border:ttTab==="S1"?"2px solid var(--accent)":"1px solid var(--border)",background:ttTab==="S1"?"var(--accent-light)":"var(--surface)",cursor:"pointer",fontSize:".74rem",color:ttTab==="S1"?"var(--accent)":"var(--text-secondary)",fontWeight:ttTab==="S1"?600:400,fontFamily:"inherit"}}>Semester 1</button>
+        {cfg.timetableS2?<>
+          <button onClick={()=>setTtTab("S2")} style={{padding:"4px 12px",borderRadius:4,border:ttTab==="S2"?"2px solid var(--accent)":"1px solid var(--border)",background:ttTab==="S2"?"var(--accent-light)":"var(--surface)",cursor:"pointer",fontSize:".74rem",color:ttTab==="S2"?"var(--accent)":"var(--text-secondary)",fontWeight:ttTab==="S2"?600:400,fontFamily:"inherit"}}>Semester 2</button>
+          <button onClick={resetS2} title="Overwrite the Semester 2 grid with a fresh copy of Semester 1" style={{padding:"4px 10px",borderRadius:4,border:"1px solid var(--border)",background:"var(--surface)",cursor:"pointer",fontSize:".68rem",color:"var(--text-muted)",fontFamily:"inherit",marginLeft:"auto"}}>Reset S2 to copy of S1</button>
+          <button onClick={removeS2} title="Delete the Semester 2 grid" style={{padding:"4px 10px",borderRadius:4,border:"1px solid var(--border)",background:"var(--surface)",cursor:"pointer",fontSize:".68rem",color:"var(--error)",fontFamily:"inherit"}}>{"✕"} Delete S2</button>
+        </>:<button onClick={createS2} title="Start a separate timetable for Semester 2 (initialised as a copy of S1)" style={{padding:"4px 10px",borderRadius:4,border:"1px dashed var(--border-strong)",background:"transparent",cursor:"pointer",fontSize:".7rem",color:"var(--text-muted)",fontFamily:"inherit"}}>+ Create Semester 2 variant</button>}
+      </div>}
       {(() => {
         const nDays=cfg.cycleDays||7;
-        const tt=cfg.timetable||{};
+        const isS2=ttTab==="S2"&&!!cfg.timetableS2;
+        const ttKey=isS2?"timetableS2":"timetable";
+        const tt=cfg[ttKey]||{};
         const duties=cfg.duties||[];
         // Determine whether B0/B3 should auto-show because some day has a value.
         const anyB0=Array.from({length:nDays},(_,i)=>i+1).some(d=>(tt[d]||{}).B0);
@@ -1654,16 +1705,16 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
         const showB0=showEdgeRows.B0||anyB0;
         const showB3=showEdgeRows.B3||anyB3;
         const setBSlot=(day,code,val)=>{
-          const next={...(cfg.timetable||{})};
+          const next={...(cfg[ttKey]||{})};
           if(!next[day])next[day]={};
           next[day]={...next[day],[code]:val};
-          up({timetable:next});
+          up({[ttKey]:next});
         };
         const setP=(day,pid,v)=>{
-          const next={...(cfg.timetable||{})};
+          const next={...(cfg[ttKey]||{})};
           if(!next[day])next[day]={};
           next[day]={...next[day],[pid]:v};
-          up({timetable:next});
+          up({[ttKey]:next});
         };
         const slotLabel=(rel,extra={})=><div className="hd" style={{fontSize:".66rem",fontWeight:600,color:"var(--text)",display:"flex",alignItems:"center",position:"relative",...extra}}>{rel}</div>;
         const periodLabel=pid=><div className="hd" style={{fontFamily:"'JetBrains Mono',monospace",fontSize:".78rem",fontWeight:700,color:"var(--accent)",display:"flex",alignItems:"center"}}>{pid}</div>;

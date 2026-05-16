@@ -6,6 +6,24 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.2.0 — 2026-05-16
+
+### Features
+- **Semester-aware classes.** Each class in Setup gains an optional `semester` field: Full year, Semester 1, or Semester 2. Combined with a new school-wide **Semester boundary** date in the School & Cycle card, this lets teachers run classes that only exist for part of the year. Out-of-semester cells render as `nc`, drop out of coverage and Lab counts, and the class chip dims in Week View when not active in the visible week. Past lesson notes remain fully reachable on their original dates — the filter is at the render layer, not the data layer.
+- **Semester 2 timetable variant.** Some full-year classes shift cycle position at the semester boundary; some don't. Setup now has a small tab affordance above the timetable grid (visible only when a semester boundary is set): **Semester 1** / **+ Create Semester 2 variant**. Clicking create copies the current S1 grid into a separate `cfg.timetableS2`. Teachers then edit only the cells that differ. After the boundary, every read pipeline (Day View, Week View, plain-text export, Lab coverage, Class View lessons) routes through whichever grid applies for the date. Reset and Delete buttons next to the tabs handle the lifecycle.
+
+### Refactor
+- All read sites that previously did `eng.timetable[cd][pid]` are unified through a new `eng.classAt(date, cd, pid)` helper. The helper picks the right timetable grid for the date (S1 or S2), then applies the class's `semester` filter, then returns the class code or `"nc"`. Single source of truth for "what class meets this cell on this date".
+- `eng.timetableForDate(date)` and `eng.classActiveOn(code, date)` are also exposed for the few places that need finer-grained access.
+
+### Docs
+- `BACKUP_SCHEMA.md` updated with the new `classes[].semester`, `cfg.semesterBoundary`, and `cfg.timetableS2` fields.
+
+### Non-impact
+- Existing users with no `semesterBoundary` set see no behavioural change. The Setup affordances (boundary input, semester dropdown, S1/S2 tab) appear but do nothing until used. No data migration required.
+
+---
+
 ## 2.1.6 — 2026-05-16
 
 ### Features
