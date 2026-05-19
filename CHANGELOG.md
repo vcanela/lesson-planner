@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.2.3 — 2026-05-19
+
+### Features
+- **"Today" button in Day View.** Sits next to Prev/Next. Jumps to today if today is a school day; otherwise jumps to the next school day (mirrors the Week View Today button's weekend-mode behaviour). Disabled if there is no upcoming school day within the engine's walk window. The App-level "Weekend mode" indicator already surfaces when today is a weekend, so the context is consistent across views.
+
+---
+
 ## 2.2.2 — 2026-05-16
 
 ### Features
