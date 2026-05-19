@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.2.2 — 2026-05-16
+
+### Features
+- **Class View row expands to Detailed mode inline.** Previously, the "Full detail →" link in Class View's quick-edit panel jumped the user to Day View, breaking class-focused planning flows. Now the same row offers **Quick** | **Detailed** pill tabs: Quick keeps the existing single-input + No-lesson behaviour; Detailed expands the row in place to show Topic / Subject, Notes &amp; Tasks, and Resources &amp; Links — the same three fields as Day View's Detailed mode. Changes autosave on blur via a dedicated `DetailedNoteEditor` that flushes any pending save on unmount, so mode switches and panel closes never lose typing. You stay in Class View throughout.
+
+---
+
 ## 2.2.1 — 2026-05-16
 
 ### Fixes

@@ -1343,10 +1343,29 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
 }
 
 /* ═══ CLASS VIEW ═════════════════════════════════════════════════════════ */
+/* DetailedNoteEditor: inline three-field editor used inside ClassView's quick-edit
+ * panel when the user toggles to Detailed mode. Owns its own useAutoSave; flushes
+ * any pending save on unmount so mode switches and panel closes never lose typing.
+ */
+function DetailedNoteEditor({dateKey,pid,onSave}){
+  const as=useAutoSave(`note:${dateKey}:${pid}`,eN(),onSave);
+  const{data,updateField,ss,hFoc,hBlr,save}=as;
+  // Flush latest save on unmount — captures `save` via ref so the cleanup uses
+  // the closure-current function and doesn't fire stale.
+  const saveRef=useRef(save);saveRef.current=save;
+  useEffect(()=>()=>saveRef.current(),[]);
+  if(!data)return null;
+  return<div onFocus={hFoc} onBlur={hBlr} style={{display:"grid",gap:8,marginTop:6}}>
+    <div><label className="fl">Topic / Subject <SvH ss={ss}/></label><AInp data={data} field="subject" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="e.g. Newton's 3rd Law"/></div>
+    <div><label className="flb">Notes &amp; Tasks</label><AInp data={data} field="notes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Lesson plan, tasks" multi rows={3}/></div>
+    <div><label className="flb">Resources &amp; Links</label><AInp data={data} field="resources" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="URLs, file names"/></div>
+  </div>;
+}
 /* ═══ CLASS VIEW ═════════════════════════════════════════════════════════
  * ClassView: every lesson for one class, in chronological order. Useful for
- * checking continuity across the term. Same quick-edit pattern as WeekView.
- * Filter by term using the chip row at the top; defaults to the active term.
+ * checking continuity across the term. Same quick-edit pattern as WeekView,
+ * with an in-place Detailed mode that expands the row to three full fields
+ * without leaving the Class View.
  * ═══════════════════════════════════════════════════════════════════════
  */
 function ClassView({onDet,g}){
@@ -1364,7 +1383,8 @@ function ClassView({onDet,g}){
   const planned=lessons.filter(l=>l.notes.subject||l.notes.notes||l.notes.status==="nl").length;const flagged=lessons.filter(l=>hasF(l.notes.notes)||hasF(l.notes.subject)).length;
   const nxtI=lessons.findIndex(l=>{const ld=new Date(l.date);ld.setHours(0,0,0,0);return ld>=today});
   const clr=eng.classMap[sel]||{bg:"var(--nc-bg)",tx:"var(--nc-text)",desc:""};
-  const oQE=(i,l)=>{setQV(l.notes.subject||"");setQE({i,dk:l.dk,pid:l.pid,date:l.date});setNlConfirm(false)};
+  const[qeMode,setQeMode]=useState("quick");
+  const oQE=(i,l)=>{setQV(l.notes.subject||"");setQE({i,dk:l.dk,pid:l.pid,date:l.date});setNlConfirm(false);setQeMode("quick")};
   // sQE saves the typed input. It preserves the existing status (so editing the
   // reason of a no-lesson period does not silently downgrade it back to a topic).
   const sQE=()=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=sGet(k)||eN();sSet(k,{...ex,subject:qv,status:ex.status||""});setQE(null);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
@@ -1384,7 +1404,26 @@ function ClassView({onDet,g}){
           <div style={{minWidth:40,textAlign:"center",flexShrink:0}}><div className="hd" style={{fontSize:".85rem",fontWeight:700,color:isPast&&!isT?"var(--text-muted)":"var(--text)"}}>{l.date.getDate()}</div><div style={{fontSize:".57rem",color:"var(--text-muted)"}}>{l.date.toLocaleDateString("en-NZ",{month:"short"})}</div></div>
           <div style={{flex:1,minWidth:0}}><div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}><span className="mn" style={{fontSize:".63rem",color:"var(--text-secondary)",fontWeight:600}}>{l.date.toLocaleDateString("en-NZ",{weekday:"short"})} {"\u00B7"} {per&&per.label} {"\u00B7"} D{l.cd}</span><span className="mn" style={{fontSize:".56rem",color:"var(--text-muted)"}}>{per&&(per.start+"\u2013"+per.end)}</span>{isT&&<span style={{fontSize:".55rem",background:"var(--today-border)",color:"var(--on-accent)",padding:"1px 5px",borderRadius:3,fontWeight:700}}>TODAY</span>}{isN&&<span style={{fontSize:".55rem",background:"var(--accent)",color:"var(--on-accent)",padding:"1px 5px",borderRadius:3,fontWeight:700}}>NEXT</span>}</div>{empty?<div style={{fontSize:".72rem",color:"var(--text-muted)",fontStyle:"italic"}}>{isPast?"No notes":"Click to plan"}</div>:isNl?<div style={{fontSize:".72rem",color:"var(--text-muted)",fontStyle:"italic"}}>{l.notes.subject?"No lesson \u2014 "+l.notes.subject:"No lesson"}</div>:<div><div style={{fontSize:".78rem",color:"var(--text)",fontWeight:600}}>{l.notes.subject||"(no topic)"}</div>{l.notes.notes&&<div style={{fontSize:".67rem",color:"var(--text-secondary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginTop:1}}>{l.notes.notes}</div>}</div>}</div>
           <div style={{flexShrink:0,display:"flex",alignItems:"center",gap:4}}>{fl&&<span style={{color:"var(--flag)",fontSize:".72rem"}}>{"\u2691"}</span>}<span className="mn" style={{fontSize:".56rem",color:"var(--text-muted)"}}>#{i+1}</span></div></div>
-        {isEd&&<div style={{padding:"8px 12px",background:"var(--surface-open)",borderBottom:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:6}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}><span style={{fontSize:".7rem",color:"var(--text-secondary)"}}>{per&&per.label} {"\u00B7"} {fmtS(l.date)} {"\u00B7"} #{i+1}</span><div style={{display:"flex",gap:6}}><button onMouseDown={e=>{e.preventDefault();onDet(l.date,l.pid)}} style={{background:"none",border:"none",color:"var(--accent)",cursor:"pointer",fontSize:".7rem"}}>Full detail {"\u2192"}</button><button onMouseDown={e=>{e.preventDefault();setQE(null)}} style={{background:"none",border:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:".9rem"}}>{"\u2715"}</button></div></div><div style={{display:"flex",gap:6,alignItems:"center"}}><input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null)}} onBlur={sQE} autoFocus placeholder={lessons[qe.i]?.notes?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/><button onMouseDown={e=>{e.preventDefault();askNL()}} style={{background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-sm)",color:"var(--text-secondary)",cursor:"pointer",fontSize:".68rem",padding:"6px 10px",whiteSpace:"nowrap",flexShrink:0}}>No lesson</button></div>{nlConfirm&&<div style={{display:"flex",alignItems:"center",gap:6,fontSize:".66rem",color:"var(--flag)",marginTop:6,padding:"4px 0"}}><span>Replace your topic with No Lesson?</span><button onMouseDown={e=>{e.preventDefault();sNL("")}} style={{background:"var(--accent)",color:"var(--on-accent)",border:"none",borderRadius:"var(--radius-sm)",fontSize:".64rem",padding:"3px 10px",cursor:"pointer",fontWeight:600}}>Yes, mark No Lesson</button><button onMouseDown={e=>{e.preventDefault();setNlConfirm(false)}} style={{background:"none",border:"none",fontSize:".64rem",cursor:"pointer",color:"var(--text-muted)",padding:"0 4px"}}>Cancel</button></div>}</div>}
+        {isEd&&<div style={{padding:"8px 12px",background:"var(--surface-open)",borderBottom:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:6}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
+            <span style={{fontSize:".7rem",color:"var(--text-secondary)"}}>{per&&per.label} {"\u00B7"} {fmtS(l.date)} {"\u00B7"} #{i+1}</span>
+            <div style={{display:"flex",gap:4,alignItems:"center"}}>
+              {["quick","detailed"].map(m=><button key={m} className="hd" onClick={()=>setQeMode(m)} style={{padding:"2px 10px",borderRadius:4,border:"none",cursor:"pointer",fontSize:".67rem",fontWeight:qeMode===m?700:400,background:qeMode===m?"var(--accent)":"var(--surface)",color:qeMode===m?"var(--on-accent)":"var(--text-muted)",fontFamily:"inherit"}}>{m==="quick"?"Quick":"Detailed"}</button>)}
+              <button onMouseDown={e=>{e.preventDefault();setQE(null)}} style={{background:"none",border:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:".9rem",marginLeft:4}}>{"\u2715"}</button>
+            </div>
+          </div>
+          {qeMode==="quick"?<>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null)}} onBlur={sQE} autoFocus placeholder={lessons[qe.i]?.notes?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/>
+              <button onMouseDown={e=>{e.preventDefault();askNL()}} style={{background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-sm)",color:"var(--text-secondary)",cursor:"pointer",fontSize:".68rem",padding:"6px 10px",whiteSpace:"nowrap",flexShrink:0}}>No lesson</button>
+            </div>
+            {nlConfirm&&<div style={{display:"flex",alignItems:"center",gap:6,fontSize:".66rem",color:"var(--flag)",marginTop:6,padding:"4px 0"}}>
+              <span>Replace your topic with No Lesson?</span>
+              <button onMouseDown={e=>{e.preventDefault();sNL("")}} style={{background:"var(--accent)",color:"var(--on-accent)",border:"none",borderRadius:"var(--radius-sm)",fontSize:".64rem",padding:"3px 10px",cursor:"pointer",fontWeight:600}}>Yes, mark No Lesson</button>
+              <button onMouseDown={e=>{e.preventDefault();setNlConfirm(false)}} style={{background:"none",border:"none",fontSize:".64rem",cursor:"pointer",color:"var(--text-muted)",padding:"0 4px"}}>Cancel</button>
+            </div>}
+          </>:<DetailedNoteEditor dateKey={l.dk} pid={l.pid} onSave={()=>{setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()}}/>}
+        </div>}
       </React.Fragment>})}</div></div>;
 }
 
