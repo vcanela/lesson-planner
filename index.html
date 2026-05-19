@@ -1413,7 +1413,18 @@ function ClassView({onDet,g}){
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:".7rem",color:"var(--text-secondary)"}}>{per&&per.label} {"\u00B7"} {fmtS(l.date)} {"\u00B7"} #{i+1}</span>
             <div style={{display:"flex",gap:4,alignItems:"center"}}>
-              {["quick","detailed"].map(m=><button key={m} className="hd" onClick={()=>setQeMode(m)} style={{padding:"2px 10px",borderRadius:4,border:"none",cursor:"pointer",fontSize:".67rem",fontWeight:qeMode===m?700:400,background:qeMode===m?"var(--accent)":"var(--surface)",color:qeMode===m?"var(--on-accent)":"var(--text-muted)",fontFamily:"inherit"}}>{m==="quick"?"Quick":"Detailed"}</button>)}
+              {["quick","detailed"].map(m=><button key={m} className="hd" onMouseDown={e=>{
+                // Keep focus on the active input so its onBlur (which can call sQE
+                // and close the panel) does not fire. We commit any unsaved Quick
+                // typing manually before switching to Detailed; the reverse path is
+                // covered by DetailedNoteEditor's unmount-flush.
+                e.preventDefault();
+                if(qeMode==="quick"&&m==="detailed"&&qe){
+                  const k=`note:${qe.dk}:${qe.pid}`;const ex=sGet(k)||eN();
+                  if(qv!==(ex.subject||"")){sSet(k,{...ex,subject:qv,status:ex.status||""});setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()}
+                }
+                setQeMode(m);
+              }} style={{padding:"2px 10px",borderRadius:4,border:"none",cursor:"pointer",fontSize:".67rem",fontWeight:qeMode===m?700:400,background:qeMode===m?"var(--accent)":"var(--surface)",color:qeMode===m?"var(--on-accent)":"var(--text-muted)",fontFamily:"inherit"}}>{m==="quick"?"Quick":"Detailed"}</button>)}
               <button onMouseDown={e=>{e.preventDefault();setQE(null)}} style={{background:"none",border:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:".9rem",marginLeft:4}}>{"\u2715"}</button>
             </div>
           </div>

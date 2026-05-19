@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.2.4 — 2026-05-19
+
+### Fixes
+- **Class View "Detailed" tab now actually opens the detailed view.** Regression introduced in 2.2.2: the tab buttons used `onClick`, which fires AFTER the input's blur. The Quick-mode input's `onBlur` calls `sQE` which both saves *and* closes the panel via `setQE(null)`. So clicking Detailed closed the panel before the mode-switch ran. Fixed by switching the tabs to `onMouseDown` with `e.preventDefault()` (keeps focus on the input so blur doesn't fire), and manually committing any unsaved Quick-mode typing before switching to Detailed. The reverse path was already safe because `DetailedNoteEditor` flushes on unmount.
+
+---
+
 ## 2.2.3 — 2026-05-19
 
 ### Features
