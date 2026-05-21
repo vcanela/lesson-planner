@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.3.1 — 2026-05-22
+
+### Cosmetic
+- **Week View label column tightened further.** From 56px to 32px. To make this work without ragged single-vs-double-line wrapping, B-slot labels are now explicitly split at the space and rendered as two right-aligned lines ("after / 2", "before / 3", "before / school", etc.). All B-slot rows look consistent now, and the day columns get a noticeable ~5px each on a phone-sized layout.
+
+---
+
 ## 2.3.0 — 2026-05-22
 
 ### Features
