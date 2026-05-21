@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.2.5 — 2026-05-22
+
+### Cosmetic
+- **Today is more visible in Week View.** When the grid is busy with planned content, the gentle today-bg tint alone wasn't enough to spot the current day at a glance. The today column header pill now also gets a thicker inset border (2px box-shadow inside the existing 1px border), a small accent bar above the column, and bolder weight on the date and day-cycle text. Layout-stable: no other columns shift.
+
+---
+
 ## 2.2.4 — 2026-05-19
 
 ### Fixes
