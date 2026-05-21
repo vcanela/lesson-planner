@@ -6,6 +6,17 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.3.2 — 2026-05-22
+
+### Fixes
+- **B-slot notes alone keep the row visible.** Previously, writing only notes (without first committing an Activity or Duty value) saved the notes to localStorage but the row vanished on next render because visibility was gated strictly on the resolved value being non-null. Teachers who clicked "+ Before school", typed straight into Notes, and switched view lost sight of their event — even though the notes were technically there. Visibility now considers notes too: a row appears in Day View and Week View if it has either a value OR notes for that date+slot. A 📝 indicator surfaces in the WeekView cell when only notes exist, mirroring the Day View row summary.
+
+### Refactor
+- `buildSlots` accepts an optional `hasSlotNote(code)` callback so the B0/B3 omission rule also relaxes when notes exist.
+- WeekView's `bRowVisible` adds a parallel notes check across the visible week.
+
+---
+
 ## 2.3.1 — 2026-05-22
 
 ### Cosmetic

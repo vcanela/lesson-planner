@@ -424,16 +424,20 @@ function resolveSlot(slotCode,cycleDay,date,cfg,daymeta){
 // forceShow: optional Set of B-slot codes (e.g. "B0", "B3") to render as a gap row
 // even when their resolved value is null. Used by DayView to let teachers add an
 // ad-hoc edge event on a single date without making B0/B3 always-visible globally.
-function buildSlots(cycleDay,daymeta,cfg,date,forceShow){
+// hasSlotNote: optional callback (code -> bool) so B0/B3 also surface when notes
+// have been typed for that slot+date even though no value was committed. Lets
+// teachers persist a slot just by writing notes, without clicking Activity first.
+function buildSlots(cycleDay,daymeta,cfg,date,forceShow,hasSlotNote){
   const useAsm=isAsmDay(cycleDay,cfg);
   const T=useAsm?ASM_T:STD_T;
   const Tb=useAsm?BSLOT_T_ASM:BSLOT_T_STD;
   const isForced=code=>forceShow&&forceShow.has&&forceShow.has(code);
+  const noted=code=>!!(hasSlotNote&&hasSlotNote(code));
   const period=pid=>({type:"period",id:pid,label:pid,start:T[pid.toLowerCase()].s,end:T[pid.toLowerCase()].e});
   const bslot=code=>{
     const r=resolveSlot(code,cycleDay,date,cfg,daymeta);const t=Tb[code];
     if(r.value===null){
-      if((code==="B0"||code==="B3")&&!isForced(code))return null;
+      if((code==="B0"||code==="B3")&&!isForced(code)&&!noted(code))return null;
       return{type:"gap",id:"gap-"+code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e,isOverride:r.isOverride,clash:r.clash,forced:isForced(code)};
     }
     return{type:"bslot",id:code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e,value:r.value,isOverride:r.isOverride,clash:r.clash};
@@ -1083,7 +1087,11 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
   const[forceShow,setForceShow]=useState({});
   useEffect(()=>{setForceShow({})},[dateKey]);
   const forceSet=useMemo(()=>{const s=new Set();if(forceShow.B0)s.add("B0");if(forceShow.B3)s.add("B3");return s},[forceShow]);
-  const slots=buildSlots(cd,meta,{timetable:eng.timetableForDate(date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},date,forceSet);
+  // Notes saved for a slot+date count as "content" for the visibility check below,
+  // so teachers who type notes without committing a slot value still see the row
+  // on revisit. nr (note-refresh counter) wakes this memo when notes change.
+  const hasSlotNote=useCallback(code=>{const n=sGet(`note:${dateKey}:${code}`);return!!(n&&(n.subject||n.notes||n.status==="nl"))},[dateKey]);
+  const slots=buildSlots(cd,meta,{timetable:eng.timetableForDate(date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},date,forceSet,hasSlotNote);
   const hasB0=slots.some(s=>s.code==="B0");
   const hasB3=slots.some(s=>s.code==="B3");
   const duties=(cfg&&cfg.duties)||[];
@@ -1253,7 +1261,11 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
     // Visibility rule: a B-row renders if at least one school day in the week has
     // a non-null resolved value for it. B0/B3 follow the same rule; they stay
     // hidden when nothing is scheduled, matching the migration doc.
-    const bRowVisible=code=>dd.some(x=>x.sch&&!x.isZ&&resolveBSlot(x,code)!==null);
+    // Notes alone keep a row visible too: a teacher who types notes for a slot
+    // (e.g. typed straight into the textarea after clicking + Before school)
+    // expects the row to persist on revisit even if they did not commit a value.
+    const hasCellNote=(x,code)=>{const n=sGet(`note:${x.k}:${code}`);return!!(n&&(n.subject||n.notes||n.status==="nl"))};
+    const bRowVisible=code=>dd.some(x=>x.sch&&!x.isZ&&(resolveBSlot(x,code)!==null||hasCellNote(x,code)));
     const bSlotRow=code=>{
       cells.push(<div key={`l${code}`} className="wk-blabel"><div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",lineHeight:1.05}}>{BSLOT_LABELS[code].split(" ").map((w,wi)=><span key={wi}>{w}</span>)}</div></div>);
       dd.forEach((x,i)=>{
@@ -1264,6 +1276,7 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
         const ov=sl.isOverride;
         const cl=sl.clash;
         const isEmpty=v===null;
+        const hasNote=hasCellNote(x,code);
         const handleClick=e=>{
           e.stopPropagation();
           const r=e.currentTarget.getBoundingClientRect();
@@ -1273,6 +1286,7 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
           {v&&<BSlotChip value={v} duties={duties}/>}
           {ov&&<span className="bs-override-dot" title="Override"/>}
           {cl&&<span className="bs-clash" title="Weekly activity is hiding the cycle default for this slot. Open the editor to see what the cycle has scheduled.">{"⚠"}</span>}
+          {isEmpty&&hasNote&&<span title="Has notes" style={{fontSize:".62rem"}}>{"\u{1F4DD}"}</span>}
         </div>);
       });
     };
