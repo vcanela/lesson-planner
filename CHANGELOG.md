@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.2.6 — 2026-05-22
+
+### Cosmetic
+- **Week View label column trimmed.** The left column that holds the row headings (P1-P6, "after 2", "before 3", etc.) shrinks from 66px to 56px. The reclaimed 10px goes to the day columns, which makes the grid feel less cramped on phones. "before school" and "after school" wrap to two lines in the label column, which is acceptable since those rows are toggleable and rarely visible. All other labels stay on a single line.
+
+---
+
 ## 2.2.5 — 2026-05-22
 
 ### Cosmetic
