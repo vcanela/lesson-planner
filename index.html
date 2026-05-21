@@ -421,16 +421,20 @@ function resolveSlot(slotCode,cycleDay,date,cfg,daymeta){
   }
   return{value:cyc,isOverride:false,clash:false};
 }
-function buildSlots(cycleDay,daymeta,cfg,date){
+// forceShow: optional Set of B-slot codes (e.g. "B0", "B3") to render as a gap row
+// even when their resolved value is null. Used by DayView to let teachers add an
+// ad-hoc edge event on a single date without making B0/B3 always-visible globally.
+function buildSlots(cycleDay,daymeta,cfg,date,forceShow){
   const useAsm=isAsmDay(cycleDay,cfg);
   const T=useAsm?ASM_T:STD_T;
   const Tb=useAsm?BSLOT_T_ASM:BSLOT_T_STD;
+  const isForced=code=>forceShow&&forceShow.has&&forceShow.has(code);
   const period=pid=>({type:"period",id:pid,label:pid,start:T[pid.toLowerCase()].s,end:T[pid.toLowerCase()].e});
   const bslot=code=>{
     const r=resolveSlot(code,cycleDay,date,cfg,daymeta);const t=Tb[code];
     if(r.value===null){
-      if(code==="B0"||code==="B3")return null;
-      return{type:"gap",id:"gap-"+code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e,isOverride:r.isOverride,clash:r.clash};
+      if((code==="B0"||code==="B3")&&!isForced(code))return null;
+      return{type:"gap",id:"gap-"+code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e,isOverride:r.isOverride,clash:r.clash,forced:isForced(code)};
     }
     return{type:"bslot",id:code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e,value:r.value,isOverride:r.isOverride,clash:r.clash};
   };
@@ -1074,7 +1078,14 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
   const todayTarget=eng.isSD(today)?today:eng.nearSD(today,1);
   const hms=useCallback(saved=>{if(dateKey)onMS(dateKey,saved)},[dateKey]);
   const as=useAutoSave(`daymeta:${dateKey}`,eM(),hms);const{data:meta,updateField,ss,hFoc,hBlr,save}=as;
-  const slots=buildSlots(cd,meta,{timetable:eng.timetableForDate(date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},date);
+  // forceShow: per-date ad-hoc reveals for B0/B3 so the teacher can add a one-off
+  // before/after-school event even when no cycle default exists. Cleared on date change.
+  const[forceShow,setForceShow]=useState({});
+  useEffect(()=>{setForceShow({})},[dateKey]);
+  const forceSet=useMemo(()=>{const s=new Set();if(forceShow.B0)s.add("B0");if(forceShow.B3)s.add("B3");return s},[forceShow]);
+  const slots=buildSlots(cd,meta,{timetable:eng.timetableForDate(date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},date,forceSet);
+  const hasB0=slots.some(s=>s.code==="B0");
+  const hasB3=slots.some(s=>s.code==="B3");
   const duties=(cfg&&cfg.duties)||[];
   // setOverride: write a per-date override for one B-slot into daymeta.overrides.
   // If the chosen value matches the cycle default, drop the override key entirely
@@ -1095,13 +1106,17 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
     <div className="np" style={{display:"flex",alignItems:"center",gap:7,marginBottom:14,flexWrap:"wrap"}}><Btn onClick={onBack}>{"\u2190"} Back</Btn><Btn onClick={()=>prev&&setDate(prev)} disabled={!prev}>{"\u2039"} Prev</Btn><Btn onClick={()=>next&&setDate(next)} disabled={!next}>Next {"\u203A"}</Btn><Btn onClick={()=>todayTarget&&setDate(todayTarget)} disabled={!todayTarget}>Today</Btn><div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}><SvH ss={ss}/><Btn onClick={()=>window.print()}>{"\u{1F5A8}"} Print</Btn></div></div>
     {!sch?<div style={{color:"var(--text-secondary)",padding:30,textAlign:"center",fontSize:".88rem"}}>No classes scheduled.</div>
     :isZ?<div className="card" style={{padding:18,marginBottom:14,borderColor:"var(--dz-border)",background:"var(--dz-bg)"}}><div className="hd" style={{fontSize:".85rem",color:"var(--dz-text)",fontWeight:600,marginBottom:12}}>Day 0 {"\u2014"} No class structure</div>{meta&&<div style={{display:"grid",gap:10}} onFocus={hFoc} onBlur={hBlr}><div><label className="fl">Label / Activity <SvH ss={ss}/></label><AInp data={meta} field="day0label" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="e.g. Orientation, EOTC"/></div><div><label className="flb">Notes</label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Notes" multi rows={3}/></div></div>}</div>
-    :<>{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH ss={ss}/></label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Meetings, reminders, duty" multi rows={2}/></div>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>{slots.map(s=>{
-  if(s.type==="period")return<PCard key={`${dateKey}-${s.id}`} period={s} dateKey={dateKey} cDay={cd} date={date} initOpen={fp===s.id}/>;
-  const code=s.code;
-  const cyc=((eng.timetableForDate(date)||{})[cd]||{})[code]||null;
-  const current=s.type==="bslot"?s.value:null;
-  return<BSlotRow key={`${dateKey}-${code}`} slot={s} dateKey={dateKey} cycleDay={cd} current={current} cycleDefault={cyc} isOverride={!!s.isOverride} clash={!!s.clash} duties={duties} onSaveToday={v=>setOverride(code,v)} hFoc={hFoc} hBlr={hBlr}/>;
-})}</div><ReflectionsPanel meta={meta} updateField={updateField} hFoc={hFoc} hBlr={hBlr} ss={ss}/></>}
+    :<>{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH ss={ss}/></label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Meetings, reminders, duty" multi rows={2}/></div>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>
+  {!hasB0&&<div style={{padding:"6px 12px",borderBottom:"1px solid var(--border)"}}><button onClick={()=>setForceShow(s=>({...s,B0:true}))} style={{background:"none",border:"1px dashed var(--border-strong)",borderRadius:4,padding:"3px 10px",fontSize:".66rem",color:"var(--text-muted)",cursor:"pointer",fontFamily:"inherit"}}>+ Before school</button></div>}
+  {slots.map(s=>{
+    if(s.type==="period")return<PCard key={`${dateKey}-${s.id}`} period={s} dateKey={dateKey} cDay={cd} date={date} initOpen={fp===s.id}/>;
+    const code=s.code;
+    const cyc=((eng.timetableForDate(date)||{})[cd]||{})[code]||null;
+    const current=s.type==="bslot"?s.value:null;
+    return<BSlotRow key={`${dateKey}-${code}`} slot={s} dateKey={dateKey} cycleDay={cd} current={current} cycleDefault={cyc} isOverride={!!s.isOverride} clash={!!s.clash} duties={duties} onSaveToday={v=>setOverride(code,v)} hFoc={hFoc} hBlr={hBlr} initOpen={!!s.forced}/>;
+  })}
+  {!hasB3&&<div style={{padding:"6px 12px",borderTop:"1px solid var(--border)"}}><button onClick={()=>setForceShow(s=>({...s,B3:true}))} style={{background:"none",border:"1px dashed var(--border-strong)",borderRadius:4,padding:"3px 10px",fontSize:".66rem",color:"var(--text-muted)",cursor:"pointer",fontFamily:"inherit"}}>+ After school</button></div>}
+</div><ReflectionsPanel meta={meta} updateField={updateField} hFoc={hFoc} hBlr={hBlr} ss={ss}/></>}
   </div>;
 }
 
@@ -1616,8 +1631,8 @@ function BSlotEditor({slot,cycleDay,current,cycleDefault,clash,duties,onSaveToda
  * override dot (if applicable). Expanded swaps in the inline BSlotEditor
  * plus a notes textarea backed by note:<date>:<slotCode>.
  */
-function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,clash,duties,onSaveToday,hFoc,hBlr}){
-  const[expanded,setExpanded]=useState(false);
+function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,clash,duties,onSaveToday,hFoc,hBlr,initOpen}){
+  const[expanded,setExpanded]=useState(!!initOpen);
   const noteKey=`note:${dateKey}:${slot.code}`;
   const as=useAutoSave(noteKey,eN());
   const{data:note,updateField,ss:noteSs}=as;

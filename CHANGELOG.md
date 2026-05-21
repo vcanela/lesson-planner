@@ -6,6 +6,16 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.3.0 — 2026-05-22
+
+### Features
+- **Ad-hoc before/after-school events in Day View.** B0 (before school) and B3 (after school) are still hidden by default when empty so the day list stays clean for teachers with no edge-of-day commitments. New "+ Before school" / "+ After school" buttons sit at the top/bottom of the slot list when those rows are absent. Clicking one inserts the row into the day with the editor already open — pick a Duty or Activity, hit Save today, and the override lands in `daymeta.overrides[code]` for that one date. The row stays visible on revisit because the value is now non-null. Week View automatically reflects the new value (the existing row-visibility rule already checks resolved values across the visible week).
+
+### Refactor
+- `buildSlots` now accepts an optional `forceShow` set. The Day View component manages a per-date `forceShow` state that resets on navigation. `BSlotRow` gains an `initOpen` prop so a force-shown row opens its editor immediately on first render.
+
+---
+
 ## 2.2.6 — 2026-05-22
 
 ### Cosmetic
