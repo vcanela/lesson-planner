@@ -945,8 +945,16 @@ function compGam(eng,pwn,themeKey){
 function useAutoSave(sk,dv,onSave){
   const dr=useRef(dv);const[data,setData]=useState(()=>{if(!sk)return null;const s=sGet(sk);return{...dr.current,...(s||{})}});
   const ref=useRef(data||{...dv});const[ss,setSS]=useState("idle");const bt=useRef(null),st=useRef(null);
-  useEffect(()=>{if(!sk){setData(null);return}const s=sGet(sk),m={...dr.current,...(s||{})};ref.current=m;setData(m);setSS("idle");return()=>{clearTimeout(bt.current);clearTimeout(st.current)}},[sk]);
-  const save=useCallback(()=>{if(!sk)return;clearTimeout(st.current);setSS("saving");const ok=sSet(sk,ref.current);if(ok&&onSave)onSave({...ref.current});if(ok&&window._plannerSync)window._plannerSync();if(ok&&window._plannerGamRefresh)window._plannerGamRefresh();setSS(ok?"saved":"error");st.current=setTimeout(()=>setSS("idle"),STATUS_PILL_MS)},[sk,onSave]);
+  // dirtyRef tracks whether ref.current holds typed-but-not-yet-saved content. Set by
+  // updateField on every keystroke; cleared after a successful save; reset on sk change.
+  // The unmount-cleanup uses it to decide whether to flush before the consumer unmounts
+  // (which happens on SPA navigation that swaps views or changes dates).
+  const dirtyRef=useRef(false);
+  // onSaveRef captures the latest onSave callback so cleanup-flushes can notify the
+  // parent even if the original callback closure was already stale.
+  const onSaveRef=useRef(onSave);onSaveRef.current=onSave;
+  useEffect(()=>{if(!sk){setData(null);return}dirtyRef.current=false;const s=sGet(sk),m={...dr.current,...(s||{})};ref.current=m;setData(m);setSS("idle");const skSnap=sk;return()=>{clearTimeout(bt.current);bt.current=null;clearTimeout(st.current);if(dirtyRef.current){const ok=sSet(skSnap,ref.current);if(ok){try{if(onSaveRef.current)onSaveRef.current({...ref.current})}catch{}if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()}dirtyRef.current=false}}},[sk]);
+  const save=useCallback(()=>{if(!sk)return;clearTimeout(st.current);setSS("saving");const ok=sSet(sk,ref.current);if(ok&&onSaveRef.current)onSaveRef.current({...ref.current});if(ok&&window._plannerSync)window._plannerSync();if(ok&&window._plannerGamRefresh)window._plannerGamRefresh();if(ok)dirtyRef.current=false;setSS(ok?"saved":"error");st.current=setTimeout(()=>setSS("idle"),STATUS_PILL_MS)},[sk]);
   // Flush any pending blur-debounce save when the tab is closing or hidden. Without this,
   // typing into a field and immediately closing the tab loses up to 80ms of input. pagehide
   // and visibilitychange cover Safari/iOS, where beforeunload is not always reliable.
@@ -958,7 +966,7 @@ function useAutoSave(sk,dv,onSave){
     document.addEventListener("visibilitychange",onVis);
     return()=>{window.removeEventListener("beforeunload",flush);window.removeEventListener("pagehide",flush);document.removeEventListener("visibilitychange",onVis)};
   },[save]);
-  const updateField=useCallback((f,v)=>{const u={...ref.current,[f]:v};ref.current=u;setData({...u})},[]);
+  const updateField=useCallback((f,v)=>{const u={...ref.current,[f]:v};ref.current=u;dirtyRef.current=true;setData({...u})},[]);
   const hFoc=useCallback(()=>clearTimeout(bt.current),[]);
   const hBlr=useCallback(()=>{clearTimeout(bt.current);bt.current=setTimeout(save,BLUR_SAVE_MS)},[save]);
   return{data,updateField,ss,hFoc,hBlr,save};
@@ -1311,7 +1319,12 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
     pSlotRow("P5",4);pSlotRow("P6",5);
     if(bRowVisible("B3"))bSlotRow("B3");
     return cells;
-  },[days,today,mc,wNotes,eng,duties]);
+  // g (gam) included as a re-render trigger: any note save anywhere bumps the App-level
+  // gam refresh counter via window._plannerGamRefresh. Including g here forces gridCells
+  // to re-evaluate (and bRowVisible to re-read localStorage) after an out-of-view note
+  // save, e.g. a B-slot note flushed from useAutoSave's unmount cleanup when navigating
+  // away from Day View.
+  },[days,today,mc,wNotes,eng,duties,g]);
 
   const flags=useMemo(()=>{const fl=[];days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;const key=dk(d);eng.PIDS.forEach(pid=>{const n=wNotes[`${key}:${pid}`];if(n&&(hasF(n.notes)||hasF(n.subject))){const cls=eng.classAt(d,cd,pid);fl.push({date:d,pid,cls,subject:n.subject||"",notes:n.notes||""})}})});return fl},[days,wNotes]);
   const spotHits=useMemo(()=>{if(!spot)return[];const h=[];days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{if(eng.classAt(d,cd,pid)===spot){const per=bldP(isAsmDay(cd,{timetable:eng.timetableForDate(d)})).find(p=>p.id===pid);h.push({d,per,cd})}})});return h},[spot,days]);

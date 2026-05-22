@@ -6,6 +6,14 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.3.3 — 2026-05-22
+
+### Fixes
+- **Typed-but-not-blurred notes survive navigation.** Follow-up to v2.3.2. The visibility logic was correct, but the data wasn't reaching localStorage in time. When you typed into the Notes textarea and then tapped a tab without first clicking outside the textarea, the blur-debounce save timer never fired (or got cleared during unmount), and your typing was lost. `useAutoSave` now tracks a `dirty` flag on every keystroke and flushes the latest ref synchronously in the unmount cleanup if anything is unsaved. So typing → tab tap → switched view → your note is in localStorage and the row appears on next mount.
+- **Cross-view re-render trigger.** WeekView's `gridCells` useMemo previously didn't have a dep that would change when a note was saved outside its own quick-edit flow, so even after an unmount-flush wrote to localStorage, WeekView's first render after navigation used the memoized stale result. Added `g` (the App-level gam object) to the deps; `useAutoSave` now calls `window._plannerGamRefresh` after a cleanup-flush so the gam reference changes and WeekView re-evaluates.
+
+---
+
 ## 2.3.2 — 2026-05-22
 
 ### Fixes
