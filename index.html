@@ -1173,11 +1173,32 @@ function TermView({onDay,onWk,mc,g,cfg}){
  * doDownload: trigger a browser download of the given text content.
  * ═══════════════════════════════════════════════════════════════════════
  */
-function buildWkTxt(style,days,wl,wkLabel,sum,mc,eng,wNotes){
+function buildWkTxt(style,days,wl,wkLabel,sum,mc,eng,wNotes,cfg){
   const h1=s=>style==="org"?`* ${s}\n`:style==="plain"?`${s}\n${"=".repeat(Math.min(s.length,44))}\n`:`# ${s}\n`;
   const h2=s=>style==="org"?`** ${s}\n`:style==="plain"?`${s}\n${"-".repeat(Math.min(s.length,44))}\n`:`## ${s}\n`;
   const h3=s=>style==="org"?`*** ${s}\n`:style==="plain"?`  ${s}:\n`:`### ${s}\n`;
   const bq=s=>style==="md"?`> ${s}\n`:`  ${s}\n`;
+  // Render one B-slot line; suppress entirely if value is null AND no notes.
+  const bSlotLine=(code,d,cd,key,meta)=>{
+    const tt=eng.timetableForDate(d);
+    const asm=isAsmDay(cd,{timetable:tt});
+    const r=resolveSlot(code,cd,d,{timetable:tt,weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta);
+    const note=sGet(`note:${key}:${code}`);
+    const hasNote=!!(note&&(note.subject||note.notes||note.status==="nl"));
+    if(!r.value&&!hasNote)return"";
+    const t=(asm?BSLOT_T_ASM:BSLOT_T_STD)[code];
+    const timeStr=t.e?`${t.s}–${t.e}`:t.s;
+    const lbl=`${BSLOT_LABELS[code]} (${timeStr})`;
+    // Only show the value suffix when there is an actual value. describeValue(null)
+    // returns "free" which is meaningful in the editor banner but reads oddly here
+    // when the row exists purely because of notes.
+    const suffix=r.value?` — ${describeValue(r.value)}`:"";
+    let line="";
+    if(style==="md"){line+=`- **${lbl}**${suffix}\n`;if(note&&note.notes)line+=`  - Notes: ${note.notes}\n`}
+    else if(style==="org"){line+=`- ${lbl}${suffix}\n`;if(note&&note.notes)line+=`  Notes: ${note.notes}\n`}
+    else{line+=`  ${lbl}${suffix}\n`;if(note&&note.notes)line+=`    Notes: ${note.notes}\n`}
+    return line;
+  };
   const sep=style==="md"?"---\n\n":"";
   let out=h1(`Week Plan \u2014 ${wl}`);
   out+=style==="md"?`**${wkLabel}** \u00B7 ${sum.p}/${sum.t} planned\n\n`:`${wkLabel} \u00B7 ${sum.p}/${sum.t} planned\n\n`;
@@ -1188,21 +1209,32 @@ function buildWkTxt(style,days,wl,wkLabel,sum,mc,eng,wNotes){
     if(isZ){out+=`Day 0${meta.day0label?": "+meta.day0label:""}\n\n`;if(meta.dayNotes)out+=meta.dayNotes+"\n\n";return}
     out+=`Day ${cd}\n\n`;
     if(meta.dayNotes)out+=bq(meta.dayNotes)+"\n";
-    eng.PIDS.forEach((pid,pi)=>{
+    const pLine=pi=>{
+      const pid="P"+(pi+1);
       const cls=eng.classAt(d,cd,pid);const n=wNotes[`${key}:${pid}`];
       const per=bldP(isAsmDay(cd,{timetable:eng.timetableForDate(d)})).find(p=>p.id===pid);
       const lbl=`P${pi+1} (${per?per.start+"\u2013"+per.end:""})`;
       const nlTag=n&&n.status==="nl"?" \u2014 No lesson":"";
       if(cls==="nc"){
-        const nc=style==="md"?`- **${lbl}** \u2014 Non-contact${n&&n.notes?": "+n.notes:""}`:style==="org"?`- ${lbl}: Non-contact${n&&n.notes?": "+n.notes:""}`:`  ${lbl}: Non-contact${n&&n.notes?": "+n.notes:""}`;
-        out+=nc+"\n";
-      } else {
-        const subj=n&&n.subject?` \u2014 ${n.subject}`:nlTag;
-        if(style==="md"){out+=`- **${lbl} ${cls}**${subj}\n`;if(n&&n.notes)out+=`  - Notes: ${n.notes}\n`;if(n&&n.resources)out+=`  - Resources: ${n.resources}\n`}
-        else if(style==="org"){out+=`- ${lbl} ${cls}${subj}\n`;if(n&&n.notes)out+=`  Notes: ${n.notes}\n`;if(n&&n.resources)out+=`  Resources: ${n.resources}\n`}
-        else{out+=`  ${lbl} ${cls}${subj}\n`;if(n&&n.notes)out+=`    Notes: ${n.notes}\n`;if(n&&n.resources)out+=`    Resources: ${n.resources}\n`}
+        return(style==="md"?`- **${lbl}** \u2014 Non-contact${n&&n.notes?": "+n.notes:""}`:style==="org"?`- ${lbl}: Non-contact${n&&n.notes?": "+n.notes:""}`:`  ${lbl}: Non-contact${n&&n.notes?": "+n.notes:""}`)+"\n";
       }
-    });
+      const subj=n&&n.subject?` \u2014 ${n.subject}`:nlTag;
+      let s="";
+      if(style==="md"){s+=`- **${lbl} ${cls}**${subj}\n`;if(n&&n.notes)s+=`  - Notes: ${n.notes}\n`;if(n&&n.resources)s+=`  - Resources: ${n.resources}\n`}
+      else if(style==="org"){s+=`- ${lbl} ${cls}${subj}\n`;if(n&&n.notes)s+=`  Notes: ${n.notes}\n`;if(n&&n.resources)s+=`  Resources: ${n.resources}\n`}
+      else{s+=`  ${lbl} ${cls}${subj}\n`;if(n&&n.notes)s+=`    Notes: ${n.notes}\n`;if(n&&n.resources)s+=`    Resources: ${n.resources}\n`}
+      return s;
+    };
+    // Emit slots in calendar order so B-slot lines appear at their actual time of day.
+    out+=bSlotLine("B0",d,cd,key,meta);
+    out+=pLine(0);out+=pLine(1);
+    out+=bSlotLine("B1a",d,cd,key,meta);
+    out+=bSlotLine("B1b",d,cd,key,meta);
+    out+=pLine(2);out+=pLine(3);
+    out+=bSlotLine("B2a",d,cd,key,meta);
+    out+=bSlotLine("B2b",d,cd,key,meta);
+    out+=pLine(4);out+=pLine(5);
+    out+=bSlotLine("B3",d,cd,key,meta);
     if(meta.reflections)out+="\n"+h3("Reflections")+"\n"+meta.reflections+"\n";
     out+="\n";
   });
@@ -1338,7 +1370,7 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
     {flags.length>0&&<div className="card" style={{padding:"10px 14px",marginBottom:10}}><div className="sl" style={{marginBottom:8}}>{"\u2691"} Flagged Items {"\u00B7"} <span className="mn">{flags.length}</span></div>{flags.map((f,i)=>{const clr=f.cls!=="nc"&&eng.classMap[f.cls];return<div key={i} onClick={()=>onDet(f.date,f.pid)} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:i>0?"1px solid var(--border)":"none",cursor:"pointer"}}><span className="mn" style={{fontSize:".62rem",fontWeight:700,padding:"1px 6px",borderRadius:3,background:clr?clr.bg:"var(--nc-bg)",color:clr?clr.tx:"var(--nc-text)"}}>{f.cls==="nc"?"NC":f.cls}</span><span style={{fontSize:".65rem",color:"var(--text-muted)"}}>{fmtS(f.date)} {f.pid.toUpperCase()}</span><span style={{fontSize:".68rem",color:"var(--text)",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.subject||f.notes}</span><span style={{color:"var(--flag)",fontSize:".65rem"}}>{"\u2691"}</span></div>})}</div>}
     <div className="card np" style={{padding:"10px 14px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6}}><div className="sl">Export week</div><div style={{display:"flex",gap:6}}>
       {(()=>{const refs=days.filter(d=>(mc[dk(d)]||eM()).reflections);const xst=(sGet("planner-config")||{}).exportStyle||"org";return refs.length>0?<Btn onClick={()=>{doDownload(buildReflTxt(xst,days,wl,mc),`reflections-${fmtISO(days[0])}.txt`)}} style={{padding:"3px 10px",fontSize:".68rem"}}>{"\u{1F4DD}"} Reflections ({refs.length})</Btn>:null})()}
-      {(()=>{const xst=(sGet("planner-config")||{}).exportStyle||"org";const getTxt=()=>buildWkTxt(xst,days,wl,wkLabel,sum,mc,eng,wNotes);return<React.Fragment><Btn onClick={()=>doDownload(getTxt(),`week-plan-${fmtISO(days[0])}.txt`)} style={{padding:"3px 10px",fontSize:".68rem"}}>{"\u{1F4E5}"} Download</Btn><Btn onClick={()=>navigator.clipboard&&navigator.clipboard.writeText(getTxt())} style={{padding:"3px 10px",fontSize:".68rem"}}>{"\u{1F4CB}"} Copy</Btn></React.Fragment>})()}</div></div>
+      {(()=>{const xst=(sGet("planner-config")||{}).exportStyle||"org";const getTxt=()=>buildWkTxt(xst,days,wl,wkLabel,sum,mc,eng,wNotes,cfg);return<React.Fragment><Btn onClick={()=>doDownload(getTxt(),`week-plan-${fmtISO(days[0])}.txt`)} style={{padding:"3px 10px",fontSize:".68rem"}}>{"\u{1F4E5}"} Download</Btn><Btn onClick={()=>navigator.clipboard&&navigator.clipboard.writeText(getTxt())} style={{padding:"3px 10px",fontSize:".68rem"}}>{"\u{1F4CB}"} Copy</Btn></React.Fragment>})()}</div></div>
     {bsEdit&&(()=>{
       const cd=bsEdit.cycleDay;
       const code=bsEdit.slotCode;

@@ -6,6 +6,16 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.3.4 — 2026-05-22
+
+### Features
+- **B-slots in the week export.** The plain-text/Markdown week export previously emitted only P1-P6 lines per day. B-slot rows are now interleaved at their actual time positions: B0 (before school), B1a/B1b (after 2 / before 3) between P2 and P3, B2a/B2b (after 4 / before 5) between P4 and P5, B3 (after school) after P6. Each B-slot is emitted only when it has a value (Tutor/Chapel/FSA/DA, a duty pill, or an activity) OR notes for that date. When only notes exist (no committed value), the line shows just the label and time, with a Notes sub-line — no awkward "free" suffix.
+
+### Refactor
+- `buildWkTxt` now takes `cfg` as an extra argument so it can pass `cfg.weeklyEvents` into the shared `resolveSlot` helper. Period emission was lifted into a `pLine(pi)` closure that returns a string, paired with a `bSlotLine(code, ...)` helper, and the day loop now emits both in calendar order.
+
+---
+
 ## 2.3.3 — 2026-05-22
 
 ### Fixes
