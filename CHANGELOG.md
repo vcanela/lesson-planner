@@ -6,6 +6,19 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.4.0 — 2026-05-27
+
+### Features
+- **Reflection prompts: Glow / Grow / Grab.** When the Day View Reflections box is empty, a "+ Glow/Grow/Grab" link drops a three-label template into the field (Glow = what worked, Grow = what to change, Grab = the one concrete thing to carry forward, phrased as an action). Soft convention only: it is plain text, there is no schema change, and existing free-text reflections are untouched. The button hides itself once the box has content.
+- **Resurfacing past reflections.** A quiet block at the top of the Reflections panel surfaces one earlier reflection ("A while back (about a month ago) you wrote..."), collapsed to its Grab line (or a word-boundary snippet when there is no Grab line) and expandable to the full text plus its date. Selection is a pure function of (viewed date, localStorage): it scans daymeta for reflections, drops anything younger than 5 days, buckets the rest by age (week 5-13d, month 14-45d, far 45+d), and uses a date-seeded pick. The choice is therefore stable for the day, rotates daily, matches across devices, and needs no stored "seen" state. Bucketing by horizon is deliberate: it keeps the far past in rotation no matter how large the reflection corpus grows, where uniform-random would bury it. Reflections remain ungamified: nothing here touches XP, streaks, or the Lab.
+
+### Implementation
+- `grabLine(text)` extracts a `Grab:` line if present, else a word-boundary snippet capped near 100 chars (no ellipsis; the expand caret signals there is more).
+- `pickResurfaced(viewedDate)` builds the bucketed pool from localStorage and returns the date-seeded pick, or null when the pool is empty.
+- `ReflectionsPanel` gains `date` and `save` props; the resurfaced pick memoises on the viewed date key so it recomputes per day, not per render.
+
+---
+
 ## 2.3.4 — 2026-05-22
 
 ### Features

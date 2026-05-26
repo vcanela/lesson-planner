@@ -1040,10 +1040,53 @@ const Badges=({achs})=><div className="bs np">{achs.map(a=><div key={a.id} class
 const FlagBank=()=>{const[o,setO]=useState(false);return<div className="fwb"><span onClick={()=>setO(!o)} style={{cursor:"pointer",color:"var(--flag)"}}>{"\u2691"} flags {o?"\u25B4":"\u25BE"}</span>{o&&FWORDS.map(w=><span key={w} className="fw">{w}</span>)}</div>};
 
 /* ═══ REFLECTIONS PANEL ══════════════════════════════════════════════════ */
-function ReflectionsPanel({meta,updateField,hFoc,hBlr,ss}){
-  const[open,setOpen]=useState(false);if(!meta)return null;const hasContent=!!meta.reflections;
+// grabLine: prefer a "Grab:" line if the reflection has one; else a short
+// single-line snippet cut on a word boundary (no ellipsis; the expand caret
+// signals there is more).
+function grabLine(text){
+  for(const ln of text.split("\n")){const m=ln.match(/^\s*grab\s*:\s*(.+)$/i);if(m&&m[1].trim())return"Grab: "+m[1].trim()}
+  const flat=text.replace(/\s+/g," ").trim();
+  if(flat.length<=100)return flat;
+  const cut=flat.slice(0,100);const sp=cut.lastIndexOf(" ");return sp>40?cut.slice(0,sp):cut;
+}
+
+// pickResurfaced: stateless surfacing of one past reflection. Pure function of
+// (viewedDate, localStorage). Buckets reflections by age (week 5-13d, month
+// 14-45d, far 45+d) and uses a date-seeded pick, so the choice is stable for the
+// day, rotates daily, matches across devices, and needs no stored "seen" state.
+// The bucketing is the memory kernel: it guarantees the far past keeps airtime
+// no matter how large the corpus grows (uniform random would bury it).
+function pickResurfaced(viewedDate){
+  const today=new Date(viewedDate);today.setHours(0,0,0,0);
+  const buckets={week:[],month:[],far:[]};let n=0;
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);if(!k||k.slice(0,8)!=="daymeta:")continue;
+    const m=sGet(k);if(!m||!m.reflections||!m.reflections.trim())continue;
+    const p=k.slice(8).split("-");if(p.length!==3)continue;
+    const d=new Date(+p[0],+p[1],+p[2]);d.setHours(0,0,0,0);
+    const age=Math.floor((today-d)/864e5);if(age<5)continue;          // too recent to resurface
+    const b=age<=13?"week":age<=45?"month":"far";
+    buckets[b].push({date:d,text:m.reflections});n++;
+  }
+  if(!n)return null;
+  const order=["week","month","far"].filter(b=>buckets[b].length);
+  const s=dk(today);let seed=0;for(let i=0;i<s.length;i++)seed=(seed*31+s.charCodeAt(i))>>>0;
+  const bucket=order[seed%order.length];const list=buckets[bucket];
+  const pick=list[Math.floor(seed/7)%list.length];
+  return{date:pick.date,text:pick.text,bucketLabel:bucket==="week"?"about a week ago":bucket==="month"?"about a month ago":"earlier in the term"};
+}
+
+function ReflectionsPanel({meta,updateField,hFoc,hBlr,ss,date,save}){
+  const[open,setOpen]=useState(false);const[showPast,setShowPast]=useState(false);
+  const dkey=date?dk(date):null;
+  const past=useMemo(()=>date?pickResurfaced(date):null,[dkey]);
+  if(!meta)return null;const hasContent=!!meta.reflections;
+  const insertTemplate=()=>{updateField("reflections","Glow: \nGrow: \nGrab: ");if(save)setTimeout(save,0)};
   return<div className="card" style={{padding:"12px 16px",marginTop:14}}><div onClick={()=>setOpen(!open)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}><div style={{display:"flex",alignItems:"center",gap:6}}><span className="hd" style={{fontSize:".82rem",fontWeight:600,color:"var(--accent)"}}>Reflections</span>{hasContent&&!open&&<span style={{width:6,height:6,borderRadius:"50%",background:"var(--accent)"}}/>}</div><span style={{fontSize:".7rem",color:"var(--text-muted)"}}>{open?"\u25B2":"\u25BC"}</span></div>
-    {open&&<div style={{marginTop:10}}><div style={{fontSize:".68rem",color:"var(--text-muted)",marginBottom:6}}>What went well? What would you change? <SvH ss={ss}/></div><AInp data={meta} field="reflections" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="End-of-day thoughts, observations, things to remember" multi rows={4}/></div>}</div>;
+    {open&&<div style={{marginTop:10}}>
+      {past&&<div onClick={()=>setShowPast(!showPast)} style={{background:"var(--surface)",borderRadius:6,padding:"8px 10px",marginBottom:10,cursor:"pointer"}}><div style={{fontSize:".62rem",color:"var(--text-muted)",marginBottom:3,display:"flex",justifyContent:"space-between",gap:8}}><span>A while back ({past.bucketLabel}) you wrote</span><span>{showPast?"\u25B2":"\u25BC"}</span></div>{showPast?<div><div style={{fontSize:".72rem",color:"var(--text-secondary)",whiteSpace:"pre-wrap",lineHeight:1.5}}>{past.text}</div><div style={{fontSize:".6rem",color:"var(--text-muted)",marginTop:5}}>{fmtF(past.date)}</div></div>:<div style={{fontSize:".72rem",color:"var(--text-secondary)",fontStyle:"italic"}}>{grabLine(past.text)}</div>}</div>}
+      <div style={{fontSize:".68rem",color:"var(--text-muted)",marginBottom:6}}>What went well? What would you change?{!hasContent&&<button onClick={insertTemplate} style={{background:"none",border:"1px dashed var(--border-strong)",borderRadius:4,padding:"1px 7px",fontSize:".62rem",color:"var(--accent)",cursor:"pointer",fontFamily:"inherit",marginLeft:6}}>+ Glow/Grow/Grab</button>} <SvH ss={ss}/></div>
+      <AInp data={meta} field="reflections" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="End-of-day thoughts, observations, things to remember" multi rows={4}/></div>}</div>;
 }
 
 /* ═══ PERIOD CARD ════════════════════════════════════════════════════════
@@ -1132,7 +1175,7 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
     return<BSlotRow key={`${dateKey}-${code}`} slot={s} dateKey={dateKey} cycleDay={cd} current={current} cycleDefault={cyc} isOverride={!!s.isOverride} clash={!!s.clash} duties={duties} onSaveToday={v=>setOverride(code,v)} hFoc={hFoc} hBlr={hBlr} initOpen={!!s.forced}/>;
   })}
   {!hasB3&&<div style={{padding:"6px 12px",borderTop:"1px solid var(--border)"}}><button onClick={()=>setForceShow(s=>({...s,B3:true}))} style={{background:"none",border:"1px dashed var(--border-strong)",borderRadius:4,padding:"3px 10px",fontSize:".66rem",color:"var(--text-muted)",cursor:"pointer",fontFamily:"inherit"}}>+ After school</button></div>}
-</div><ReflectionsPanel meta={meta} updateField={updateField} hFoc={hFoc} hBlr={hBlr} ss={ss}/></>}
+</div><ReflectionsPanel meta={meta} updateField={updateField} hFoc={hFoc} hBlr={hBlr} ss={ss} date={date} save={save}/></>}
   </div>;
 }
 
