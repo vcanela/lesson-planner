@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.5.1 — 2026-05-27
+
+### Features
+- **Sync-aware backup reminder.** A small status sits next to the data icon. Cloud-sync users (who are continuously backed up) see a quiet "Synced", or "⚠ Sync error" in amber if the last sync failed. Users without sync see "Backed up today" / "Backup N days ago", turning amber once it has been about two weeks since their last export, or "⚠ Not backed up" if they never have. Clicking it opens the Data Panel. This targets the colleagues least likely to set up sync, who are exactly the ones who lose data, without nagging synced users. A `planner-last-backup` timestamp is now written whenever a backup is downloaded; sync users continue to use `planner-last-sync`.
+
+---
+
 ## 2.5.0 — 2026-05-27
 
 ### Features
