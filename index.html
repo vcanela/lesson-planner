@@ -822,20 +822,42 @@ function makeDateEngine(cfg){
    * Cost is O(distance-from-anchor), which is fine — anchor is usually the
    * current term, and views never render more than a year of dates at once.
    */
+  // cdMemo: lazily-built Map<dateKey, cycleDay> covering every teaching day in
+  // every term, so cycD is an O(1) lookup instead of an O(distance-from-anchor)
+  // walk per call (the old behaviour made compGam quadratic late in the year).
+  // Built in two linear passes out from the anchor. Recreated automatically
+  // whenever the engine is rebuilt (i.e. on any cfg change), so no manual
+  // invalidation is needed.
+  let cdMemo=null;
+  function buildCdMemo(){
+    cdMemo=new Map();
+    if(!anchor||!terms.length)return;
+    let lo=null,hi=null;
+    terms.forEach(tm=>{const s=new Date(tm.start);s.setHours(0,0,0,0);const e=new Date(tm.end);e.setHours(0,0,0,0);if(!lo||s<lo)lo=s;if(!hi||e>hi)hi=e});
+    const a=new Date(anchor.date);a.setHours(0,0,0,0);
+    // Forward (anchor → hi): n = isTD count in [anchor, d); set cycle then advance n.
+    let n=0,d=new Date(a);
+    while(d<=hi){if(isTD(d)){cdMemo.set(dk(d),((anchor.day-1+n)%nCycle)+1);n++}d.setDate(d.getDate()+1)}
+    // Backward (anchor-1 → lo): m = isTD count in [d, anchor); advance m then set cycle.
+    let m=0;d=new Date(a);d.setDate(d.getDate()-1);
+    while(d>=lo){if(isTD(d)){m++;cdMemo.set(dk(d),(((anchor.day-1-m)%nCycle)+nCycle)%nCycle+1)}d.setDate(d.getDate()-1)}
+  }
+  // cycDcompute: the original O(distance) walk. Kept as a safety fallback for any
+  // teaching day outside the precomputed term span (should not occur in practice).
+  function cycDcompute(t){
+    const a=new Date(anchor.date);a.setHours(0,0,0,0);
+    let n=0,d=new Date(a);
+    if(t>=a){while(d<t){if(isTD(d))n++;d.setDate(d.getDate()+1)}return((anchor.day-1+n)%nCycle)+1}
+    while(d>t){d.setDate(d.getDate()-1);if(isTD(d))n++}return(((anchor.day-1-n)%nCycle)+nCycle)%nCycle+1;
+  }
   function cycD(date){
     const t=new Date(date);t.setHours(0,0,0,0);
     if(!isSD(t))return null;     // weekend, holiday, or outside terms
     if(isDZ(t))return 0;         // teaching paused: Day 0 event
     if(!anchor)return 1;         // no anchor configured yet
-    const a=new Date(anchor.date);a.setHours(0,0,0,0);
-    let n=0,d=new Date(a);
-    if(t>=a){
-      while(d<t){if(isTD(d))n++;d.setDate(d.getDate()+1)}
-      return((anchor.day-1+n)%nCycle)+1;
-    }else{
-      while(d>t){d.setDate(d.getDate()-1);if(isTD(d))n++}
-      return(((anchor.day-1-n)%nCycle)+nCycle)%nCycle+1;
-    }
+    if(!cdMemo)buildCdMemo();
+    const v=cdMemo.get(dk(t));
+    return v!==undefined?v:cycDcompute(t);
   }
   function getTermWks(term){
     const ts=new Date(term.start);ts.setHours(0,0,0,0);const te=new Date(term.end);te.setHours(23,59,59,999);

@@ -6,6 +6,14 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.4.2 — 2026-05-27
+
+### Performance
+- **Cycle-day lookup is no longer quadratic.** `cycD` previously walked day-by-day from the April anchor on every call, so computing the cycle day for a December date walked ~190 days; and `compGam` called it for every school day of every term on every save and tab switch. Late in the year on an older device this was noticeable. `makeDateEngine` now builds a `Map<dateKey, cycleDay>` once (two linear passes out from the anchor) and `cycD` is an O(1) lookup. The map is rebuilt automatically whenever the engine is recreated (any config change), so there is no manual invalidation. The original walk is retained as `cycDcompute`, a fallback for any teaching day outside the precomputed term span.
+- Verified by diffing the memoized result against the original algorithm for all 365 days of 2026, including the 13 Day-0 dates that shift the count (EOTC week etc.): zero mismatches. The live app's rotation labels were spot-checked across a week and match.
+
+---
+
 ## 2.4.1 — 2026-05-27
 
 ### Fixes
