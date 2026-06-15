@@ -6,6 +6,17 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.4.1 — 2026-05-27
+
+### Fixes
+- **Achievement tooltips work on touch devices.** The badge tooltips were hover-only (`.bm:hover .bt`), so iPad and phone users, the majority of teachers planning in the evening, could never read them. Tapping a badge now toggles its tooltip; mouse hover and keyboard focus still reveal it. Badges gained `tabIndex` and an `aria-label` for keyboard and screen-reader access.
+
+### Docs
+- **Corrected the `dk()` date-key comments.** Three comment sites (the architecture block, the import allowlist note, and the `dk()` definition) gave the example "2026-3-23" for 23 March, but `dk()` uses a zero-indexed `getMonth()`, so 23 March is actually keyed `2026-2-23`. The comments now state the off-by-one explicitly, which matters for anyone reading the source as a teaching example or writing an external script against a backup. The code was always internally consistent; only the comments were misleading.
+- **Softened the offline claim in the guide.** The guide stated the app "caches all the files locally so it works offline." There is no service worker, so offline access depends on the browser's ordinary HTTP cache, which it can evict. The guide now says it will "usually still open without internet" once recently opened, and points to sync or a saved backup as the real safety net. A proper service worker is planned separately.
+
+---
+
 ## 2.4.0 — 2026-05-27
 
 ### Features
