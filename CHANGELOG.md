@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.4.3 — 2026-05-27
+
+### Fixes
+- **Setup no longer silently discards unsaved edits.** SettingsView holds a local copy of the config and only persisted it when you clicked "Save Configuration"; navigating to another tab first threw the changes away with no warning. The rest of the app never loses work on navigation, so Setup now matches: any unsaved changes are flushed to localStorage (and synced) when you leave the Setup tab, when the page is hidden, or when the tab is backgrounded. The Save button stays for the explicit "Saved" confirmation. Implemented with the same ref-based unmount-flush pattern as `useAutoSave` (v2.3.3), so the listeners never close over a stale config, and a snapshot guard means nothing is written when nothing changed.
+
+---
+
 ## 2.4.2 — 2026-05-27
 
 ### Performance

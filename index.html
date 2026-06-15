@@ -1808,6 +1808,21 @@ function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,clash,d
 function SettingsView({onSave,displayMode,setDisplayMode}){
   const[cfg,setCfg]=useState(()=>migrateConfig(sGet("planner-config")||{}));
   const up=f=>{setCfg(c=>{const next={...c,...f};if(f.holidays)next.dayZeros=syncHolsToDZ(next.holidays,next.dayZeros);return next})};
+  // Dirty-flush on leave. Setup is the one screen with an explicit Save button,
+  // but to match the rest of the app (where navigating away never loses work) we
+  // also persist any unsaved changes when the user leaves: on unmount (tab
+  // switch), on page hide, and when the tab is backgrounded. Refs keep the
+  // listeners from closing over a stale cfg/onSave; savedRef tracks the last
+  // persisted snapshot so we only write when something actually changed.
+  const cfgRef=useRef(cfg);cfgRef.current=cfg;
+  const onSaveRef=useRef(onSave);onSaveRef.current=onSave;
+  const savedRef=useRef(JSON.stringify(cfg));
+  useEffect(()=>{
+    const flush=()=>{const cur=JSON.stringify(cfgRef.current);if(cur===savedRef.current)return;sSet("planner-config",cfgRef.current);savedRef.current=cur;try{if(onSaveRef.current)onSaveRef.current(cfgRef.current)}catch{}if(window._plannerSync)window._plannerSync()};
+    const onHide=()=>{if(document.visibilityState==="hidden")flush()};
+    window.addEventListener("pagehide",flush);document.addEventListener("visibilitychange",onHide);
+    return()=>{window.removeEventListener("pagehide",flush);document.removeEventListener("visibilitychange",onHide);flush()};
+  },[]);
   const[saved,setSaved]=useState(false);const termHint=(cfg.terms&&cfg.terms[0]&&cfg.terms[0].start)?cfg.terms[0].start:fmtISO(new Date());
   // Edge-row visibility for the timetable grid: B0/B3 stay hidden until the user opts in
   // OR the data already has a value for that slot on any cycle day (auto-shown).
@@ -1847,7 +1862,7 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
   const addWeekly=()=>up({weeklyEvents:[...weeklyEvents,{weekday:1,slot:"B3",text:""}]});
   const updateWeekly=(i,field,val)=>{const arr=[...weeklyEvents];arr[i]={...arr[i],[field]:val};up({weeklyEvents:arr})};
   const deleteWeekly=i=>up({weeklyEvents:weeklyEvents.filter((_,j)=>j!==i)});
-  const doSave=()=>{sSet("planner-config",cfg);onSave(cfg);setSaved(true);setTimeout(()=>setSaved(false),2000);if(window._plannerSync)window._plannerSync()};
+  const doSave=()=>{sSet("planner-config",cfg);savedRef.current=JSON.stringify(cfg);onSave(cfg);setSaved(true);setTimeout(()=>setSaved(false),2000);if(window._plannerSync)window._plannerSync()};
 
   return<div style={{paddingBottom:120}}><div className="hd" style={{fontSize:"1.15rem",fontWeight:600,color:"var(--accent)",marginBottom:14}}>{"\u2699\uFE0F"} School Setup</div>
 
