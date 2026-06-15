@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.5.0 — 2026-05-27
+
+### Features
+- **Global search.** A magnifier icon in the top nav opens a search overlay that scans every `note:` value (subject, notes, resources) and every `daymeta:` value (reflections, day notes, day label) in localStorage. Results filter live as you type (minimum two characters), sorted newest first, each showing the date, the resolved class and slot, and a snippet with the matched term highlighted. Clicking a result navigates straight to that day (and focuses the period). Closes on Escape, backdrop click, or selecting a result. Pure read of localStorage, no new stored state. Capped at 60 shown results with a "refine to narrow" note when there are more. Suggested by the external review as the answer to "where did I teach electrolysis?" a year in.
+
+---
+
 ## 2.4.3 — 2026-05-27
 
 ### Fixes
