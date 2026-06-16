@@ -6,6 +6,16 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.7.0 — 2026-05-27
+
+### Features
+- **Lesson shifting in Class View (ripple-until-gap).** When a lesson is eaten (assembly, trip, sick day), open it in Class View and use "Lesson bumped? Push the rest forward". The lesson and those after it each move forward by one slot; the ripple stops at the first empty lesson, which absorbs it, so buffer/revision slack is consumed first and anything past that free slot (e.g. a fixed topic test) is left untouched. The vacated lesson becomes No-lesson with the reason you type. A No-lesson day or the end of term is a hard barrier: if the block can't fit before it, the shift aborts with an explanation rather than overrunning a fixed event. An Undo button reverses the whole shift in one click.
+
+### Implementation
+- `shiftLanding` finds the absorbing gap (or reports a barrier/end-of-term stop). `doShift` snapshots the affected keys, ripples content forward (writing via `writeRecord` so the moved records are stamped for sync), and marks the source No-lesson. `undoShift` restores from the snapshot, also via `writeRecord`, so the undo's newer timestamp wins the sync merge (otherwise the shifted version would return on the next sync). The confirm UI replaces the topic input while active, sidestepping the blur-close issue. Verified end-to-end in preview: ripple absorption with later lessons untouched, vacated-to-No-lesson, undo restoration, and barrier-abort with no mutation.
+
+---
+
 ## 2.6.0 — 2026-05-27
 
 ### Features

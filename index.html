@@ -1609,11 +1609,53 @@ function ClassView({onDet,g}){
   const sNL=(subj)=>{if(!qe)return;const l=lessons[qe.i];const k=`note:${l.dk}:${l.pid}`;const ex=sGet(k)||eN();writeRecord(k,{...ex,subject:subj,status:"nl"});setQE(null);setNlConfirm(false);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
   const[nlConfirm,setNlConfirm]=useState(false);
   const askNL=()=>{const cur=qe?lessons[qe.i]&&lessons[qe.i].notes:null;const isAlreadyNl=cur&&cur.status==="nl";if(isAlreadyNl){sNL(qv);return}if(qv||(cur&&cur.subject)){setNlConfirm(true)}else{sNL("")}};
+  // ── Lesson shifting (ripple-until-gap) ──────────────────────────────────
+  // When a lesson is eaten (assembly, trip), push it and the following lessons
+  // forward by one until the ripple reaches an empty lesson, which absorbs it.
+  // A No-lesson slot or the end of term is a hard barrier (we abort rather than
+  // overrun). The vacated lesson becomes No-lesson with the reason you type.
+  const[shiftConfirm,setShiftConfirm]=useState(false);
+  const[shiftReason,setShiftReason]=useState("");
+  const[shiftUndo,setShiftUndo]=useState(null);
+  const[shiftMsg,setShiftMsg]=useState(null);
+  useEffect(()=>{setShiftUndo(null);setShiftMsg(null);setShiftConfirm(false)},[sel,termIdx]);
+  // shiftLanding: index of the empty lesson that absorbs a forward ripple from
+  // fromIdx, or {stop:"barrier"|"end"} when there is no room.
+  const shiftLanding=fromIdx=>{
+    for(let i=fromIdx+1;i<lessons.length;i++){
+      const n=lessons[i].notes,isNl=n.status==="nl",hasContent=n.subject||n.notes||n.resources;
+      if(isNl)return{stop:"barrier"};
+      if(!hasContent)return{gap:i};
+    }
+    return{stop:"end"};
+  };
+  const doShift=(fromIdx,reason)=>{
+    const r=shiftLanding(fromIdx);
+    if(r.stop){setShiftMsg({err:true,text:r.stop==="barrier"?"The next break is a No-lesson day, so there's no room to shift here. Clear a slot first, or move lessons manually.":"There's no free lesson before the end of term to absorb the shift."});setShiftConfirm(false);return}
+    const g=r.gap,snap={};
+    for(let i=fromIdx;i<=g;i++){const k=`note:${lessons[i].dk}:${lessons[i].pid}`;snap[k]=localStorage.getItem(k)}
+    for(let i=g;i>fromIdx;i--){const src=sGet(`note:${lessons[i-1].dk}:${lessons[i-1].pid}`);const dst=`note:${lessons[i].dk}:${lessons[i].pid}`;if(src)writeRecord(dst,src);else writeRecord(dst,{...eN()})}
+    writeRecord(`note:${lessons[fromIdx].dk}:${lessons[fromIdx].pid}`,{...eN(),subject:(reason||"").trim(),status:"nl"});
+    setShiftUndo(snap);setShiftConfirm(false);setShiftReason("");setQE(null);setNR(x=>x+1);
+    if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh();
+    setShiftMsg({err:false,text:`Pushed lessons #${fromIdx+1}–#${g+1} forward by one.`});
+  };
+  // Undo restores each affected slot, but via writeRecord so the restored copy is
+  // freshly stamped and therefore wins the sync merge (otherwise the shifted
+  // version, being newer, would return on the next sync). Slots that were empty
+  // before become an empty stamped record (a tombstone), not shown anywhere.
+  const undoShift=()=>{
+    if(!shiftUndo)return;
+    Object.keys(shiftUndo).forEach(k=>{const v=shiftUndo[k];writeRecord(k,v?JSON.parse(v):{...eN()})});
+    setShiftUndo(null);setShiftMsg(null);setNR(x=>x+1);
+    if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh();
+  };
   if(eng.classCodes.length===0)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>No classes configured. Head to Setup to add your classes.</div>;
   return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
     <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14,marginTop:10}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c],a=c===sel,sem=cl&&cl.semester;return<span key={c} className="mn" onClick={()=>{setSel(c);setQE(null)}} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"4px 12px",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer",outline:a?"2px solid var(--accent)":"none",outlineOffset:2}}>{c}{sem&&sem!=="full"&&<span style={{fontSize:".58rem",fontWeight:600,marginLeft:5,opacity:.7}}>{sem}</span>}</span>})}</div>
     <div style={{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"}}><button onClick={()=>setTermIdx(-1)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:".76rem",fontWeight:termIdx===-1?600:400,background:termIdx===-1?"var(--accent)":"var(--surface)",color:termIdx===-1?"var(--on-accent)":"var(--text-secondary)"}}>All terms</button>{eng.terms.map((t,i)=><button key={i} onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:".76rem",fontWeight:termIdx===i?600:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div>
     <div style={{marginBottom:14}}><div className="hd" style={{fontSize:"1.1rem",fontWeight:600,color:clr.tx}}><span style={{background:clr.bg,padding:"2px 10px",borderRadius:5}}>{sel}</span></div>{clr.desc&&<div style={{fontSize:".75rem",color:"var(--text-secondary)",marginTop:4}}>{clr.desc}</div>}<div style={{fontSize:".73rem",color:"var(--text-secondary)",marginTop:4}}>{lessons.length} lessons {"\u00B7"} <strong className="mn" style={{color:planned===lessons.length?"var(--success)":"var(--text)"}}>{planned} planned</strong> {"\u00B7"} {lessons.length-planned} empty{flagged>0&&<span style={{color:"var(--flag)",marginLeft:6}}>{"\u2691"} {flagged}</span>}</div></div>
+    {shiftMsg&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 12px",marginBottom:10,borderRadius:"var(--radius-sm)",background:"var(--surface)",border:`1px solid ${shiftMsg.err?"var(--error)":"var(--border)"}`,fontSize:".72rem",color:shiftMsg.err?"var(--error)":"var(--text-secondary)"}}><span style={{flex:1,minWidth:120}}>{shiftMsg.text}</span>{shiftUndo&&!shiftMsg.err&&<button onClick={undoShift} style={{background:"var(--accent)",color:"var(--on-accent)",border:"none",borderRadius:"var(--radius-sm)",padding:"3px 12px",fontSize:".68rem",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Undo</button>}<button onClick={()=>{setShiftMsg(null);setShiftUndo(null)}} style={{background:"none",border:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:".85rem"}}>{"✕"}</button></div>}
     <div className="card" style={{overflow:"hidden"}}>{lessons.map((l,i)=>{const ld=new Date(l.date);ld.setHours(0,0,0,0);const isT=ld.toDateString()===today.toDateString(),isPast=ld<today,isNl=l.notes.status==="nl",empty=!l.notes.subject&&!l.notes.notes&&!isNl,fl=hasF(l.notes.notes)||hasF(l.notes.subject),isN=i===nxtI&&!isT,per=bldP(isAsmDay(l.cd,{timetable:eng.timetable})).find(p=>p.id===l.pid),isEd=qe&&qe.i===i;
       return<React.Fragment key={i}>
         {(()=>{const wkDays=getWDs(l.date);const tw=eng.termWkN(wkDays);const prevL=lessons[i-1];const ptw=prevL?eng.termWkN(getWDs(prevL.date)):null;const show=tw&&(!ptw||ptw.wk!==tw.wk||ptw.tn!==tw.tn);return show?<div style={{padding:"6px 12px",background:"var(--surface)",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:6}}><span className="hd" style={{fontSize:".74rem",fontWeight:600,color:"var(--accent)"}}>Week {tw.wk}</span><span style={{fontSize:".62rem",color:"var(--text-muted)"}}>Term {tw.tn}</span></div>:null})()}
@@ -1640,7 +1682,14 @@ function ClassView({onDet,g}){
               <button onMouseDown={e=>{e.preventDefault();setQE(null)}} style={{background:"none",border:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:".9rem",marginLeft:4}}>{"\u2715"}</button>
             </div>
           </div>
-          {qeMode==="quick"?<>
+          {qeMode==="quick"?(shiftConfirm?<div style={{display:"flex",flexDirection:"column",gap:6}}>
+            <div style={{fontSize:".68rem",color:"var(--text-secondary)",lineHeight:1.4}}>Push this lesson and the ones after it forward to the next free slot. This lesson becomes <strong>No lesson</strong>.</div>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input className="inp" value={shiftReason} onChange={e=>setShiftReason(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")doShift(qe.i,shiftReason);if(e.key==="Escape")setShiftConfirm(false)}} autoFocus placeholder="Reason, e.g. Assembly" style={{flex:1}}/>
+              <button onMouseDown={e=>{e.preventDefault();doShift(qe.i,shiftReason)}} style={{background:"var(--accent)",color:"var(--on-accent)",border:"none",borderRadius:"var(--radius-sm)",fontSize:".68rem",padding:"6px 12px",cursor:"pointer",fontWeight:600,whiteSpace:"nowrap",flexShrink:0}}>{"\u2913"} Push forward</button>
+              <button onMouseDown={e=>{e.preventDefault();setShiftConfirm(false)}} style={{background:"none",border:"none",fontSize:".66rem",cursor:"pointer",color:"var(--text-muted)",padding:"0 4px"}}>Cancel</button>
+            </div>
+          </div>:<>
             <div style={{display:"flex",gap:6,alignItems:"center"}}>
               <input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null)}} onBlur={sQE} autoFocus placeholder={lessons[qe.i]?.notes?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/>
               <button onMouseDown={e=>{e.preventDefault();askNL()}} style={{background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-sm)",color:"var(--text-secondary)",cursor:"pointer",fontSize:".68rem",padding:"6px 10px",whiteSpace:"nowrap",flexShrink:0}}>No lesson</button>
@@ -1650,7 +1699,8 @@ function ClassView({onDet,g}){
               <button onMouseDown={e=>{e.preventDefault();sNL("")}} style={{background:"var(--accent)",color:"var(--on-accent)",border:"none",borderRadius:"var(--radius-sm)",fontSize:".64rem",padding:"3px 10px",cursor:"pointer",fontWeight:600}}>Yes, mark No Lesson</button>
               <button onMouseDown={e=>{e.preventDefault();setNlConfirm(false)}} style={{background:"none",border:"none",fontSize:".64rem",cursor:"pointer",color:"var(--text-muted)",padding:"0 4px"}}>Cancel</button>
             </div>}
-          </>:<DetailedNoteEditor dateKey={l.dk} pid={l.pid} onSave={()=>{setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()}}/>}
+            {(l.notes.subject||l.notes.notes||l.notes.resources)&&l.notes.status!=="nl"&&<button onMouseDown={e=>{e.preventDefault();const k=`note:${qe.dk}:${qe.pid}`,ex=sGet(k)||eN();if(qv!==(ex.subject||""))writeRecord(k,{...ex,subject:qv,status:ex.status||""});setShiftReason("");setShiftConfirm(true)}} style={{background:"none",border:"none",color:"var(--accent)",cursor:"pointer",fontSize:".66rem",padding:"2px 0",textAlign:"left",fontFamily:"inherit"}}>{"\u2913"} Lesson bumped? Push the rest forward</button>}
+          </>):<DetailedNoteEditor dateKey={l.dk} pid={l.pid} onSave={()=>{setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()}}/>}
         </div>}
       </React.Fragment>})}</div></div>;
 }
