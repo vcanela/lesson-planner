@@ -523,6 +523,18 @@ function sSet(k,v){
   try{localStorage.setItem(k,JSON.stringify(v));return true}
   catch(err){_storageFailListeners.forEach(fn=>{try{fn(err,k)}catch{}});return false}
 }
+// writeRecord: persist a note:/daymeta: record from a USER edit, stamping
+// updatedAt=now so the sync merge can pick the most recent version per record.
+// Transport paths (import, migrate, sync-apply) must use sSet, not this, so they
+// preserve the incoming timestamp. See SYNC_MERGE_DESIGN.md.
+function writeRecord(k,v){
+  if((k.slice(0,5)==="note:"||k.slice(0,8)==="daymeta:")&&v&&typeof v==="object"&&!Array.isArray(v))
+    return sSet(k,{...v,updatedAt:new Date().toISOString()});
+  return sSet(k,v);
+}
+// writeConfig: persist the config from a USER edit, stamping updatedAt so the
+// merge can converge settings across devices (newer real timestamp wins).
+function writeConfig(cfg){return sSet("planner-config",{...cfg,updatedAt:new Date().toISOString()})}
 // Schema version for backup/sync data. Bump when the on-disk shape changes incompatibly.
 // importAllData refuses payloads whose _meta.version is higher than this constant, so an old
 // client never silently ingests data from a newer planner version.
@@ -567,25 +579,10 @@ function importAllData(data){
   return{imported,skipped};
 }
 
-// Detect whether pulling `incoming` would clobber local data, or whether it cannot be safely
-// imported at all. Returns null if safe, or an object describing the conflict.
-// Conflict types: "version" (incoming schema is newer than we know how to read),
-// "older" (incoming timestamp predates our last sync), "fewer" (incoming has fewer entries).
-function checkSyncConflict(incoming){
-  if(!incoming||typeof incoming!=="object")return null;
-  const v=incoming._meta&&incoming._meta.version;
-  if(typeof v==="number"&&v>SCHEMA_VERSION)return{type:"version",incomingVersion:v,knownVersion:SCHEMA_VERSION};
-  const lastSync=localStorage.getItem("planner-last-sync");
-  const incomingSynced=incoming._meta&&incoming._meta.synced;
-  if(lastSync&&incomingSynced){
-    const li=Date.parse(lastSync),ri=Date.parse(incomingSynced);
-    if(!isNaN(li)&&!isNaN(ri)&&ri<li)return{type:"older",lastSync,incomingSynced};
-  }
-  const localCount=Object.keys(localStorage).filter(k=>k.startsWith("note:")||k.startsWith("daymeta:")).length;
-  const remoteCount=Object.keys(incoming).filter(k=>NOTE_KEY_RE.test(k)||META_KEY_RE.test(k)).length;
-  if(localCount>0&&remoteCount<localCount)return{type:"fewer",localCount,remoteCount};
-  return null;
-}
+// NOTE: the old checkSyncConflict (older/fewer/version heuristics that guarded a
+// clobbering pull) was retired when sync became a per-record merge: pulling can no
+// longer lose local work, so the only remaining guard is the schema-version check,
+// inlined in syncNow. See SYNC_MERGE_DESIGN.md section 9.
 
 /* ═══ SYNC MERGE HELPERS (per-record convergence) ════════════════════════
  * Pure functions implementing the merge described in SYNC_MERGE_DESIGN.md.
@@ -641,9 +638,24 @@ const GH_HEADERS=tok=>({"Authorization":"Bearer "+tok,"Accept":"application/vnd.
 function gistCreate(tok,data){return fetch("https://api.github.com/gists",{method:"POST",headers:{...GH_HEADERS(tok),"Content-Type":"application/json"},body:JSON.stringify({description:"Lesson Planner Data","public":false,files:{"planner-data.json":{content:JSON.stringify(data,null,2)}}})}).then(r=>{if(!r.ok)throw new Error;return r.json()}).then(j=>j.id)}
 // gistPush: PATCH the existing gist with fresh data. Resolves to true on success.
 function gistPush(tok,gid,data){return fetch("https://api.github.com/gists/"+gid,{method:"PATCH",headers:{...GH_HEADERS(tok),"Content-Type":"application/json"},body:JSON.stringify({files:{"planner-data.json":{content:JSON.stringify(data,null,2)}}})}).then(r=>{if(!r.ok)throw new Error;return true})}
-// gistPull: GET the gist and return the parsed planner-data.json. The caller is
-// expected to run checkSyncConflict on the result before calling importAllData.
+// gistPull: GET the gist and return the parsed planner-data.json, or throw.
+// Used by the DataPanel connect-preview. The merge sync path uses gistPullSafe.
 function gistPull(tok,gid){return fetch("https://api.github.com/gists/"+gid,{headers:GH_HEADERS(tok)}).then(r=>{if(!r.ok)throw new Error;return r.json()}).then(j=>{const f=j.files&&j.files["planner-data.json"];if(!f||!f.content)throw new Error;return JSON.parse(f.content)})}
+// gistPullSafe: read for the merge sync. Distinguishes three outcomes so we never
+// mistake a failed read for an empty remote (which would clobber on push):
+//   {ok:true, data:<blob>}  gist has a data file
+//   {ok:true, data:{}}      gist exists but has no data file yet (safe to seed)
+//   {ok:false}              network/auth/HTTP/parse failure (abort: do NOT push)
+function gistPullSafe(tok,gid){
+  return fetch("https://api.github.com/gists/"+gid,{headers:GH_HEADERS(tok)}).then(r=>{
+    if(!r.ok)return{ok:false};
+    return r.json().then(j=>{
+      const f=j.files&&j.files["planner-data.json"];
+      if(!f||!f.content)return{ok:true,data:{}};
+      try{return{ok:true,data:JSON.parse(f.content)}}catch{return{ok:false}}
+    }).catch(()=>({ok:false}));
+  }).catch(()=>({ok:false}));
+}
 
 /* ═══ CONFIG MIGRATION ═══════════════════════════════════════════════════
  * migrateConfig is run on every config load (from localStorage on startup
@@ -1031,8 +1043,8 @@ function useAutoSave(sk,dv,onSave){
   // onSaveRef captures the latest onSave callback so cleanup-flushes can notify the
   // parent even if the original callback closure was already stale.
   const onSaveRef=useRef(onSave);onSaveRef.current=onSave;
-  useEffect(()=>{if(!sk){setData(null);return}dirtyRef.current=false;const s=sGet(sk),m={...dr.current,...(s||{})};ref.current=m;setData(m);setSS("idle");const skSnap=sk;return()=>{clearTimeout(bt.current);bt.current=null;clearTimeout(st.current);if(dirtyRef.current){const ok=sSet(skSnap,ref.current);if(ok){try{if(onSaveRef.current)onSaveRef.current({...ref.current})}catch{}if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()}dirtyRef.current=false}}},[sk]);
-  const save=useCallback(()=>{if(!sk)return;clearTimeout(st.current);setSS("saving");const ok=sSet(sk,ref.current);if(ok&&onSaveRef.current)onSaveRef.current({...ref.current});if(ok&&window._plannerSync)window._plannerSync();if(ok&&window._plannerGamRefresh)window._plannerGamRefresh();if(ok)dirtyRef.current=false;setSS(ok?"saved":"error");st.current=setTimeout(()=>setSS("idle"),STATUS_PILL_MS)},[sk]);
+  useEffect(()=>{if(!sk){setData(null);return}dirtyRef.current=false;const s=sGet(sk),m={...dr.current,...(s||{})};ref.current=m;setData(m);setSS("idle");const skSnap=sk;return()=>{clearTimeout(bt.current);bt.current=null;clearTimeout(st.current);if(dirtyRef.current){const ok=writeRecord(skSnap,ref.current);if(ok){try{if(onSaveRef.current)onSaveRef.current({...ref.current})}catch{}if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()}dirtyRef.current=false}}},[sk]);
+  const save=useCallback(()=>{if(!sk)return;clearTimeout(st.current);setSS("saving");const ok=writeRecord(sk,ref.current);if(ok&&onSaveRef.current)onSaveRef.current({...ref.current});if(ok&&window._plannerSync)window._plannerSync();if(ok&&window._plannerGamRefresh)window._plannerGamRefresh();if(ok)dirtyRef.current=false;setSS(ok?"saved":"error");st.current=setTimeout(()=>setSS("idle"),STATUS_PILL_MS)},[sk]);
   // Flush any pending blur-debounce save when the tab is closing or hidden. Without this,
   // typing into a field and immediately closing the tab loses up to 80ms of input. pagehide
   // and visibilitychange cover Safari/iOS, where beforeunload is not always reliable.
@@ -1399,9 +1411,9 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
   const oQE=(key,pid,cls,date)=>{const n=wNotes[`${key}:${pid}`];setQV(n&&n.subject||"");setQE({dk:key,pid,cc:cls,date});setNlConfirm(false)};
   // sQE saves the typed input. It preserves the existing status (so editing the
   // reason of a no-lesson period does not silently downgrade it back to a topic).
-  const sQE=()=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=sGet(k)||eN();sSet(k,{...ex,subject:qv,status:ex.status||""});setQE(null);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
+  const sQE=()=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=sGet(k)||eN();writeRecord(k,{...ex,subject:qv,status:ex.status||""});setQE(null);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
   // sNL writes the no-lesson state with an explicit subject (so the confirm-flow can pass "" rather than reusing whatever was typed as a topic).
-  const sNL=(subj)=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=sGet(k)||eN();sSet(k,{...ex,subject:subj,status:"nl"});setQE(null);setNlConfirm(false);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
+  const sNL=(subj)=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=sGet(k)||eN();writeRecord(k,{...ex,subject:subj,status:"nl"});setQE(null);setNlConfirm(false);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
   const[nlConfirm,setNlConfirm]=useState(false);
   const askNL=()=>{const cur=qe?wNotes[`${qe.dk}:${qe.pid}`]:null;const isAlreadyNl=cur&&cur.status==="nl";if(isAlreadyNl){sNL(qv);return}if(qv||(cur&&cur.subject)){setNlConfirm(true)}else{sNL("")}};
   const wl=fmtS(days[0])+" \u2013 "+fmtS(days[4]);
@@ -1592,9 +1604,9 @@ function ClassView({onDet,g}){
   const oQE=(i,l)=>{setQV(l.notes.subject||"");setQE({i,dk:l.dk,pid:l.pid,date:l.date});setNlConfirm(false);setQeMode("quick")};
   // sQE saves the typed input. It preserves the existing status (so editing the
   // reason of a no-lesson period does not silently downgrade it back to a topic).
-  const sQE=()=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=sGet(k)||eN();sSet(k,{...ex,subject:qv,status:ex.status||""});setQE(null);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
+  const sQE=()=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=sGet(k)||eN();writeRecord(k,{...ex,subject:qv,status:ex.status||""});setQE(null);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
   // sNL takes an explicit subject (so the confirm-flow passes "" to mean "no reason yet").
-  const sNL=(subj)=>{if(!qe)return;const l=lessons[qe.i];const k=`note:${l.dk}:${l.pid}`;const ex=sGet(k)||eN();sSet(k,{...ex,subject:subj,status:"nl"});setQE(null);setNlConfirm(false);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
+  const sNL=(subj)=>{if(!qe)return;const l=lessons[qe.i];const k=`note:${l.dk}:${l.pid}`;const ex=sGet(k)||eN();writeRecord(k,{...ex,subject:subj,status:"nl"});setQE(null);setNlConfirm(false);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
   const[nlConfirm,setNlConfirm]=useState(false);
   const askNL=()=>{const cur=qe?lessons[qe.i]&&lessons[qe.i].notes:null;const isAlreadyNl=cur&&cur.status==="nl";if(isAlreadyNl){sNL(qv);return}if(qv||(cur&&cur.subject)){setNlConfirm(true)}else{sNL("")}};
   if(eng.classCodes.length===0)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>No classes configured. Head to Setup to add your classes.</div>;
@@ -1621,7 +1633,7 @@ function ClassView({onDet,g}){
                 e.preventDefault();
                 if(qeMode==="quick"&&m==="detailed"&&qe){
                   const k=`note:${qe.dk}:${qe.pid}`;const ex=sGet(k)||eN();
-                  if(qv!==(ex.subject||"")){sSet(k,{...ex,subject:qv,status:ex.status||""});setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()}
+                  if(qv!==(ex.subject||"")){writeRecord(k,{...ex,subject:qv,status:ex.status||""});setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()}
                 }
                 setQeMode(m);
               }} style={{padding:"2px 10px",borderRadius:4,border:"none",cursor:"pointer",fontSize:".67rem",fontWeight:qeMode===m?700:400,background:qeMode===m?"var(--accent)":"var(--surface)",color:qeMode===m?"var(--on-accent)":"var(--text-muted)",fontFamily:"inherit"}}>{m==="quick"?"Quick":"Detailed"}</button>)}
@@ -1865,7 +1877,7 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
   const onSaveRef=useRef(onSave);onSaveRef.current=onSave;
   const savedRef=useRef(JSON.stringify(cfg));
   useEffect(()=>{
-    const flush=()=>{const cur=JSON.stringify(cfgRef.current);if(cur===savedRef.current)return;sSet("planner-config",cfgRef.current);savedRef.current=cur;try{if(onSaveRef.current)onSaveRef.current(cfgRef.current)}catch{}if(window._plannerSync)window._plannerSync()};
+    const flush=()=>{const cur=JSON.stringify(cfgRef.current);if(cur===savedRef.current)return;writeConfig(cfgRef.current);savedRef.current=cur;try{if(onSaveRef.current)onSaveRef.current(cfgRef.current)}catch{}if(window._plannerSync)window._plannerSync()};
     const onHide=()=>{if(document.visibilityState==="hidden")flush()};
     window.addEventListener("pagehide",flush);document.addEventListener("visibilitychange",onHide);
     return()=>{window.removeEventListener("pagehide",flush);document.removeEventListener("visibilitychange",onHide);flush()};
@@ -1909,7 +1921,7 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
   const addWeekly=()=>up({weeklyEvents:[...weeklyEvents,{weekday:1,slot:"B3",text:""}]});
   const updateWeekly=(i,field,val)=>{const arr=[...weeklyEvents];arr[i]={...arr[i],[field]:val};up({weeklyEvents:arr})};
   const deleteWeekly=i=>up({weeklyEvents:weeklyEvents.filter((_,j)=>j!==i)});
-  const doSave=()=>{sSet("planner-config",cfg);savedRef.current=JSON.stringify(cfg);onSave(cfg);setSaved(true);setTimeout(()=>setSaved(false),2000);if(window._plannerSync)window._plannerSync()};
+  const doSave=()=>{writeConfig(cfg);savedRef.current=JSON.stringify(cfg);onSave(cfg);setSaved(true);setTimeout(()=>setSaved(false),2000);if(window._plannerSync)window._plannerSync()};
 
   return<div style={{paddingBottom:120}}><div className="hd" style={{fontSize:"1.15rem",fontWeight:600,color:"var(--accent)",marginBottom:14}}>{"\u2699\uFE0F"} School Setup</div>
 
@@ -2071,13 +2083,11 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
  *                and the user confirms before any data is written.
  * ═══════════════════════════════════════════════════════════════════════
  */
-function DataPanel({onClose,onImported,onSyncConn,onSyncDisc,lastSync,token,gistId,setToken,setGistId}){
+function DataPanel({onClose,onImported,onSync,onSyncConn,onSyncDisc,lastSync,token,gistId,setToken,setGistId}){
   const[iSt,setISt]=useState(null);const[iData,setIData]=useState(null);const[iStats,setIStats]=useState(null);const fRef=useRef(null);
   const[showTok,setShowTok]=useState(false);const[syncMsg,setSyncMsg]=useState(null);const[parseErr,setParseErr]=useState("");
   // Preview shown when connecting to a non-empty Gist ID, so the user can see what they're about to adopt before it overwrites local data.
   const[connPreview,setConnPreview]=useState(null);
-  // Pull-conflict prompt: shown when an explicit Pull would clobber newer/larger local data.
-  const[pullConflict,setPullConflict]=useState(null);
   const connected=token&&gistId;
   const doExport=()=>{const data=getAllData();const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`planner-backup-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);localStorage.setItem("planner-last-backup",new Date().toISOString())};
   // Parse a backup file but only count keys that match the import allowlist; everything else is reported as "skipped" so the user knows nothing unexpected can sneak through.
@@ -2113,38 +2123,26 @@ function DataPanel({onClose,onImported,onSyncConn,onSyncDisc,lastSync,token,gist
   const confirmConn=()=>{setConnPreview(null);setSyncMsg({type:"ok",text:"Connected"});if(onSyncConn)onSyncConn(token,gistId)};
   const cancelConn=()=>{setConnPreview(null);setSyncMsg(null)};
   const doDisc=()=>{setToken("");setGistId("");setSyncMsg({type:"info",text:"Disconnected"});if(onSyncDisc)onSyncDisc()};
-  // Pull: if checkSyncConflict says the gist is older or smaller than local, ask before clobbering. Otherwise import directly.
-  const doPull=()=>{
+  // Push and Pull now run the same convergence (the App's merge sync). Both are
+  // kept as buttons so the control is familiar, but neither can clobber: each one
+  // fetches, merges per record, and writes the result back. No more "overwrite
+  // local / keep local" prompt, because pulling can no longer lose work.
+  const doSync=()=>{
     if(!token||!gistId)return;
-    setSyncMsg({type:"info",text:"Pulling..."});
-    gistPull(token,gistId).then(data=>{
-      const conflict=checkSyncConflict(data);
-      if(conflict){setPullConflict({data,conflict});setSyncMsg(null);return}
-      importAllData(data);
-      // Anchor local last-sync to the gist's own timestamp so a re-pull doesn't appear as a regression.
-      localStorage.setItem("planner-last-sync",(data._meta&&data._meta.synced)||new Date().toISOString());
-      onImported();
-      setSyncMsg({type:"ok",text:"Pulled \u2713"});
-    }).catch(()=>setSyncMsg({type:"error",text:"Pull failed"}));
+    setSyncMsg({type:"info",text:"Syncing..."});
+    Promise.resolve(onSync&&onSync()).then(s=>{
+      setSyncMsg(s==="synced"?{type:"ok",text:"Synced \u2713"}
+        :s==="conflict"?{type:"error",text:"Gist is from a newer planner version; update first"}
+        :{type:"error",text:"Sync failed"});
+    });
   };
-  const confirmPull=()=>{
-    if(!pullConflict)return;
-    importAllData(pullConflict.data);
-    const d=pullConflict.data;
-    localStorage.setItem("planner-last-sync",(d._meta&&d._meta.synced)||new Date().toISOString());
-    onImported();
-    setPullConflict(null);
-    setSyncMsg({type:"ok",text:"Pulled \u2713"});
-  };
-  const cancelPull=()=>{setPullConflict(null);setSyncMsg({type:"info",text:"Pull cancelled"})};
-  const doPush=()=>{if(!token||!gistId)return;setSyncMsg({type:"info",text:"Pushing..."});const data=getAllData();gistPush(token,gistId,data).then(()=>{localStorage.setItem("planner-last-sync",data._meta.synced);setSyncMsg({type:"ok",text:"Pushed \u2713"})}).catch(()=>setSyncMsg({type:"error",text:"Push failed"}))};
   const cn=Object.keys(localStorage).filter(k=>k.startsWith("note:")).length;const cm=Object.keys(localStorage).filter(k=>k.startsWith("daymeta:")).length;
   const smc=syncMsg?(syncMsg.type==="ok"?"var(--success)":syncMsg.type==="error"?"var(--error)":"var(--text-muted)"):"";
   return<div className="overlay" onClick={onClose}><div onClick={e=>e.stopPropagation()} style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"var(--radius-lg)",padding:20,minWidth:300,maxWidth:460,maxHeight:"90vh",overflowY:"auto"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><span className="hd" style={{fontWeight:600,color:"var(--text)",fontSize:".95rem"}}>{"\u2699\uFE0F"} Data & Sync</span><button onClick={onClose} style={{background:"none",border:"none",color:"var(--text-secondary)",fontSize:"1.2rem",cursor:"pointer"}}>{"\u2715"}</button></div>
     <div style={{fontSize:".72rem",color:"var(--text-secondary)",marginBottom:14,padding:"8px 10px",background:"var(--surface)",borderRadius:"var(--radius-md)"}}><div style={{marginBottom:4,fontWeight:600,color:"var(--text)"}}>Current data</div><span className="mn">{cn}</span> notes {"\u00B7"} <span className="mn">{cm}</span> day settings</div>
     <div style={{marginBottom:16}}><div className="sl" style={{marginBottom:8}}>{"\u2601\uFE0F"} Cloud Sync</div>
-      {connected?<div><div style={{fontSize:".72rem",color:"var(--success)",marginBottom:8,display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",background:"var(--success)"}}/>Connected: <span className="mn" onClick={()=>navigator.clipboard&&navigator.clipboard.writeText(gistId)} style={{fontSize:".6rem",color:"var(--accent)",cursor:"pointer",textDecoration:"underline",wordBreak:"break-all"}}>{gistId}</span></div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}><Btn onClick={doPush}>{"\u2B06"} Push</Btn><Btn onClick={doPull}>{"\u2B07"} Pull</Btn><Btn onClick={doDisc} style={{color:"var(--error)"}}>{"\u2715"} Disconnect</Btn></div>{lastSync&&<div style={{fontSize:".6rem",color:"var(--text-muted)",marginTop:6}}>Last sync: {lastSync}</div>}{pullConflict&&<div style={{padding:10,background:"var(--surface)",borderRadius:6,border:"1px solid var(--flag)",marginTop:8}}><div style={{fontSize:".75rem",color:"var(--flag)",fontWeight:600,marginBottom:6}}>{"\u26a0"} Sync conflict</div><div style={{fontSize:".67rem",color:"var(--text-secondary)",lineHeight:1.5,marginBottom:8}}>{pullConflict.conflict.type==="version"?<>The Gist was saved by a <strong>newer version</strong> of the planner (v{pullConflict.conflict.incomingVersion}, you have v{pullConflict.conflict.knownVersion}). Update your planner before pulling.</>:pullConflict.conflict.type==="older"?<>The Gist appears <strong>older</strong> than your last sync ({new Date(pullConflict.conflict.incomingSynced).toLocaleString("en-NZ")} vs {new Date(pullConflict.conflict.lastSync).toLocaleString("en-NZ")}). Pulling will overwrite local data.</>:<>The Gist has fewer entries ({pullConflict.conflict.remoteCount}) than your local copy ({pullConflict.conflict.localCount}). Pulling may discard local work.</>}</div><div style={{display:"flex",gap:6}}>{pullConflict.conflict.type!=="version"&&<Btn onClick={confirmPull} style={{color:"var(--error)"}}>{"\u26a0"} Overwrite local</Btn>}<button className="btn-a" onClick={cancelPull} style={{padding:"6px 14px"}}>{pullConflict.conflict.type==="version"?"Close":"Keep local"}</button></div></div>}</div>
+      {connected?<div><div style={{fontSize:".72rem",color:"var(--success)",marginBottom:8,display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",background:"var(--success)"}}/>Connected: <span className="mn" onClick={()=>navigator.clipboard&&navigator.clipboard.writeText(gistId)} style={{fontSize:".6rem",color:"var(--accent)",cursor:"pointer",textDecoration:"underline",wordBreak:"break-all"}}>{gistId}</span></div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}><Btn onClick={doSync}>{"\u2B06"} Push</Btn><Btn onClick={doSync}>{"\u2B07"} Pull</Btn><Btn onClick={doDisc} style={{color:"var(--error)"}}>{"\u2715"} Disconnect</Btn></div>{lastSync&&<div style={{fontSize:".6rem",color:"var(--text-muted)",marginTop:6}}>Last sync: {lastSync}</div>}<div style={{fontSize:".6rem",color:"var(--text-muted)",marginTop:6,lineHeight:1.4}}>Push and Pull both merge with the gist now, so neither loses work.</div></div>
       :<div><div style={{fontSize:".72rem",color:"var(--text-secondary)",marginBottom:8,lineHeight:1.5}}>Connect to GitHub Gist for cross-device sync. <a href="https://github.com/settings/tokens/new?scopes=gist&description=Lesson+Planner" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Create token {"\u2197"}</a></div><div style={{marginBottom:6}}><label className="fl">Token</label><div style={{display:"flex",gap:4}}><input className="inp" type={showTok?"text":"password"} value={token} onChange={e=>setToken(e.target.value)} placeholder="ghp_xxxx..." style={{fontSize:".72rem",flex:1}}/><Btn onClick={()=>setShowTok(!showTok)} style={{padding:"4px 8px",fontSize:".65rem"}}>{showTok?"\u{1F441}":"\u2022\u2022\u2022"}</Btn></div></div><div style={{marginBottom:8}}><label className="fl">Gist ID <span style={{fontWeight:400,color:"var(--text-muted)"}}>(blank = create new)</span></label><input className="inp" value={gistId} onChange={e=>setGistId(e.target.value)} placeholder="Leave empty for new" style={{fontSize:".72rem"}}/></div><button className="btn-a" onClick={doConn} disabled={!!connPreview}>{"\u{1F517}"} Connect</button>{connPreview&&<div style={{marginTop:10,padding:10,background:"var(--surface)",borderRadius:6,border:"1px solid var(--accent)"}}><div style={{fontSize:".75rem",color:"var(--accent)",fontWeight:600,marginBottom:6}}>Preview: this Gist contains</div><div style={{fontSize:".68rem",color:"var(--text-secondary)",lineHeight:1.6,marginBottom:8}}>School: <strong>{connPreview.remoteSchool}</strong><br/><span className="mn">{connPreview.remoteN}</span> notes {"·"} <span className="mn">{connPreview.remoteM}</span> day settings{connPreview.remoteSynced&&<><br/>Last synced: {new Date(connPreview.remoteSynced).toLocaleString("en-NZ")}</>}</div>{(connPreview.localN+connPreview.localM>0)&&<div style={{fontSize:".66rem",color:"var(--flag)",marginBottom:8,padding:"6px 8px",background:"var(--card)",borderRadius:4,border:"1px solid var(--flag)"}}>{"⚠"} Your local data ({connPreview.localN} notes, {connPreview.localM} day settings) will be replaced on the next pull.</div>}<div style={{display:"flex",gap:6}}><button className="btn-a" onClick={confirmConn} style={{padding:"6px 14px"}}>{"✓"} Use this Gist</button><Btn onClick={cancelConn}>Cancel</Btn></div></div>}</div>}
       {syncMsg&&<div style={{fontSize:".68rem",color:smc,marginTop:8,padding:"4px 8px",background:"var(--surface)",borderRadius:4}}>{syncMsg.text}</div>}</div>
     <div style={{marginBottom:16}}><div className="sl" style={{marginBottom:8}}>Export</div><Btn onClick={doExport}>{"\u{1F4E5}"} Download Backup</Btn></div>
@@ -2275,44 +2273,63 @@ function App(){
   },[dispMode,cfg&&cfg.theme]);
 
   useEffect(()=>{if(!eng)return;const p={};eng.terms.forEach(term=>{eng.getTermWks(term).flat().filter(eng.isSD).forEach(d=>{const k=dk(d),v=sGet(`daymeta:${k}`);if(v)p[k]=nM(v)})});mcR.current={...mcR.current,...p};setMC(c=>({...c,...p}))},[eng]);
-  // Debounced push to gist. On success, record `planner-last-sync` so future pulls can detect
-  // whether the gist has gone backwards (e.g. an older copy from another device or a hostile gist).
-  const triggerSync=useCallback(()=>{const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");if(!tok||!gid)return;if(storageFailedRef.current)return;clearTimeout(syncTimer.current);syncTimer.current=setTimeout(()=>{setSyncSt("syncing");const data=getAllData();gistPush(tok,gid,data).then(()=>{localStorage.setItem("planner-last-sync",data._meta.synced);setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),SYNC_STATUS_OK_MS)}).catch(()=>{setSyncSt("error");setTimeout(()=>setSyncSt("idle"),SYNC_STATUS_ERR_MS)})},SYNC_DEBOUNCE_MS)},[]);
-  // pullAndApply: shared pull-import-refresh helper used by the startup auto-pull and
-  // the visibility-change auto-pull. Bails on conflict (older / fewer / version mismatch).
-  // The meta-cache rebuild is keyed off a freshly-built engine from the just-imported
-  // config, not the stale `eng` closure — otherwise we walk the wrong term boundaries
-  // after a config import and the views render with partial data until the next event.
-  const pullAndApply=useCallback(()=>{
-    const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");
-    if(!tok||!gid)return;
-    if(storageFailedRef.current)return;
-    setSyncSt("syncing");
-    gistPull(tok,gid).then(data=>{
-      const conflict=checkSyncConflict(data);
-      if(conflict){setSyncSt("conflict");return}
-      importAllData(data);
-      localStorage.setItem("planner-last-sync",(data._meta&&data._meta.synced)||new Date().toISOString());
-      const nc=migrateConfig(sGet("planner-config"));
-      if(nc)setCfg(nc);
-      const freshEng=nc?makeDateEngine(nc):null;
-      if(freshEng){
-        const p={};
-        freshEng.terms.forEach(term=>{
-          freshEng.getTermWks(term).flat().filter(freshEng.isSD).forEach(d=>{
-            const k=dk(d),v=sGet(`daymeta:${k}`);
-            if(v)p[k]=nM(v);
-          });
-        });
-        mcR.current=p;setMC(p);
-      }
-      setGR(r=>r+1);
-      setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));
-      setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),SYNC_STATUS_OK_MS);
-    }).catch(()=>{
-      setSyncSt("error");setTimeout(()=>setSyncSt("idle"),SYNC_STATUS_ERR_MS);
-    });
+  // refreshFromLocal: after localStorage changes (a merge sync), rebuild the
+  // config state, the daymeta cache, and bump the render counter. The engine is
+  // rebuilt from the freshly-stored config so term walks use the right boundaries.
+  const refreshFromLocal=useCallback(()=>{
+    const nc=migrateConfig(sGet("planner-config"));
+    if(nc)setCfg(nc);
+    const freshEng=nc?makeDateEngine(nc):null;
+    if(freshEng){
+      const p={};
+      freshEng.terms.forEach(term=>{freshEng.getTermWks(term).flat().filter(freshEng.isSD).forEach(d=>{const k=dk(d),v=sGet(`daymeta:${k}`);if(v)p[k]=nM(v)})});
+      mcR.current=p;setMC(p);
+    }
+    setGR(r=>r+1);
   },[]);
+  // applyMerged: write the merged blob M to localStorage. Records dropped by the
+  // GC (empty AND old, so present locally but absent from M) are removed; the rest
+  // are written with sSet so their updatedAt is preserved (NOT restamped). _config
+  // is adopted only when M's config has a strictly newer real timestamp, so a
+  // legacy/epoch config can never clobber locally-edited settings on a tie.
+  const applyMerged=useCallback(M=>{
+    const isRec=k=>k.startsWith("note:")||k.startsWith("daymeta:");
+    Object.keys(localStorage).forEach(k=>{if(isRec(k)&&!(k in M))localStorage.removeItem(k)});
+    Object.keys(M).forEach(k=>{if(isRec(k))sSet(k,M[k])});
+    const localCfg=sGet("planner-config");
+    if(M._config&&recTs(M._config)>recTs(localCfg))sSet("planner-config",M._config);
+  },[]);
+  // syncNow: the single convergence operation, replacing the old push and pull.
+  // Read (safe) -> version guard -> merge per record -> GC old empties -> apply
+  // locally -> push back only if the merged result differs from remote. A failed
+  // read aborts WITHOUT pushing, so a transient error can never clobber the gist.
+  // Resolves to a status string ("synced"/"conflict"/"error"/"idle"); never rejects.
+  const syncNow=useCallback(()=>{
+    const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");
+    if(!tok||!gid)return Promise.resolve("idle");
+    if(storageFailedRef.current)return Promise.resolve("error");
+    setSyncSt("syncing");
+    const okDone=()=>{setSyncSt("synced");setTimeout(()=>setSyncSt("idle"),SYNC_STATUS_OK_MS)};
+    const errDone=()=>{setSyncSt("error");setTimeout(()=>setSyncSt("idle"),SYNC_STATUS_ERR_MS)};
+    return gistPullSafe(tok,gid).then(res=>{
+      if(!res.ok){errDone();return "error"}
+      const remote=res.data||{};
+      const rv=remote._meta&&remote._meta.version;
+      if(typeof rv==="number"&&rv>SCHEMA_VERSION){setSyncSt("conflict");return "conflict"}
+      const local=getAllData();
+      let M=mergeData(local,remote);M=gcEmpties(M,Date.now()).data;
+      M._meta={synced:new Date().toISOString(),version:SCHEMA_VERSION};
+      applyMerged(M);
+      const changed=JSON.stringify({...M,_meta:0})!==JSON.stringify({...remote,_meta:0});
+      const fin=()=>{localStorage.setItem("planner-last-sync",M._meta.synced);setLastSync(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));refreshFromLocal();okDone()};
+      if(changed)return gistPush(tok,gid,M).then(()=>{fin();return "synced"}).catch(()=>{errDone();return "error"});
+      fin();return "synced";
+    }).catch(()=>{errDone();return "error"});
+  },[applyMerged,refreshFromLocal]);
+  // Startup and visibility auto-sync use the same convergence as manual sync.
+  const pullAndApply=syncNow;
+  // Debounced trigger fired by every save (via window._plannerSync).
+  const triggerSync=useCallback(()=>{const tok=localStorage.getItem("planner-gh-token"),gid=localStorage.getItem("planner-gist-id");if(!tok||!gid)return;if(storageFailedRef.current)return;clearTimeout(syncTimer.current);syncTimer.current=setTimeout(()=>{syncNow()},SYNC_DEBOUNCE_MS)},[syncNow]);
   // Startup auto-pull: same conflict-aware path as pullAndApply.
   useEffect(()=>{pullAndApply()},[]);
   // Visibility-change auto-pull: when a teacher edits on their phone and switches
@@ -2360,12 +2377,12 @@ function App(){
 
   const themeKey=cfg&&cfg.theme||"physics";
   const gam=useMemo(()=>({...compGam(eng,planWN,themeKey),showGam:cfg?.showGam!==false}),[gr,view,planWN,eng,themeKey,cfg]);
-  const uM=useCallback((key,ch)=>{const cur=mcR.current[key]||eM(),u={...cur,...ch};mcR.current={...mcR.current,[key]:u};setMC(c=>({...c,[key]:u}));sSet(`daymeta:${key}`,u);triggerSync()},[triggerSync]);
+  const uM=useCallback((key,ch)=>{const cur=mcR.current[key]||eM(),u={...cur,...ch};mcR.current={...mcR.current,[key]:u};setMC(c=>({...c,[key]:u}));writeRecord(`daymeta:${key}`,u);triggerSync()},[triggerSync]);
   // onUpdateCfg: lets a non-Settings view (e.g. DayView's "Save to D{cd}") write
   // a partial change into cfg.timetable. Persists to localStorage and bumps the
   // gamification refresh counter so any view that reads through eng picks up the
   // new shape on the next render.
-  const onUpdateCfg=useCallback(updater=>{setCfg(prev=>{const next=updater(prev);sSet("planner-config",next);return next});setGR(r=>r+1);triggerSync()},[triggerSync]);
+  const onUpdateCfg=useCallback(updater=>{setCfg(prev=>{const next=updater(prev);writeConfig(next);return next});setGR(r=>r+1);triggerSync()},[triggerSync]);
   const onMS=useCallback((key,m)=>{mcR.current={...mcR.current,[key]:m};setMC(c=>({...c,[key]:m}));triggerSync()},[triggerSync]);
   const goDay=(d,pid)=>{setPrevV(view);setDetDate(d);setFP(pid||null);setView("day")};
   const goWk=d=>{setBase(d);setView("week")};
@@ -2433,7 +2450,7 @@ function App(){
     {storageFailed&&<div className="card" style={{padding:"12px 16px",marginBottom:14,border:"1px solid var(--error)",background:"var(--surface)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:"1.1rem"}}>{"⚠"}</span><div style={{flex:1,minWidth:200}}><div className="hd" style={{fontSize:".85rem",fontWeight:600,color:"var(--error)"}}>Browser storage is full</div><div style={{fontSize:".7rem",color:"var(--text-secondary)",lineHeight:1.5}}>Recent changes have not been saved. Cloud sync is paused while this is unresolved. Open the Data Panel to download a backup, then clear old data in your browser settings.</div></div><button className="btn-a" onClick={()=>setShowDP(true)} style={{padding:"6px 14px",fontSize:".78rem"}}>Open Data Panel</button><button className="btn" onClick={()=>{storageFailedRef.current=false;setStorageFailed(false)}} style={{padding:"4px 10px",fontSize:".7rem",color:"var(--text-muted)"}}>Dismiss</button></div>}
     {(cfg&&(!cfg.classes||cfg.classes.length===0||!cfg.timetable||Object.keys(cfg.timetable).length===0))&&<div className="card" style={{padding:"14px 18px",marginBottom:14,border:"1px solid var(--dz-border)",background:"var(--dz-bg)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:"1.1rem"}}>{"\u{1F44B}"}</span><div style={{flex:1,minWidth:200}}><div className="hd" style={{fontSize:".85rem",fontWeight:600,color:"var(--dz-text)"}}>Welcome! Add your classes and timetable</div><div style={{fontSize:".7rem",color:"var(--dz-text)",opacity:.8}}>Term dates and holidays are already set up. Head to Setup to add your classes and timetable.</div></div><button className="btn-a" onClick={()=>{setView("setup");setGR(r=>r+1)}} style={{padding:"6px 14px",fontSize:".78rem"}}>Go to Setup {"\u2192"}</button></div>}
     {showSearch&&<SearchOverlay eng={eng} onGo={goDay} onClose={()=>setShowSearch(false)}/>}
-    {showDP&&<DataPanel onClose={()=>setShowDP(false)} onImported={handleImport} onSyncConn={(tok,gid)=>{setGhToken(tok);setGhGistId(gid);triggerSync()}} onSyncDisc={()=>{setGhToken("");setGhGistId("");clearTimeout(syncTimer.current);setSyncSt("idle");setLastSync(null)}} lastSync={lastSync} token={ghToken} gistId={ghGistId} setToken={setGhToken} setGistId={setGhGistId}/>}
+    {showDP&&<DataPanel onClose={()=>setShowDP(false)} onImported={handleImport} onSync={syncNow} onSyncConn={(tok,gid)=>{setGhToken(tok);setGhGistId(gid);triggerSync()}} onSyncDisc={()=>{setGhToken("");setGhGistId("");clearTimeout(syncTimer.current);setSyncSt("idle");setLastSync(null)}} lastSync={lastSync} token={ghToken} gistId={ghGistId} setToken={setGhToken} setGistId={setGhGistId}/>}
     {view==="term"&&<TermView onDay={goDay} onWk={goWk} mc={mc} g={gam} cfg={cfg}/>}
     {view==="week"&&<WeekView base={base} setBase={setBase} onDet={(d,pid)=>goDay(d,pid)} mc={mc} uM={uM} g={gam} onUpdateCfg={onUpdateCfg} cfg={cfg}/>}
     {view==="day"&&detDate&&<DayView date={detDate} setDate={d=>{setDetDate(d);setFP(null);setView("day")}} onBack={()=>{setFP(null);setGR(r=>r+1);setView(prevV==="day"?"week":prevV)}} mc={mc} onMS={onMS} fp={fp} g={gam} onUpdateCfg={onUpdateCfg} cfg={cfg}/>}

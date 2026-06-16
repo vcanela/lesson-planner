@@ -6,6 +6,22 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.6.0 — 2026-05-27
+
+### Features
+- **Cloud sync now merges per record instead of overwriting.** Previously every push replaced the whole gist with the local snapshot, so a device with stale data could clobber newer cloud changes (and a pull could clobber local). Sync is now a single convergence operation: fetch the gist, merge per record (each `note:`/`daymeta:`/`_config` carries an `updatedAt`; the most recently edited version wins), write the result to both sides. Editing different lessons on two devices is always safe; only editing the same record on two devices before syncing keeps just the newest. See SYNC_MERGE_DESIGN.md.
+
+### Behaviour changes
+- The "Overwrite local / Keep local" pull-conflict prompt is gone: pulling can no longer lose work, so it is not needed. The schema-`version` guard remains (a gist from a newer planner is still refused). The `older`/`fewer` heuristics (`checkSyncConflict`) were retired.
+- "Push" and "Pull" buttons both run the same merge now; kept as two buttons for familiarity.
+- Empty records (cleared notes) are garbage-collected only once they are also older than 60 days, so a recent clear acts as a tombstone and is never resurrected by a stale device.
+
+### Implementation
+- `updatedAt` is additive, so SCHEMA_VERSION stays at 2 and old/new clients interoperate (a missing timestamp counts as epoch, so any stamped edit wins). A read failure aborts the sync without pushing, so a transient network error can never clobber the gist. All user-save sites write through `writeRecord`/`writeConfig` (stamping); transport paths use `sSet` (preserving timestamps).
+- Verified end-to-end against a mocked gist: no-clobber convergence, newer-wins, both-sides converge, read-failure-no-push, and tombstone-no-resurrect all pass; merge helpers unit-tested across all design cases.
+
+---
+
 ## 2.5.1 — 2026-05-27
 
 ### Features
