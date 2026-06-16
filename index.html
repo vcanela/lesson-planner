@@ -587,6 +587,52 @@ function checkSyncConflict(incoming){
   return null;
 }
 
+/* ═══ SYNC MERGE HELPERS (per-record convergence) ════════════════════════
+ * Pure functions implementing the merge described in SYNC_MERGE_DESIGN.md.
+ * Not yet wired into the sync path; added and verified in isolation first.
+ * The unit of merge is one record (note:/daymeta:/ _config), newer updatedAt
+ * wins, so two devices editing different records both survive.
+ * ═══════════════════════════════════════════════════════════════════════ */
+// 60-day horizon for trimming empty records. A little under a term, well past
+// the point where a cleared record has propagated to every device.
+const GC_HORIZON_MS=60*864e5;
+// recTs: a record's updatedAt as a number. Missing/invalid = 0 (epoch), so any
+// stamped record beats an unstamped legacy one.
+function recTs(r){const t=r&&r.updatedAt?Date.parse(r.updatedAt):NaN;return isNaN(t)?0:t}
+// isEmptyRecord: true if a note/daymeta record carries no user content. An empty
+// record is a valid tombstone (a cleared note), so it is only GC'd once also old.
+function isEmptyRecord(key,r){
+  if(!r||typeof r!=="object")return true;
+  if(key.slice(0,5)==="note:")return !(r.subject||r.notes||r.resources)&&r.status!=="nl";
+  if(key.slice(0,8)==="daymeta:")return !(r.dayNotes||r.reflections||r.day0label)&&!(r.overrides&&Object.keys(r.overrides).length);
+  return false;
+}
+// pickNewer: LWW by updatedAt, with a deterministic JSON tiebreak on exact ties
+// so every device converges to the same record without coordination.
+function pickNewer(a,b){const ta=recTs(a),tb=recTs(b);if(ta>tb)return a;if(tb>ta)return b;return JSON.stringify(a)>=JSON.stringify(b)?a:b}
+// mergeData: converge two full blobs (local L, remote R) per record. _config is
+// merged whole by its own updatedAt. _meta is left to the caller to regenerate.
+function mergeData(L,R){
+  const out={},keys=new Set(),isRec=k=>NOTE_KEY_RE.test(k)||META_KEY_RE.test(k);
+  Object.keys(L||{}).forEach(k=>{if(isRec(k))keys.add(k)});
+  Object.keys(R||{}).forEach(k=>{if(isRec(k))keys.add(k)});
+  keys.forEach(k=>{const a=L&&L[k],b=R&&R[k];out[k]=a&&!b?a:b&&!a?b:pickNewer(a,b)});
+  const ca=L&&L._config,cb=R&&R._config;
+  if(ca||cb)out._config=ca&&!cb?ca:cb&&!ca?cb:pickNewer(ca,cb);
+  return out;
+}
+// gcEmpties: drop records that are BOTH empty AND older than the horizon, so
+// recent clears survive as tombstones while ancient empties are trimmed. Runs on
+// the merged result. Returns {data, dropped}.
+function gcEmpties(data,nowMs){
+  const out={};let dropped=0;
+  Object.keys(data).forEach(k=>{
+    if((NOTE_KEY_RE.test(k)||META_KEY_RE.test(k))&&isEmptyRecord(k,data[k])&&(nowMs-recTs(data[k]))>GC_HORIZON_MS){dropped++;return}
+    out[k]=data[k];
+  });
+  return{data:out,dropped};
+}
+
 // GitHub API headers. Bearer auth with explicit Accept and version header per
 // the modern GitHub recommendation. The token is a personal access token with
 // `gist` scope; it lives only in this user's localStorage and is sent over HTTPS.
