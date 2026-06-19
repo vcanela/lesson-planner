@@ -1601,6 +1601,14 @@ function ClassView({onDet,g}){
   const nxtI=lessons.findIndex(l=>{const ld=new Date(l.date);ld.setHours(0,0,0,0);return ld>=today});
   const clr=eng.classMap[sel]||{bg:"var(--nc-bg)",tx:"var(--nc-text)",desc:""};
   const[qeMode,setQeMode]=useState("quick");
+  // coarse = touch/stylus pointer. On such devices we skip autoFocus when opening
+  // a lesson so a glance doesn't pop the keyboard and resize the screen (#3).
+  const coarse=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(pointer: coarse)").matches;
+  // Floating Today / back-to-top controls for long lesson lists.
+  const todayRef=useRef(null);
+  const[showFab,setShowFab]=useState(false);
+  useEffect(()=>{const on=()=>setShowFab(window.scrollY>150);window.addEventListener("scroll",on,{passive:true});on();return()=>window.removeEventListener("scroll",on)},[]);
+  const goToday=()=>{if(todayRef.current)todayRef.current.scrollIntoView({behavior:"smooth",block:"center"});else window.scrollTo({top:document.body.scrollHeight,behavior:"smooth"})};
   const oQE=(i,l)=>{setQV(l.notes.subject||"");setQE({i,dk:l.dk,pid:l.pid,date:l.date});setNlConfirm(false);setQeMode("quick")};
   // sQE saves the typed input. It preserves the existing status (so editing the
   // reason of a no-lesson period does not silently downgrade it back to a topic).
@@ -1659,7 +1667,7 @@ function ClassView({onDet,g}){
     <div className="card" style={{overflow:"hidden"}}>{lessons.map((l,i)=>{const ld=new Date(l.date);ld.setHours(0,0,0,0);const isT=ld.toDateString()===today.toDateString(),isPast=ld<today,isNl=l.notes.status==="nl",empty=!l.notes.subject&&!l.notes.notes&&!isNl,fl=hasF(l.notes.notes)||hasF(l.notes.subject),isN=i===nxtI&&!isT,per=bldP(isAsmDay(l.cd,{timetable:eng.timetable})).find(p=>p.id===l.pid),isEd=qe&&qe.i===i;
       return<React.Fragment key={i}>
         {(()=>{const wkDays=getWDs(l.date);const tw=eng.termWkN(wkDays);const prevL=lessons[i-1];const ptw=prevL?eng.termWkN(getWDs(prevL.date)):null;const show=tw&&(!ptw||ptw.wk!==tw.wk||ptw.tn!==tw.tn);return show?<div style={{padding:"6px 12px",background:"var(--surface)",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:6}}><span className="hd" style={{fontSize:".74rem",fontWeight:600,color:"var(--accent)"}}>Week {tw.wk}</span><span style={{fontSize:".62rem",color:"var(--text-muted)"}}>Term {tw.tn}</span></div>:null})()}
-        <div className={`cv${empty?" empty":""}`} onMouseDown={()=>{qeAtMouseDownRef.current=qe}} onClick={()=>{const wasOpen=qeAtMouseDownRef.current;qeAtMouseDownRef.current=null;if(wasOpen&&wasOpen.i===i){setQE(null)}else{oQE(i,l)}}} style={{background:isT?"var(--today-bg)":isN?"var(--surface-open)":"transparent",borderLeft:isT?"3px solid var(--today-border)":isN?"3px solid var(--accent)":"3px solid transparent"}}>
+        <div ref={i===nxtI?todayRef:undefined} className={`cv${empty?" empty":""}`} onMouseDown={()=>{qeAtMouseDownRef.current=qe}} onClick={()=>{const wasOpen=qeAtMouseDownRef.current;qeAtMouseDownRef.current=null;if(wasOpen&&wasOpen.i===i){setQE(null)}else{oQE(i,l)}}} style={{background:isT?"var(--today-bg)":isN?"var(--surface-open)":"transparent",borderLeft:isT?"3px solid var(--today-border)":isN?"3px solid var(--accent)":"3px solid transparent"}}>
           <div style={{minWidth:40,textAlign:"center",flexShrink:0}}><div className="hd" style={{fontSize:".85rem",fontWeight:700,color:isPast&&!isT?"var(--text-muted)":"var(--text)"}}>{l.date.getDate()}</div><div style={{fontSize:".57rem",color:"var(--text-muted)"}}>{l.date.toLocaleDateString("en-NZ",{month:"short"})}</div></div>
           <div style={{flex:1,minWidth:0}}><div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}><span className="mn" style={{fontSize:".63rem",color:"var(--text-secondary)",fontWeight:600}}>{l.date.toLocaleDateString("en-NZ",{weekday:"short"})} {"\u00B7"} {per&&per.label} {"\u00B7"} D{l.cd}</span><span className="mn" style={{fontSize:".56rem",color:"var(--text-muted)"}}>{per&&(per.start+"\u2013"+per.end)}</span>{isT&&<span style={{fontSize:".55rem",background:"var(--today-border)",color:"var(--on-accent)",padding:"1px 5px",borderRadius:3,fontWeight:700}}>TODAY</span>}{isN&&<span style={{fontSize:".55rem",background:"var(--accent)",color:"var(--on-accent)",padding:"1px 5px",borderRadius:3,fontWeight:700}}>NEXT</span>}</div>{empty?<div style={{fontSize:".72rem",color:"var(--text-muted)",fontStyle:"italic"}}>{isPast?"No notes":"Click to plan"}</div>:isNl?<div style={{fontSize:".72rem",color:"var(--text-muted)",fontStyle:"italic"}}>{l.notes.subject?"No lesson \u2014 "+l.notes.subject:"No lesson"}</div>:<div><div style={{fontSize:".78rem",color:"var(--text)",fontWeight:600}}>{l.notes.subject||"(no topic)"}</div>{l.notes.notes&&<div style={{fontSize:".67rem",color:"var(--text-secondary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginTop:1}}>{l.notes.notes}</div>}</div>}</div>
           <div style={{flexShrink:0,display:"flex",alignItems:"center",gap:4}}>{fl&&<span style={{color:"var(--flag)",fontSize:".72rem"}}>{"\u2691"}</span>}<span className="mn" style={{fontSize:".56rem",color:"var(--text-muted)"}}>#{i+1}</span></div></div>
@@ -1691,7 +1699,7 @@ function ClassView({onDet,g}){
             </div>
           </div>:<>
             <div style={{display:"flex",gap:6,alignItems:"center"}}>
-              <input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null)}} onBlur={sQE} autoFocus placeholder={lessons[qe.i]?.notes?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/>
+              <input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null)}} onBlur={sQE} autoFocus={!coarse} placeholder={lessons[qe.i]?.notes?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/>
               <button onMouseDown={e=>{e.preventDefault();askNL()}} style={{background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-sm)",color:"var(--text-secondary)",cursor:"pointer",fontSize:".68rem",padding:"6px 10px",whiteSpace:"nowrap",flexShrink:0}}>No lesson</button>
             </div>
             {nlConfirm&&<div style={{display:"flex",alignItems:"center",gap:6,fontSize:".66rem",color:"var(--flag)",marginTop:6,padding:"4px 0"}}>
@@ -1702,7 +1710,12 @@ function ClassView({onDet,g}){
             {(l.notes.subject||l.notes.notes||l.notes.resources)&&l.notes.status!=="nl"&&<button onMouseDown={e=>{e.preventDefault();const k=`note:${qe.dk}:${qe.pid}`,ex=sGet(k)||eN();if(qv!==(ex.subject||""))writeRecord(k,{...ex,subject:qv,status:ex.status||""});setShiftReason("");setShiftConfirm(true)}} style={{background:"none",border:"none",color:"var(--accent)",cursor:"pointer",fontSize:".66rem",padding:"2px 0",textAlign:"left",fontFamily:"inherit"}}>{"\u2913"} Lesson bumped? Push the rest forward</button>}
           </>):<DetailedNoteEditor dateKey={l.dk} pid={l.pid} onSave={()=>{setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()}}/>}
         </div>}
-      </React.Fragment>})}</div></div>;
+      </React.Fragment>})}</div>
+    {lessons.length>0&&<div className="np" style={{position:"fixed",bottom:24,right:24,zIndex:100,display:"flex",flexDirection:"column",gap:8,alignItems:"flex-end"}}>
+      {showFab&&<button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} title="Back to top" aria-label="Back to top" style={{width:44,height:44,borderRadius:"50%",background:"var(--surface)",color:"var(--text)",border:"1px solid var(--border-strong)",cursor:"pointer",fontSize:"1.2rem",fontWeight:700,boxShadow:"0 4px 12px rgba(0,0,0,.18)",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>{"↑"}</button>}
+      <button onClick={goToday} title="Centre on today" aria-label="Centre on today" style={{background:"var(--accent)",color:"var(--on-accent,#fff)",border:"none",cursor:"pointer",borderRadius:22,padding:"9px 16px",fontSize:".78rem",fontWeight:700,boxShadow:"0 4px 12px rgba(0,0,0,.2)",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6,lineHeight:1}}>{"◉"} Today</button>
+    </div>}
+  </div>;
 }
 
 /* ═══ THEMED WEEKLY VISUAL ═══════════════════════════════════════════════ */

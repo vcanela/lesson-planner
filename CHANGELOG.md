@@ -6,6 +6,16 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.7.1 — 2026-05-27
+
+### Features
+- **Class View: floating Today and back-to-top controls.** A long lesson list late in the term meant scrolling far to reach today, and scrolling all the way back up to change class. A bottom-right "◉ Today" button now centres the list on today's (or the next) lesson, with previous and upcoming lessons visible around it. A back-to-top "↑" button appears once you have scrolled down, jumping straight back to the class chips.
+
+### Fixes
+- **Class View no longer pops the keyboard when you tap a lesson to glance (touch devices).** Opening a lesson auto-focused the topic input, which on a phone or tablet immediately raised the on-screen keyboard and resized the viewport; switching to Detailed then dismissed it, causing a visible jump. On coarse-pointer (touch) devices the quick input no longer auto-focuses, so tapping a lesson just opens it for viewing; tap the field when you actually want to type. Desktop keeps auto-focus. Day View was unaffected and is unchanged.
+
+---
+
 ## 2.7.0 — 2026-05-27
 
 ### Features
