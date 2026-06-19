@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.7.2 — 2026-05-27
+
+### Fixes
+- **Week View quick-edit no longer pops the keyboard on touch either.** Extends the v2.7.1 fix: on coarse-pointer (touch) devices, clicking a class cell in Week View opens the quick editor without auto-focusing the input, so it no longer raises the on-screen keyboard and resizes the screen on a glance. Desktop keeps auto-focus. Week View and Class View now behave consistently.
+
+---
+
 ## 2.7.1 — 2026-05-27
 
 ### Features
