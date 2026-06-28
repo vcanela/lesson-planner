@@ -539,7 +539,13 @@ a:hover{text-decoration:underline}
   <li><strong>Empty</strong>: nothing scheduled</li>
 </ul>
 <p><strong>Cycle defaults</strong> live in Setup. <strong>Per-date changes</strong> happen in Day View or Week View by clicking the row or cell, picking a value, and hitting <em>Save today</em>. An orange dot marks any row whose value differs from the cycle default. To revert, edit the row and re-pick the cycle-default value.</p>
-<p>The <strong>full-school-assembly bell schedule</strong> is automatic: whichever cycle day has FSA on it picks up the shifted P1/P2/P3/P4 times. No separate toggle.</p>
+<p>The <strong>assembly bell schedule</strong> (the shifted P1/P2/P3/P4 times) is handled by the <strong>Bell times</strong> control at the top of Day View, with three settings:</p>
+<ul>
+  <li><strong>Auto</strong> (default): the day uses the assembly bell times whenever it actually has a Full School Assembly, and standard times otherwise. This follows the FSA even when you move it: if you shift the FSA off its usual cycle day to another day for one week (by changing the morning-structure value on those dates), the bell times move with it automatically, both ways.</li>
+  <li><strong>Standard</strong>: force normal bell times for this day, even if there is an FSA.</li>
+  <li><strong>Assembly</strong>: force the shifted bell times for this day, even if there is no FSA (for example, an extended morning tea that runs the assembly-day schedule).</li>
+</ul>
+<p>Standard and Assembly are per-day overrides marked in orange; Auto is the everyday case and needs no thought.</p>
 
 <h2>Reflections</h2>
 <p>At the bottom of Day View there's an expandable <strong>Reflections</strong> panel, a space for end-of-day thoughts about what went well and what you'd change. Reflections are optional, but they reward the habit. If you use them:</p>
@@ -938,6 +944,16 @@ a:hover{text-decoration:underline}
 <div class="section" id="whats-new">
 <h1>What's New</h1>
 <p class="section-intro">Recent updates to the planner.</p>
+
+<h2>27 May 2026, v2.8</h2>
+<ul>
+  <li><strong>Per-day bell times.</strong> Day View now has a Bell times control (Auto / Standard / Assembly). Auto follows the Full School Assembly automatically, so if you move an FSA to a different day for a week, the shifted bell times move with it. You can also force Standard or Assembly for a single day, for the odd case of an FSA with normal times or an extended morning tea that runs the assembly schedule.</li>
+</ul>
+
+<h2>27 May 2026, v2.7.2</h2>
+<ul>
+  <li><strong>No keyboard jump in Week View either.</strong> The same touch fix as Class View: tapping a class cell in Week View to glance no longer pops the on-screen keyboard and resizes the screen.</li>
+</ul>
 
 <h2>27 May 2026, v2.7.1</h2>
 <ul>

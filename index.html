@@ -426,6 +426,19 @@ function resolveSlot(slotCode,cycleDay,date,cfg,daymeta){
   }
   return{value:cyc,isOverride:false,clash:false};
 }
+// asmBellsForDate: whether the shifted ("assembly") bell schedule applies on a
+// date. A per-date override (daymeta.bells = "asm" | "std") wins. Otherwise it
+// auto-derives from the RESOLVED morning structure: a Full School Assembly on the
+// day (including per-date moves via overrides), not just the cycle default. So
+// the bells follow the FSA when it's moved, while the shift can still be set or
+// cleared independently (e.g. an extended morning tea with no FSA, or an FSA that
+// keeps normal times). daymeta is read from storage if not supplied.
+function asmBellsForDate(cycleDay,date,cfg,daymeta){
+  const dm=daymeta||(date?sGet(`daymeta:${dk(date)}`):null);
+  if(dm){if(dm.bells==="asm")return true;if(dm.bells==="std")return false;}
+  const isFsa=v=>!!(v&&v.t==="b1"&&v.c==="fsa");
+  return isFsa(resolveSlot("B1a",cycleDay,date,cfg,dm).value)||isFsa(resolveSlot("B1b",cycleDay,date,cfg,dm).value);
+}
 // forceShow: optional Set of B-slot codes (e.g. "B0", "B3") to render as a gap row
 // even when their resolved value is null. Used by DayView to let teachers add an
 // ad-hoc edge event on a single date without making B0/B3 always-visible globally.
@@ -433,7 +446,7 @@ function resolveSlot(slotCode,cycleDay,date,cfg,daymeta){
 // have been typed for that slot+date even though no value was committed. Lets
 // teachers persist a slot just by writing notes, without clicking Activity first.
 function buildSlots(cycleDay,daymeta,cfg,date,forceShow,hasSlotNote){
-  const useAsm=isAsmDay(cycleDay,cfg);
+  const useAsm=asmBellsForDate(cycleDay,date,cfg,daymeta);
   const T=useAsm?ASM_T:STD_T;
   const Tb=useAsm?BSLOT_T_ASM:BSLOT_T_STD;
   const isForced=code=>forceShow&&forceShow.has&&forceShow.has(code);
@@ -1260,7 +1273,11 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
     <div className="np" style={{display:"flex",alignItems:"center",gap:7,marginBottom:14,flexWrap:"wrap"}}><Btn onClick={onBack}>{"\u2190"} Back</Btn><Btn onClick={()=>prev&&setDate(prev)} disabled={!prev}>{"\u2039"} Prev</Btn><Btn onClick={()=>next&&setDate(next)} disabled={!next}>Next {"\u203A"}</Btn><Btn onClick={()=>todayTarget&&setDate(todayTarget)} disabled={!todayTarget}>Today</Btn><div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}><SvH ss={ss}/><Btn onClick={()=>window.print()}>{"\u{1F5A8}"} Print</Btn></div></div>
     {!sch?<div style={{color:"var(--text-secondary)",padding:30,textAlign:"center",fontSize:".88rem"}}>No classes scheduled.</div>
     :isZ?<div className="card" style={{padding:18,marginBottom:14,borderColor:"var(--dz-border)",background:"var(--dz-bg)"}}><div className="hd" style={{fontSize:".85rem",color:"var(--dz-text)",fontWeight:600,marginBottom:12}}>Day 0 {"\u2014"} No class structure</div>{meta&&<div style={{display:"grid",gap:10}} onFocus={hFoc} onBlur={hBlr}><div><label className="fl">Label / Activity <SvH ss={ss}/></label><AInp data={meta} field="day0label" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="e.g. Orientation, EOTC"/></div><div><label className="flb">Notes</label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Notes" multi rows={3}/></div></div>}</div>
-    :<>{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH ss={ss}/></label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Meetings, reminders, duty" multi rows={2}/></div>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>
+    :<>{meta&&<div className="np" style={{display:"flex",alignItems:"center",gap:6,marginBottom:12,flexWrap:"wrap"}}>
+      <span style={{fontSize:".7rem",color:"var(--text-secondary)"}}>Bell times</span>
+      {[["auto","Auto"],["std","Standard"],["asm","Assembly"]].map(([v,lbl])=>{const cur=(meta.bells==="asm"||meta.bells==="std")?meta.bells:"auto";const active=cur===v;return<button key={v} onClick={()=>{updateField("bells",v);setTimeout(save,0)}} style={{padding:"3px 10px",borderRadius:"var(--radius-sm)",border:active?"none":"1px solid var(--border)",cursor:"pointer",fontSize:".68rem",fontWeight:active?700:400,background:active?"var(--accent)":"var(--surface)",color:active?"var(--on-accent)":"var(--text-secondary)",fontFamily:"inherit"}}>{lbl}</button>})}
+      {(()=>{const cfgR={timetable:eng.timetableForDate(date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]};const overridden=meta.bells==="asm"||meta.bells==="std";const autoAsm=asmBellsForDate(cd,date,cfgR,{...meta,bells:"auto"});const eff=overridden?meta.bells==="asm":autoAsm;return<span style={{fontSize:".63rem",color:overridden?"var(--flag)":"var(--text-muted)"}}>{overridden?`${eff?"Assembly":"Standard"} (manual)`:autoAsm?"Assembly today (FSA)":"Standard"}</span>})()}
+    </div>}{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH ss={ss}/></label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Meetings, reminders, duty" multi rows={2}/></div>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>
   {!hasB0&&<div style={{padding:"6px 12px",borderBottom:"1px solid var(--border)"}}><button onClick={()=>setForceShow(s=>({...s,B0:true}))} style={{background:"none",border:"1px dashed var(--border-strong)",borderRadius:4,padding:"3px 10px",fontSize:".66rem",color:"var(--text-muted)",cursor:"pointer",fontFamily:"inherit"}}>+ Before school</button></div>}
   {slots.map(s=>{
     if(s.type==="period")return<PCard key={`${dateKey}-${s.id}`} period={s} dateKey={dateKey} cDay={cd} date={date} initOpen={fp===s.id}/>;
@@ -1319,7 +1336,7 @@ function buildWkTxt(style,days,wl,wkLabel,sum,mc,eng,wNotes,cfg){
   // Render one B-slot line; suppress entirely if value is null AND no notes.
   const bSlotLine=(code,d,cd,key,meta)=>{
     const tt=eng.timetableForDate(d);
-    const asm=isAsmDay(cd,{timetable:tt});
+    const asm=asmBellsForDate(cd,d,{timetable:tt,weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta);
     const r=resolveSlot(code,cd,d,{timetable:tt,weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta);
     const note=sGet(`note:${key}:${code}`);
     const hasNote=!!(note&&(note.subject||note.notes||note.status==="nl"));
@@ -1350,7 +1367,7 @@ function buildWkTxt(style,days,wl,wkLabel,sum,mc,eng,wNotes,cfg){
     const pLine=pi=>{
       const pid="P"+(pi+1);
       const cls=eng.classAt(d,cd,pid);const n=wNotes[`${key}:${pid}`];
-      const per=bldP(isAsmDay(cd,{timetable:eng.timetableForDate(d)})).find(p=>p.id===pid);
+      const per=bldP(asmBellsForDate(cd,d,{timetable:eng.timetableForDate(d),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta)).find(p=>p.id===pid);
       const lbl=`P${pi+1} (${per?per.start+"\u2013"+per.end:""})`;
       const nlTag=n&&n.status==="nl"?" \u2014 No lesson":"";
       if(cls==="nc"){
@@ -1500,7 +1517,7 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
   },[days,today,mc,wNotes,eng,duties,g]);
 
   const flags=useMemo(()=>{const fl=[];days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;const key=dk(d);eng.PIDS.forEach(pid=>{const n=wNotes[`${key}:${pid}`];if(n&&(hasF(n.notes)||hasF(n.subject))){const cls=eng.classAt(d,cd,pid);fl.push({date:d,pid,cls,subject:n.subject||"",notes:n.notes||""})}})});return fl},[days,wNotes]);
-  const spotHits=useMemo(()=>{if(!spot)return[];const h=[];days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{if(eng.classAt(d,cd,pid)===spot){const per=bldP(isAsmDay(cd,{timetable:eng.timetableForDate(d)})).find(p=>p.id===pid);h.push({d,per,cd})}})});return h},[spot,days]);
+  const spotHits=useMemo(()=>{if(!spot)return[];const h=[];days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{if(eng.classAt(d,cd,pid)===spot){const per=bldP(asmBellsForDate(cd,d,{timetable:eng.timetableForDate(d),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]})).find(p=>p.id===pid);h.push({d,per,cd})}})});return h},[spot,days]);
 
   return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
     <div className="np" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10,marginTop:10,flexWrap:"wrap"}}><div style={{display:"flex",alignItems:"center",gap:7}}><Btn onClick={()=>setBase(d=>addD(d,-7))} style={{padding:"4px 10px"}}>{"\u2039"}</Btn><div style={{textAlign:"center",width:"190px",flexShrink:0}}><div style={{fontSize:".8rem",color:"var(--text-secondary)"}}>{wl}</div><div className="hd" style={{fontSize:".7rem",color:"var(--accent)",fontWeight:600}}>{wkLabel}</div></div><Btn onClick={()=>setBase(d=>addD(d,7))} style={{padding:"4px 10px"}}>{"\u203A"}</Btn></div><Btn onClick={()=>setBase(getPlanMon(today))} style={{padding:"4px 10px",fontSize:".72rem"}}>Today</Btn></div>
@@ -1667,7 +1684,7 @@ function ClassView({onDet,g}){
     <div style={{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"}}><button onClick={()=>setTermIdx(-1)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:".76rem",fontWeight:termIdx===-1?600:400,background:termIdx===-1?"var(--accent)":"var(--surface)",color:termIdx===-1?"var(--on-accent)":"var(--text-secondary)"}}>All terms</button>{eng.terms.map((t,i)=><button key={i} onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:".76rem",fontWeight:termIdx===i?600:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div>
     <div style={{marginBottom:14}}><div className="hd" style={{fontSize:"1.1rem",fontWeight:600,color:clr.tx}}><span style={{background:clr.bg,padding:"2px 10px",borderRadius:5}}>{sel}</span></div>{clr.desc&&<div style={{fontSize:".75rem",color:"var(--text-secondary)",marginTop:4}}>{clr.desc}</div>}<div style={{fontSize:".73rem",color:"var(--text-secondary)",marginTop:4}}>{lessons.length} lessons {"\u00B7"} <strong className="mn" style={{color:planned===lessons.length?"var(--success)":"var(--text)"}}>{planned} planned</strong> {"\u00B7"} {lessons.length-planned} empty{flagged>0&&<span style={{color:"var(--flag)",marginLeft:6}}>{"\u2691"} {flagged}</span>}</div></div>
     {shiftMsg&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 12px",marginBottom:10,borderRadius:"var(--radius-sm)",background:"var(--surface)",border:`1px solid ${shiftMsg.err?"var(--error)":"var(--border)"}`,fontSize:".72rem",color:shiftMsg.err?"var(--error)":"var(--text-secondary)"}}><span style={{flex:1,minWidth:120}}>{shiftMsg.text}</span>{shiftUndo&&!shiftMsg.err&&<button onClick={undoShift} style={{background:"var(--accent)",color:"var(--on-accent)",border:"none",borderRadius:"var(--radius-sm)",padding:"3px 12px",fontSize:".68rem",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Undo</button>}<button onClick={()=>{setShiftMsg(null);setShiftUndo(null)}} style={{background:"none",border:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:".85rem"}}>{"✕"}</button></div>}
-    <div className="card" style={{overflow:"hidden"}}>{lessons.map((l,i)=>{const ld=new Date(l.date);ld.setHours(0,0,0,0);const isT=ld.toDateString()===today.toDateString(),isPast=ld<today,isNl=l.notes.status==="nl",empty=!l.notes.subject&&!l.notes.notes&&!isNl,fl=hasF(l.notes.notes)||hasF(l.notes.subject),isN=i===nxtI&&!isT,per=bldP(isAsmDay(l.cd,{timetable:eng.timetable})).find(p=>p.id===l.pid),isEd=qe&&qe.i===i;
+    <div className="card" style={{overflow:"hidden"}}>{lessons.map((l,i)=>{const ld=new Date(l.date);ld.setHours(0,0,0,0);const isT=ld.toDateString()===today.toDateString(),isPast=ld<today,isNl=l.notes.status==="nl",empty=!l.notes.subject&&!l.notes.notes&&!isNl,fl=hasF(l.notes.notes)||hasF(l.notes.subject),isN=i===nxtI&&!isT,per=bldP(asmBellsForDate(l.cd,l.date,{timetable:eng.timetableForDate(l.date),weeklyEvents:[]})).find(p=>p.id===l.pid),isEd=qe&&qe.i===i;
       return<React.Fragment key={i}>
         {(()=>{const wkDays=getWDs(l.date);const tw=eng.termWkN(wkDays);const prevL=lessons[i-1];const ptw=prevL?eng.termWkN(getWDs(prevL.date)):null;const show=tw&&(!ptw||ptw.wk!==tw.wk||ptw.tn!==tw.tn);return show?<div style={{padding:"6px 12px",background:"var(--surface)",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:6}}><span className="hd" style={{fontSize:".74rem",fontWeight:600,color:"var(--accent)"}}>Week {tw.wk}</span><span style={{fontSize:".62rem",color:"var(--text-muted)"}}>Term {tw.tn}</span></div>:null})()}
         <div ref={i===nxtI?todayRef:undefined} className={`cv${empty?" empty":""}`} onMouseDown={()=>{qeAtMouseDownRef.current=qe}} onClick={()=>{const wasOpen=qeAtMouseDownRef.current;qeAtMouseDownRef.current=null;if(wasOpen&&wasOpen.i===i){setQE(null)}else{oQE(i,l)}}} style={{background:isT?"var(--today-bg)":isN?"var(--surface-open)":"transparent",borderLeft:isT?"3px solid var(--today-border)":isN?"3px solid var(--accent)":"3px solid transparent"}}>

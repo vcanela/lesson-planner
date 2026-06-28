@@ -6,6 +6,19 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.8.0 — 2026-05-27
+
+### Features
+- **Per-day bell schedule control (Bell times: Auto / Standard / Assembly).** The assembly bell schedule (shifted P1-P4 times) was derived solely from which cycle day carried the FSA, so moving an FSA to a different day for one week left the old day on assembly bells and the new day on standard. Day View now has a Bell times control:
+  - **Auto** (default) derives from the *resolved* morning structure for that date, FSA overrides included, so moving the FSA moves the bell schedule with it automatically (both ways).
+  - **Standard** / **Assembly** are explicit per-day overrides for the exceptions (an FSA that keeps normal times, or the shifted schedule with no FSA, e.g. an extended morning tea), marked in orange like other per-date overrides.
+- The corrected schedule flows through Day View, Class View, Week View's class spotlight, and the plain-text week export.
+
+### Implementation
+- New `asmBellsForDate(cycleDay, date, cfg, daymeta)` resolver: per-date override (`daymeta.bells`) wins, else auto-derives FSA from `resolveSlot` (overrides + weekly + cycle). Replaces the cycle-only `isAsmDay` at every render/export call site (Setup's cycle-grid indicator still uses `isAsmDay`, as it describes the cycle default). Stored in `daymeta.bells`, so it rides the per-record sync merge. Verified end-to-end in preview: FSA moved off a Day 2 reverts Auto to standard bells; moved onto a Day 5 gives assembly bells; manual Standard/Assembly override both directions; times update live and persist.
+
+---
+
 ## 2.7.2 — 2026-05-27
 
 ### Fixes
