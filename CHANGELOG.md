@@ -6,6 +6,17 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.11.1 — 2026-07-12
+
+### Fixes
+- **No more zoom-on-focus when tapping a field on iPhone/iPad.** Safari zooms the page whenever a focused input's font size is below 16px, which made tapping a topic field or timetable cell jump the layout. On touch (coarse-pointer) devices every text control is now floored at 16px, so focusing a field no longer zooms. Desktop is unchanged.
+
+### Implementation
+- One rule: `@media (pointer:coarse){.inp,.ta,.bs-popup-input,.tt-grid select,.tt-grid input{font-size:16px!important}}`. The `!important` is deliberate and load-bearing: a handful of inputs (the class editor, weekly-activity rows, global search, and the timetable class combo) set their desktop size via an inline `fontSize`, which would otherwise beat a stylesheet rule. Those inputs all carry `.inp`, so the shared class list covers them with no per-input logic and no JSX changes. Fine-pointer (desktop) devices never match the query.
+- Verified in preview: on a fine pointer the rule does not apply (inputs keep 12.48/11.52px, unchanged); the CSSOM confirms the media condition and `font-size:16px !important`; and a probe proved `!important` overrides an inline `fontSize` (a `.inp` with inline `.72rem` computes to 16px under the rule). The on-device no-zoom check is manual.
+
+---
+
 ## 2.11.0 — 2026-07-11
 
 ### Features
