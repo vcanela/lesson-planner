@@ -6,6 +6,17 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.10.0 — 2026-07-11
+
+### Implementation
+- **Unified type scale.** Replaced ~40 distinct ad-hoc font sizes (304 occurrences: 262 inline `fontSize`, 42 CSS `font-size`) with a 7-step scale exposed as CSS variables in `:root`: `--fs-nano:.62rem`, `--fs-micro:.68rem`, `--fs-caption:.72rem`, `--fs-body:.78rem`, `--fs-emph:.9rem`, `--fs-title:1.1rem`, `--fs-display:1.35rem`. The scale is theme-independent, so the dark and high-contrast blocks do not override it.
+- **Mapping.** Every literal was mapped to its nearest step, rounding up whenever below `.62rem` (so the old `.48`–`.61rem` cluster of week-cell chips and grid sublabels floors at `--fs-nano`) and rounding up on exact ties. Net effect is a slight, consistent increase in the smallest text toward readability. Distribution after mapping: nano 75, micro 69, caption 76, body 47, emph 15, title 17, display 5.
+- **Scope.** This pass changed font sizes only — no spacing, colour, or layout edits (verified by a word-diff showing every changed token is a `rem` literal becoming a `var(--fs-*)` reference). Any resulting size misfits are deferred to the width-changing pass.
+- **Note:** the four values above the scale's top step (`2.2`, `1.5`, `1.4`, `1.3rem`) collapse to `--fs-display` (`1.35rem`); the most visible is the large glyph in the Lab view's "This Week" panel, which shrinks from `2.2rem`.
+- Verified in preview across all six views in light and dark: no overflow or clipped labels, including the two risk spots (the Setup timetable grid and Week View cells); all CSS variables resolve; `tests.html` still all green (the pure core was untouched).
+
+---
+
 ## 2.9.1 — 2026-07-11
 
 ### Implementation
