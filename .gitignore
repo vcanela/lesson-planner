@@ -1,0 +1,18 @@
+# Personal data — the repo intentionally tracks no JSON (backups, exports, imports)
+*.json
+
+# Working notes and handoffs kept locally, not published
+*.org
+handoff-*
+
+# Superseded mockups and old standalone builds
+mockup-*.html
+lesson-planner.html
+planner-guide.html
+
+# Local archive and screenshots
+_archive/
+screenshots visuals/
+
+# macOS cruft
+.DS_Store
