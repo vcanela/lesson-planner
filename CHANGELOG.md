@@ -6,6 +6,19 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.11.0 — 2026-07-11
+
+### Features
+- **Per-view content width.** The app used one fixed 720px column for every view, wasting most of a wide laptop screen on the dense grids. The centred wrapper now sizes to the view: Week 1080px, Term and Setup 1000px, Lab 900px, Class 800px, Day 760px. Reading and editing views stay narrow for comfortable line length; the grid views get room to breathe.
+- **Week View breathes on wide screens.** At ≥900px viewport the Week grid's chip text steps up one size (nano to micro) and the column gap widens slightly, using the extra width. Below 900px this is inert.
+
+### Implementation
+- New `VIEW_WIDTHS` map keyed by the `view` state, applied to the wrapper's `maxWidth` (falls back to 720). The wide-screen Week bump is a single `@media (min-width:900px){.wk-grid{--fs-nano:var(--fs-micro);column-gap:10px}}` rule — redefining the Session 4 variable scoped to `.wk-grid` reaches the cells' inline `fontSize:var(--fs-nano)` styles through the custom-property cascade, so no per-cell edits were needed.
+- **Phones and tablets are unchanged.** Every `VIEW_WIDTHS` value exceeds a sub-800px viewport, so the wrapper is constrained by the screen exactly as the old 720px was, and the `min-width:900px` rule never fires. Verified at 375px: wrapper client width 343px (= viewport − padding), `--fs-nano` still `.62rem`, column gap still `6px` — pixel-identical to before.
+- Verified all six views at 1400px (Week fills 1080px with no clipping; Setup timetable grid 962px wide, no horizontal scroll; Day 760px) and at 375px (Week grid unchanged); no console errors; `tests.html` all 50 green.
+
+---
+
 ## 2.10.0 — 2026-07-11
 
 ### Implementation

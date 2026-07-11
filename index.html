@@ -153,6 +153,10 @@ textarea,input,button,select{font-family:'Inter',system-ui,sans-serif}
 .fw{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-family:'JetBrains Mono',monospace;font-size:var(--fs-nano)}
 .wk-grid{display:grid;gap:3px 6px;align-items:stretch}
 .wk-grid>div{min-width:0;overflow:hidden}
+/* On a wide screen the Week grid has room to breathe: bump its chip text one step
+   (nano->micro, redefining the variable scoped to the grid so it reaches the inline
+   styles too) and widen the column gap slightly. Below 900px nothing changes. */
+@media (min-width:900px){.wk-grid{--fs-nano:var(--fs-micro);column-gap:10px}}
 .date-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
 .date-row .inp{max-width:160px}
 .tt-grid{display:grid;gap:4px;font-size:var(--fs-caption)}
@@ -561,7 +565,7 @@ const SCHEMA_VERSION=2;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="2.10.0";
+const APP_VERSION="2.11.0";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -2330,6 +2334,11 @@ function SearchOverlay({eng,onGo,onClose}){
   </div>;
 }
 
+// VIEW_WIDTHS: per-view max width for the centred content wrapper (v2.11.0). Dense grid
+// views (Week/Term/Setup) get more room on a wide screen; reading/editing views stay
+// narrow for comfortable line length. Below ~800px viewport these are all wider than the
+// screen, so the layout is unchanged on phones/tablets. Falls back to 720 for any view.
+const VIEW_WIDTHS={term:1000,week:1080,day:760,class:800,lab:900,setup:1000};
 // ErrorBoundary: wraps the active view only (NOT the whole app), so a render crash in one
 // view degrades to a recovery card while the header and tabs keep working. React error
 // boundaries must be class components (getDerivedStateFromError / componentDidCatch). The
@@ -2543,7 +2552,7 @@ function App(){
     anchor:{date:"2026-04-02",day:2},timetable:{},classes:[],duties:[],theme:"coffee",exportStyle:"plain",school:"Dio",userName:""};sSet("planner-config",blank);setCfg(blank)}},[cfg]);
   if(!cfg||!eng)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>Loading...</div>;
 
-  return<CfgCtx.Provider value={eng}><div style={{minHeight:"100vh",padding:16}}><div style={{maxWidth:720,margin:"0 auto"}}>
+  return<CfgCtx.Provider value={eng}><div style={{minHeight:"100vh",padding:16}}><div style={{maxWidth:VIEW_WIDTHS[view]||720,margin:"0 auto"}}>
     <div className="np" style={{marginBottom:16,borderBottom:"1px solid var(--border)",paddingBottom:14}}>
       <div style={{marginBottom:10}}>
         <div className="hd" style={{fontSize:"var(--fs-display)",fontWeight:400,color:"var(--accent)",letterSpacing:"-.3px"}}>{"\u{1F4C5}"} {eng.school} Planner</div>
