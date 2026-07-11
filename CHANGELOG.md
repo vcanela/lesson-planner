@@ -6,6 +6,20 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.9.0 — 2026-07-11
+
+### Features
+- **Crash-safe views (error boundary).** If a single view ever throws while rendering, the app no longer goes blank and strand a colleague. A recovery card appears in the view area with a calm message ("Something went wrong displaying this view. Your data is safe on this device."), a **Download Backup** button, and a **Reload** button; the header and tabs keep working, and switching to another tab clears the error. The underlying error message is shown in small muted text for bug reports.
+- **Version footer.** The header now shows `v{APP_VERSION}` with **Guide** and **Changelog** links (both open in a new tab), so anyone can see which version they are running and reach the docs.
+
+### Fixes
+- **Data & Sync no longer shows the full Gist ID.** The connected-state display is truncated to the first 8 characters plus an ellipsis, so a screenshot of the Data panel no longer leaks the readable sync key. Clicking it still copies the full ID (tooltip: "Click to copy full ID").
+
+### Implementation
+- New `APP_VERSION` constant beside `SCHEMA_VERSION` (independent of it; tracks releases). New class-based `ErrorBoundary` (`getDerivedStateFromError` / `componentDidCatch`) wraps only the active view inside `App`, keyed on `view` so a tab switch remounts it and clears the error state; its Download Backup reuses `getAllData` + `doExport`'s blob pattern, which reads from localStorage and so works even when the view component has thrown. Gist ID display uses `gistId.slice(0,8)+"…"` while the copy handler keeps the full value. Verified in preview: temporary throw in a view surfaced the card, backup downloaded, header still navigated, tab-switch cleared it; version line renders in all four display modes (light / dark / light-hc / dark-hc); no console errors after the test throw was removed.
+
+---
+
 ## 2.8.0 — 2026-05-27
 
 ### Features

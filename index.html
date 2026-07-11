@@ -552,6 +552,10 @@ function writeConfig(cfg){return sSet("planner-config",{...cfg,updatedAt:new Dat
 // importAllData refuses payloads whose _meta.version is higher than this constant, so an old
 // client never silently ingests data from a newer planner version.
 const SCHEMA_VERSION=2;
+// APP_VERSION is the human-facing release string shown in the header footer. It tracks the
+// CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
+// stored data shape changes). Bump this on every release.
+const APP_VERSION="2.9.0";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -2225,7 +2229,7 @@ function DataPanel({onClose,onImported,onSync,onSyncConn,onSyncDisc,lastSync,tok
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><span className="hd" style={{fontWeight:600,color:"var(--text)",fontSize:".95rem"}}>{"\u2699\uFE0F"} Data & Sync</span><button onClick={onClose} style={{background:"none",border:"none",color:"var(--text-secondary)",fontSize:"1.2rem",cursor:"pointer"}}>{"\u2715"}</button></div>
     <div style={{fontSize:".72rem",color:"var(--text-secondary)",marginBottom:14,padding:"8px 10px",background:"var(--surface)",borderRadius:"var(--radius-md)"}}><div style={{marginBottom:4,fontWeight:600,color:"var(--text)"}}>Current data</div><span className="mn">{cn}</span> notes {"\u00B7"} <span className="mn">{cm}</span> day settings</div>
     <div style={{marginBottom:16}}><div className="sl" style={{marginBottom:8}}>{"\u2601\uFE0F"} Cloud Sync</div>
-      {connected?<div><div style={{fontSize:".72rem",color:"var(--success)",marginBottom:8,display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",background:"var(--success)"}}/>Connected: <span className="mn" onClick={()=>navigator.clipboard&&navigator.clipboard.writeText(gistId)} style={{fontSize:".6rem",color:"var(--accent)",cursor:"pointer",textDecoration:"underline",wordBreak:"break-all"}}>{gistId}</span></div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}><Btn onClick={doSync}>{"\u2B06"} Push</Btn><Btn onClick={doSync}>{"\u2B07"} Pull</Btn><Btn onClick={doDisc} style={{color:"var(--error)"}}>{"\u2715"} Disconnect</Btn></div>{lastSync&&<div style={{fontSize:".6rem",color:"var(--text-muted)",marginTop:6}}>Last sync: {lastSync}</div>}<div style={{fontSize:".6rem",color:"var(--text-muted)",marginTop:6,lineHeight:1.4}}>Push and Pull both merge with the gist now, so neither loses work.</div></div>
+      {connected?<div><div style={{fontSize:".72rem",color:"var(--success)",marginBottom:8,display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",background:"var(--success)"}}/>Connected: <span className="mn" title="Click to copy full ID" onClick={()=>navigator.clipboard&&navigator.clipboard.writeText(gistId)} style={{fontSize:".6rem",color:"var(--accent)",cursor:"pointer",textDecoration:"underline",wordBreak:"break-all"}}>{gistId.slice(0,8)}{"…"}</span></div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}><Btn onClick={doSync}>{"\u2B06"} Push</Btn><Btn onClick={doSync}>{"\u2B07"} Pull</Btn><Btn onClick={doDisc} style={{color:"var(--error)"}}>{"\u2715"} Disconnect</Btn></div>{lastSync&&<div style={{fontSize:".6rem",color:"var(--text-muted)",marginTop:6}}>Last sync: {lastSync}</div>}<div style={{fontSize:".6rem",color:"var(--text-muted)",marginTop:6,lineHeight:1.4}}>Push and Pull both merge with the gist now, so neither loses work.</div></div>
       :<div><div style={{fontSize:".72rem",color:"var(--text-secondary)",marginBottom:8,lineHeight:1.5}}>Connect to GitHub Gist for cross-device sync. <a href="https://github.com/settings/tokens/new?scopes=gist&description=Lesson+Planner" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Create token {"\u2197"}</a></div><div style={{marginBottom:6}}><label className="fl">Token</label><div style={{display:"flex",gap:4}}><input className="inp" type={showTok?"text":"password"} value={token} onChange={e=>setToken(e.target.value)} placeholder="ghp_xxxx..." style={{fontSize:".72rem",flex:1}}/><Btn onClick={()=>setShowTok(!showTok)} style={{padding:"4px 8px",fontSize:".65rem"}}>{showTok?"\u{1F441}":"\u2022\u2022\u2022"}</Btn></div></div><div style={{marginBottom:8}}><label className="fl">Gist ID <span style={{fontWeight:400,color:"var(--text-muted)"}}>(blank = create new)</span></label><input className="inp" value={gistId} onChange={e=>setGistId(e.target.value)} placeholder="Leave empty for new" style={{fontSize:".72rem"}}/></div><button className="btn-a" onClick={doConn} disabled={!!connPreview}>{"\u{1F517}"} Connect</button>{connPreview&&<div style={{marginTop:10,padding:10,background:"var(--surface)",borderRadius:6,border:"1px solid var(--accent)"}}><div style={{fontSize:".75rem",color:"var(--accent)",fontWeight:600,marginBottom:6}}>Preview: this Gist contains</div><div style={{fontSize:".68rem",color:"var(--text-secondary)",lineHeight:1.6,marginBottom:8}}>School: <strong>{connPreview.remoteSchool}</strong><br/><span className="mn">{connPreview.remoteN}</span> notes {"·"} <span className="mn">{connPreview.remoteM}</span> day settings{connPreview.remoteSynced&&<><br/>Last synced: {new Date(connPreview.remoteSynced).toLocaleString("en-NZ")}</>}</div>{(connPreview.localN+connPreview.localM>0)&&<div style={{fontSize:".66rem",color:"var(--flag)",marginBottom:8,padding:"6px 8px",background:"var(--card)",borderRadius:4,border:"1px solid var(--flag)"}}>{"⚠"} Your local data ({connPreview.localN} notes, {connPreview.localM} day settings) will be replaced on the next pull.</div>}<div style={{display:"flex",gap:6}}><button className="btn-a" onClick={confirmConn} style={{padding:"6px 14px"}}>{"✓"} Use this Gist</button><Btn onClick={cancelConn}>Cancel</Btn></div></div>}</div>}
       {syncMsg&&<div style={{fontSize:".68rem",color:smc,marginTop:8,padding:"4px 8px",background:"var(--surface)",borderRadius:4}}>{syncMsg.text}</div>}</div>
     <div style={{marginBottom:16}}><div className="sl" style={{marginBottom:8}}>Export</div><Btn onClick={doExport}>{"\u{1F4E5}"} Download Backup</Btn></div>
@@ -2317,6 +2321,34 @@ function SearchOverlay({eng,onGo,onClose}){
       </div>
     </div>
   </div>;
+}
+
+// ErrorBoundary: wraps the active view only (NOT the whole app), so a render crash in one
+// view degrades to a recovery card while the header and tabs keep working. React error
+// boundaries must be class components (getDerivedStateFromError / componentDidCatch). The
+// boundary is keyed on `view` in App, so switching tabs remounts it and clears the error.
+class ErrorBoundary extends React.Component{
+  constructor(p){super(p);this.state={err:null}}
+  static getDerivedStateFromError(err){return{err}}
+  componentDidCatch(err,info){console.error("View render crashed:",err,info)}
+  // dl: download a full backup from the crash card, reusing doExport's blob pattern. getAllData
+  // reads straight from localStorage, so it works even though the view component threw.
+  dl(){try{const data=getAllData();const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`planner-backup-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url)}catch(e){console.error("Backup from crash card failed:",e)}}
+  render(){
+    if(this.state.err){
+      const msg=String(this.state.err&&this.state.err.message||this.state.err);
+      return<div className="card" style={{padding:"20px 22px",border:"1px solid var(--error)"}}>
+        <div className="hd" style={{fontSize:"1rem",fontWeight:600,color:"var(--error)",marginBottom:8}}>{"⚠"} Something went wrong displaying this view</div>
+        <div style={{fontSize:".8rem",color:"var(--text-secondary)",lineHeight:1.6,marginBottom:14}}>Your data is safe on this device. You can download a backup and reload; switching to another tab above may also clear this.</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
+          <button className="btn-a" onClick={()=>this.dl()} style={{padding:"6px 14px",fontSize:".8rem"}}>{"\u{1F4E5}"} Download Backup</button>
+          <button className="btn" onClick={()=>window.location.reload()} style={{padding:"6px 14px",fontSize:".8rem"}}>{"↻"} Reload</button>
+        </div>
+        <div className="mn" style={{fontSize:".62rem",color:"var(--text-muted)",wordBreak:"break-word"}}>{msg}</div>
+      </div>;
+    }
+    return this.props.children;
+  }
 }
 
 function App(){
@@ -2509,6 +2541,7 @@ function App(){
       <div style={{marginBottom:10}}>
         <div className="hd" style={{fontSize:"1.35rem",fontWeight:400,color:"var(--accent)",letterSpacing:"-.3px"}}>{"\u{1F4C5}"} {eng.school} Planner</div>
         <div style={{fontSize:".7rem",color:"var(--text-muted)"}}>{cfg.userName&&<span style={{color:"var(--text-secondary)",fontWeight:500}}>{cfg.userName} {"\u00B7"} </span>}{gam.lev.icon} {gam.lev.title}{gam.sk>0&&<span style={{color:"var(--success)",marginLeft:8}}>{"\u{1F525}"} {gam.sk}wk streak</span>}{onWE&&<span style={{color:"var(--accent)",fontStyle:"italic",marginLeft:8}}>Weekend mode</span>}</div>
+        <div style={{fontSize:".62rem",color:"var(--text-muted)",marginTop:3}}>v{APP_VERSION} {"·"} <a href="guide.html" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Guide</a> {"·"} <a href="https://github.com/vcanela/lesson-planner/blob/main/CHANGELOG.md" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Changelog</a></div>
       </div>
       <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:3,background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-md)",padding:3}}>
@@ -2534,12 +2567,14 @@ function App(){
     {(cfg&&(!cfg.classes||cfg.classes.length===0||!cfg.timetable||Object.keys(cfg.timetable).length===0))&&<div className="card" style={{padding:"14px 18px",marginBottom:14,border:"1px solid var(--dz-border)",background:"var(--dz-bg)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:"1.1rem"}}>{"\u{1F44B}"}</span><div style={{flex:1,minWidth:200}}><div className="hd" style={{fontSize:".85rem",fontWeight:600,color:"var(--dz-text)"}}>Welcome! Add your classes and timetable</div><div style={{fontSize:".7rem",color:"var(--dz-text)",opacity:.8}}>Term dates and holidays are already set up. Head to Setup to add your classes and timetable.</div></div><button className="btn-a" onClick={()=>{setView("setup");setGR(r=>r+1)}} style={{padding:"6px 14px",fontSize:".78rem"}}>Go to Setup {"\u2192"}</button></div>}
     {showSearch&&<SearchOverlay eng={eng} onGo={goDay} onClose={()=>setShowSearch(false)}/>}
     {showDP&&<DataPanel onClose={()=>setShowDP(false)} onImported={handleImport} onSync={syncNow} onSyncConn={(tok,gid)=>{setGhToken(tok);setGhGistId(gid);triggerSync()}} onSyncDisc={()=>{setGhToken("");setGhGistId("");clearTimeout(syncTimer.current);setSyncSt("idle");setLastSync(null)}} lastSync={lastSync} token={ghToken} gistId={ghGistId} setToken={setGhToken} setGistId={setGhGistId}/>}
+    <ErrorBoundary key={view}>
     {view==="term"&&<TermView onDay={goDay} onWk={goWk} mc={mc} g={gam} cfg={cfg}/>}
     {view==="week"&&<WeekView base={base} setBase={setBase} onDet={(d,pid)=>goDay(d,pid)} mc={mc} uM={uM} g={gam} onUpdateCfg={onUpdateCfg} cfg={cfg}/>}
     {view==="day"&&detDate&&<DayView date={detDate} setDate={d=>{setDetDate(d);setFP(null);setView("day")}} onBack={()=>{setFP(null);setGR(r=>r+1);setView(prevV==="day"?"week":prevV)}} mc={mc} onMS={onMS} fp={fp} g={gam} onUpdateCfg={onUpdateCfg} cfg={cfg}/>}
     {view==="class"&&<ClassView onDet={(d,pid)=>goDay(d,pid)} g={gam}/>}
     {view==="lab"&&<LabView g={gam}/>}
     {view==="setup"&&<SettingsView onSave={newCfg=>{setCfg(newCfg);setGR(r=>r+1)}} displayMode={dispMode} setDisplayMode={setDispMode}/>}
+    </ErrorBoundary>
   </div></div></CfgCtx.Provider>;
 }
 
