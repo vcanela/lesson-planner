@@ -14,5 +14,10 @@ planner-guide.html
 _archive/
 screenshots visuals/
 
+# Local tooling and working docs, not published
+.claude/
+config-spec.md
+maintenance-plan-2026-07.md
+
 # macOS cruft
 .DS_Store
