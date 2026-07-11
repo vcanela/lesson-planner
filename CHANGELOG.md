@@ -6,6 +6,15 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.9.1 — 2026-07-11
+
+### Implementation
+- **Test harness for the pure data core (`tests.html`).** A standalone, framework-free, build-free page that locks down the functions whose failure would lose other people's data, before later sessions edit around them. It fetches `index.html`, slices the pure-core block delimited by two new marker comments (`//__TEST_CORE_START__` / `//__TEST_CORE_END__`), and evaluates it with a fake in-memory `localStorage`, so the tests exercise the real shipped code without touching real storage and without a build step. The mechanism is deliberately dumb and visible: a plain `new Function` with the block's only eval-time React binding (`createContext`) stubbed, returning the functions under test. A tiny `assert`/`eq` DSL renders a red/green summary at the top.
+- **Coverage (50 assertions):** merge convergence (`pickNewer`/`mergeData` — different records both survive, newer `updatedAt` wins in both argument orders, exact-tie deterministic tiebreak, unstamped legacy loses to any stamped record, `_config` merged by its own timestamp, local-only record preserved); GC and tombstones (`gcEmpties`/`isEmptyRecord` — recent empty survives as a tombstone, old empty dropped, non-empty old kept, `status:"nl"` and non-empty `overrides` count as content); import allowlist and migrations (`importAllData` rejects alien keys and non-object values, refuses a higher schema version with a message, imports valid records, re-keys v1 lowercase period IDs to uppercase; `migrateConfig` upgrades string holidays/dayZeros to objects); and the date engine (`makeDateEngine.cycD`/`isSD` — cycle advances correctly across a weekend, a holiday, and a Day 0, and walks backward across a term boundary from the anchor; `resolveSlot` precedence override > weekly > cycle default with the clash flag set only when a weekly event displaces a non-null default; `asmBellsForDate` manual override and auto-derivation, including an FSA moved onto a day via a per-date override).
+- The only change to `index.html` is the two marker comments (inert; the app boots unchanged) and the `APP_VERSION` bump. Verified in the browser: all 50 green; a deliberately broken expectation turned that row red with a "got/expected" detail, then went green again on restore.
+
+---
+
 ## 2.9.0 — 2026-07-11
 
 ### Features

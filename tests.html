@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lesson Planner — pure-core tests</title>
+<style>
+  body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin:0;padding:24px;background:#12141a;color:#e6e6e6;line-height:1.5}
+  h1{font-size:1.1rem;font-weight:600;margin:0 0 4px}
+  .sub{color:#8b93a1;font-size:.78rem;margin-bottom:16px}
+  #summary{font-size:1rem;font-weight:700;padding:12px 16px;border-radius:8px;margin-bottom:16px}
+  #summary.ok{background:#12351f;color:#5be08a;border:1px solid #2e7d4f}
+  #summary.bad{background:#3a1618;color:#ff6b6b;border:1px solid #a33}
+  .grp{margin:18px 0 6px;font-size:.82rem;font-weight:700;color:#a9b3c2;border-bottom:1px solid #2a2f3a;padding-bottom:4px}
+  .row{display:flex;gap:10px;align-items:baseline;padding:2px 0;font-size:.78rem}
+  .tag{flex-shrink:0;width:44px;font-weight:700}
+  .pass .tag{color:#5be08a}
+  .fail{background:#2a1416}
+  .fail .tag{color:#ff6b6b}
+  .name{flex:1}
+  .detail{color:#8b93a1;font-size:.72rem;white-space:pre-wrap;word-break:break-word}
+</style>
+</head>
+<body>
+<h1>Lesson Planner — pure-core test harness</h1>
+<div class="sub">No framework, no build. Fetches <code>index.html</code>, slices the block between
+<code>//__TEST_CORE_START__</code> and <code>//__TEST_CORE_END__</code>, and evals it with a fake
+in-memory localStorage. Reload to re-run.</div>
+<div id="summary">Running…</div>
+<div id="out"></div>
+
+<script>
+// ── tiny test DSL ────────────────────────────────────────────────────────────
+const results=[];let group="";
+function G(name){group=name;results.push({group:name});}
+function assert(name,cond,detail){results.push({group,name,pass:!!cond,detail:detail||""});}
+function eq(name,got,exp){const p=JSON.stringify(got)===JSON.stringify(exp);
+  assert(name,p,p?"":`got ${JSON.stringify(got)}  expected ${JSON.stringify(exp)}`);}
+
+// ── fake localStorage: data keys are enumerable own props (so Object.keys works
+//    like the real Storage), methods are non-enumerable. ─────────────────────
+function makeLS(){
+  const s={};
+  const def=(k,fn)=>Object.defineProperty(s,k,{value:fn,enumerable:false});
+  def("getItem",function(k){return Object.prototype.hasOwnProperty.call(this,k)?this[k]:null;});
+  def("setItem",function(k,v){this[k]=String(v);});
+  def("removeItem",function(k){delete this[k];});
+  def("clear",function(){Object.keys(this).forEach(k=>delete this[k]);});
+  return s;
+}
+
+// ── date helper for building updatedAt stamps ────────────────────────────────
+const DAY=864e5;
+function isoAgo(days){return new Date(Date.now()-days*DAY).toISOString();}
+
+// ── load + slice + eval the pure core ────────────────────────────────────────
+async function loadCore(ls){
+  const txt=await (await fetch("index.html?cb="+Date.now())).text();
+  const A="//__TEST_CORE_START__",B="//__TEST_CORE_END__";
+  const i=txt.indexOf(A),j=txt.indexOf(B);
+  if(i<0||j<0||j<i)throw new Error("markers not found in index.html");
+  // Start after the END of the START-marker line (the marker line carries a trailing
+  // // comment; slicing at the marker string alone would expose that text as bare code).
+  const s0=txt.indexOf("\n",i)+1;
+  const src=txt.slice(s0,j);
+  // createContext/useContext are the only React bindings the block touches at eval
+  // time (const CfgCtx=createContext(null)); everything else is pure JS + globals.
+  const stub=()=>({});
+  const factory=new Function("localStorage","createContext","useContext",
+    src+"\nreturn {recTs,isEmptyRecord,pickNewer,mergeData,gcEmpties,importAllData,"+
+    "migrateConfig,migrateStorage,makeDateEngine,resolveSlot,asmBellsForDate,"+
+    "NOTE_KEY_RE,META_KEY_RE,GC_HORIZON_MS,dk,sGet,sSet,eN,eM,nM,getAllData};");
+  return factory(ls,stub,stub);
+}
+// fresh isolated core+storage for tests that write to localStorage
+async function freshCore(){const ls=makeLS();const core=await loadCore(ls);return{ls,core};}
+
+// ─────────────────────────────────────────────────────────────────────────────
+async function run(){
+try{
+  const {core}=await freshCore();  // pure fns don't touch storage; reuse one core
+  const C=core;
+
+  // ══ MERGE ══════════════════════════════════════════════════════════════════
+  G("Merge (pickNewer / mergeData)");
+  {
+    const kA="note:2026-6-27:P1",kB="note:2026-6-28:P2";
+    const L={[kA]:{subject:"laptop",updatedAt:isoAgo(1)}};
+    const R={[kB]:{subject:"ipad",updatedAt:isoAgo(1)}};
+    const M=C.mergeData(L,R);
+    assert("different records on two devices both survive",M[kA]&&M[kB]&&M[kA].subject==="laptop"&&M[kB].subject==="ipad");
+  }
+  {
+    const k="note:2026-6-27:P1";
+    const a={subject:"old",updatedAt:isoAgo(5)},b={subject:"new",updatedAt:isoAgo(1)};
+    eq("same record, newer updatedAt wins",C.mergeData({[k]:a},{[k]:b})[k].subject,"new");
+    eq("newer wins regardless of L/R order",C.mergeData({[k]:b},{[k]:a})[k].subject,"new");
+  }
+  {
+    const t=isoAgo(2);
+    const a={subject:"aaa",updatedAt:t},b={subject:"bbb",updatedAt:t};
+    const ab=C.pickNewer(a,b),ba=C.pickNewer(b,a);
+    assert("exact tie resolves deterministically (order-independent)",JSON.stringify(ab)===JSON.stringify(ba));
+    eq("tie winner is the JSON-larger record",ab.subject,"bbb");
+  }
+  {
+    const legacy={subject:"legacy"};                 // no updatedAt => epoch
+    const stamped={subject:"stamped",updatedAt:isoAgo(30)};
+    eq("unstamped legacy loses to any stamped record",C.pickNewer(legacy,stamped).subject,"stamped");
+    eq("…in both argument orders",C.pickNewer(stamped,legacy).subject,"stamped");
+  }
+  {
+    const L={_config:{theme:"physics",updatedAt:isoAgo(1)}};
+    const R={_config:{theme:"coffee",updatedAt:isoAgo(9)}};
+    eq("_config merges whole by its own updatedAt",C.mergeData(L,R)._config.theme,"physics");
+  }
+  {
+    const k="note:2026-6-27:P1";
+    const M=C.mergeData({[k]:{subject:"only-local",updatedAt:isoAgo(1)}},{});
+    eq("local-only record kept when remote absent",M[k].subject,"only-local");
+  }
+
+  // ══ GC / tombstones ══════════════════════════════════════════════════════════
+  G("GC (gcEmpties / isEmptyRecord)");
+  {
+    const now=Date.now();
+    const young="note:2026-6-27:P1",old="note:2026-6-28:P1",kept="note:2026-6-29:P1";
+    const data={
+      [young]:{subject:"",notes:"",resources:"",status:"",updatedAt:isoAgo(10)}, // empty, recent -> tombstone
+      [old]:{subject:"",notes:"",resources:"",status:"",updatedAt:isoAgo(70)},    // empty, old -> drop
+      [kept]:{subject:"Real lesson",updatedAt:isoAgo(70)},                         // non-empty, old -> keep
+    };
+    const {data:out,dropped}=C.gcEmpties(data,now);
+    assert("empty record younger than 60d survives (tombstone)",!!out[young]);
+    assert("empty record older than 60d is dropped",!out[old]);
+    assert("non-empty old record survives",!!out[kept]);
+    eq("gcEmpties reports the dropped count",dropped,1);
+  }
+  {
+    eq("note with status 'nl' is NOT empty",C.isEmptyRecord("note:2026-6-27:P1",{subject:"",status:"nl"}),false);
+    eq("daymeta with non-empty overrides is NOT empty",C.isEmptyRecord("daymeta:2026-6-27",{dayNotes:"",reflections:"",day0label:"",overrides:{B1a:{t:"b1",c:"fsa"}}}),false);
+  }
+
+  // ══ IMPORT allowlist + migration ═════════════════════════════════════════════
+  G("Import (importAllData) + migration");
+  {
+    const {ls,core}=await freshCore();
+    const res=core.importAllData({
+      "note:2026-6-27:P1":{subject:"Good"},              // valid
+      "evil-key":{x:1},                                   // alien key
+      "note:2026-6-28:P2":"not-an-object",                // valid key, bad value
+      "_meta":{version:2},
+    });
+    assert("alien key is rejected (skipped)",res.skipped.some(s=>/evil-key/.test(s)));
+    assert("non-object value for a valid note key is rejected",res.skipped.some(s=>/note:2026-6-28:P2/.test(s)&&/invalid value/.test(s)));
+    assert("valid note is imported and written to storage",ls.getItem("note:2026-6-27:P1")!==null);
+    eq("import count reflects only accepted records",res.imported,1);
+  }
+  {
+    const {core}=await freshCore();
+    const res=core.importAllData({_meta:{version:99},"note:2026-6-27:P1":{subject:"x"}});
+    assert("schema version above current refuses",res.error&&res.imported===0);
+    assert("…with a message naming the newer version",/v99/.test(res.error||""));
+  }
+  {
+    const {ls,core}=await freshCore();
+    // v1 lowercase note key; import runs migrateStorage which re-keys to uppercase.
+    core.importAllData({"note:2026-4-25:p3":{subject:"Legacy note"}});
+    assert("v1 lowercase note key re-keys to uppercase",ls.getItem("note:2026-4-25:P3")!==null);
+    assert("…and the lowercase key is removed",ls.getItem("note:2026-4-25:p3")===null);
+  }
+  {
+    const {core}=await freshCore();
+    const cfg=core.migrateConfig({holidays:["2026-01-01"],dayZeros:["2026-02-06"]});
+    eq("string holidays migrate to {date,name} objects",cfg.holidays[0],{date:"2026-01-01",name:"Public Holiday"});
+    eq("string dayZeros migrate to {date,label,source} objects",cfg.dayZeros[0],{date:"2026-02-06",label:"Day 0",source:"manual"});
+  }
+
+  // ══ ENGINE: cycle-day walk (weekend / holiday / Day 0 / term boundary) ════════
+  G("Engine (makeDateEngine cycD / isSD)");
+  {
+    // Term 3 anchored Mon 27 Jul 2026 = cycle day 1; a prior Term 2 week for the
+    // backward + term-boundary walk. Holiday on Wed 12 Aug, Day 0 on Tue 18 Aug.
+    const cfg={
+      cycleDays:7,
+      anchor:{date:"2026-07-27",day:1},
+      terms:[
+        {n:2,start:"2026-06-29",end:"2026-07-03"},
+        {n:3,start:"2026-07-27",end:"2026-09-25"},
+      ],
+      holidays:[{date:"2026-08-12",name:"Test Holiday"}],
+      dayZeros:[{date:"2026-08-18",label:"Athletics",source:"manual"}],
+      timetable:{},classes:[],
+    };
+    const eng=C.makeDateEngine(cfg);
+    const D=(iso)=>C.parseISO?C.parseISO(iso):new Date(iso.split("-")[0],iso.split("-")[1]-1,iso.split("-")[2]);
+    const day=iso=>{const[y,m,d]=iso.split("-").map(Number);return new Date(y,m-1,d);};
+
+    eq("anchor date is cycle day 1",eng.cycD(day("2026-07-27")),1);
+    eq("Friday of anchor week is day 5",eng.cycD(day("2026-07-31")),5);
+    eq("weekend returns null",eng.cycD(day("2026-08-01")),null);
+    eq("cycle continues across the weekend (Mon = day 6)",eng.cycD(day("2026-08-03")),6);
+    eq("holiday returns null",eng.cycD(day("2026-08-12")),null);
+    eq("holiday does not consume a cycle number (next day = day 6)",eng.cycD(day("2026-08-13")),6);
+    eq("Day 0 event returns 0",eng.cycD(day("2026-08-18")),0);
+    eq("Day 0 does not advance the cycle (next day = day 2)",eng.cycD(day("2026-08-19")),2);
+    eq("date outside any term returns null",eng.cycD(day("2026-07-15")),null);
+    // backward walk across the term boundary (gap 4–26 Jul has no teaching days)
+    eq("backward: last teaching day of prior term = day 7",eng.cycD(day("2026-07-03")),7);
+    eq("backward: Mon of prior term week = day 3",eng.cycD(day("2026-06-29")),3);
+    // isSD predicate
+    eq("isSD false on a weekend",eng.isSD(day("2026-08-01")),false);
+    eq("isSD false on a holiday",eng.isSD(day("2026-08-12")),false);
+    eq("isSD true on a Day 0 (it is still a school day)",eng.isSD(day("2026-08-18")),true);
+  }
+
+  // ══ resolveSlot precedence + clash ═══════════════════════════════════════════
+  G("resolveSlot (precedence override > weekly > cycle default)");
+  {
+    const fsa={t:"b1",c:"fsa"};
+    const cfg={timetable:{3:{B1a:fsa,B2a:null}},weeklyEvents:[
+      {weekday:2,slot:"B1a",text:"Assembly"},   // Tuesday
+      {weekday:2,slot:"B2a",text:"Notices"},
+    ]};
+    const tue=(()=>{const d=new Date(2026,7,4);return d;})(); // 4 Aug 2026 is a Tuesday
+    const dmOv={overrides:{B1a:{t:"activity",tx:"Tutor"}}};
+    const rOv=C.resolveSlot("B1a",3,tue,cfg,dmOv);
+    eq("override wins over weekly and cycle default",rOv.value,{t:"activity",tx:"Tutor"});
+    assert("override that differs from cycle default is flagged isOverride",rOv.isOverride===true);
+
+    const rWk=C.resolveSlot("B1a",3,tue,cfg,{overrides:{}});
+    eq("weekly event wins over cycle default when no override",rWk.value,{t:"activity",tx:"Assembly"});
+    assert("clash true: weekly displaces a non-null cycle default",rWk.clash===true);
+
+    const rWkNull=C.resolveSlot("B2a",3,tue,cfg,{overrides:{}});
+    assert("clash false: weekly displaces a null default",rWkNull.clash===false);
+
+    const wed=new Date(2026,7,5); // Wednesday, no weekly event matches
+    const rCyc=C.resolveSlot("B1a",3,wed,cfg,{overrides:{}});
+    eq("falls back to cycle default when nothing else applies",rCyc.value,fsa);
+  }
+
+  // ══ asmBellsForDate ══════════════════════════════════════════════════════════
+  G("asmBellsForDate (assembly bell resolution)");
+  {
+    const fsa={t:"b1",c:"fsa"};
+    const cfgFsa={timetable:{3:{B1a:fsa}},weeklyEvents:[]};
+    const cfgNo={timetable:{3:{B1a:null}},weeklyEvents:[]};
+    const d=new Date(2026,7,5);
+    eq("manual 'asm' override forces assembly bells",C.asmBellsForDate(3,d,cfgFsa,{bells:"asm"}),true);
+    eq("manual 'std' override forces standard bells",C.asmBellsForDate(3,d,cfgFsa,{bells:"std"}),false);
+    eq("auto: FSA on the day -> assembly bells",C.asmBellsForDate(3,d,cfgFsa,{bells:"auto"}),true);
+    eq("auto: no FSA -> standard bells",C.asmBellsForDate(3,d,cfgNo,{bells:"auto"}),false);
+    eq("auto: FSA moved onto the day via override -> assembly bells",
+       C.asmBellsForDate(3,d,cfgNo,{bells:"auto",overrides:{B1a:fsa}}),true);
+  }
+
+  render();
+}catch(err){
+  document.getElementById("summary").className="bad";
+  document.getElementById("summary").textContent="Harness error: "+(err&&err.message||err);
+  const pre=document.createElement("pre");pre.style.color="#ff6b6b";pre.textContent=err&&err.stack||String(err);
+  document.getElementById("out").appendChild(pre);
+}
+}
+
+function render(){
+  const out=document.getElementById("out");out.innerHTML="";
+  let pass=0,fail=0;
+  results.forEach(r=>{
+    if(r.group!==undefined&&r.name===undefined){
+      const h=document.createElement("div");h.className="grp";h.textContent=r.group;out.appendChild(h);return;
+    }
+    if(r.pass)pass++;else fail++;
+    const row=document.createElement("div");row.className="row "+(r.pass?"pass":"fail");
+    row.innerHTML=`<span class="tag">${r.pass?"PASS":"FAIL"}</span><span class="name">${r.name}${r.detail?`<div class="detail">${r.detail}</div>`:""}</span>`;
+    out.appendChild(row);
+  });
+  const s=document.getElementById("summary");
+  s.className=fail===0?"ok":"bad";
+  s.textContent=fail===0?`✓ All ${pass} assertions passed`:`✗ ${fail} failed, ${pass} passed (${pass+fail} total)`;
+}
+
+run();
+</script>
+</body>
+</html>
