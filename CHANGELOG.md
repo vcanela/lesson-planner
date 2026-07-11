@@ -6,6 +6,22 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.12.0 — 2026-07-12 (experimental)
+
+### Features (experimental, opt-in)
+- **Phone navigation prototypes.** A new *Nav style* selector in Setup → Display offers three layouts to trial on a phone over the holidays, stored in `cfg.navStyle` (default **Current**). All three only change anything below an 800px viewport; a wide screen is unaffected.
+  - **Current** — unchanged.
+  - **Compact** — the top view tabs shrink to icons (the active tab keeps its word), and search / theme / data collapse into a single ⋯ overflow menu (with the backup-status line inside it).
+  - **Bottom bar** — the six views move to a fixed bottom tab bar with 44px touch targets; the header keeps only the title, a sync-status dot, and the ⋯ menu.
+
+### Implementation
+- `isNarrow` tracks the `(max-width:799px)` breakpoint via `matchMedia`; `navStyle` gates the compact/bottom restructure below it. Tabs render from one `TABS` array through a shared `tabBtn` helper, so Current stays pixel-identical (verified). The ⋯ menu and the bottom bar are new `.navmenu` / `.botbar` styles; the bottom bar uses `padding-bottom:env(safe-area-inset-bottom)` and the page gains matching bottom padding (`viewport-fit=cover` is already set, so the inset applies on notched iPhones). All variants use theme variables, so they work in all four display modes.
+- **Header height at 390px:** Current **176px** (tabs + buttons wrap over several rows — the waste this addresses), Compact **126px**, Bottom bar **122px** header plus a **45px** bar pinned to the base.
+- Verified in preview at 375/390px in light and dark: Current unchanged on desktop and phone; Compact shows icon tabs + active label + working ⋯ menu; Bottom bar shows the 6-item 44px bar with content clearing it; no console errors; `tests.html` all 50 green.
+- **Experimental / temporary:** ships behind the selector. Session 7b will keep whichever variant Victor picks and delete the other two plus the selector.
+
+---
+
 ## 2.11.1 — 2026-07-12
 
 ### Fixes

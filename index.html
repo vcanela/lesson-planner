@@ -130,6 +130,16 @@ textarea,input,button,select{font-family:'Inter',system-ui,sans-serif}
 .vtab{padding:5px 12px;border-radius:var(--radius-sm);border:none;cursor:pointer;font-size:var(--fs-caption);font-weight:500;background:transparent;color:var(--text-secondary);font-family:'Inter',system-ui,sans-serif;transition:background .15s,color .15s}
 .vtab:hover{background:var(--surface)}
 .vtab.on{font-weight:600;background:var(--accent);color:var(--on-accent)}
+/* Nav prototype (v2.12.0, EXPERIMENTAL): the ⋯ overflow menu (compact + bottom variants)
+   and the fixed bottom tab bar (bottom variant). Both are only rendered below 800px. */
+.navmenu{position:absolute;right:0;top:calc(100% + 4px);z-index:60;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:0 8px 24px rgba(0,0,0,.18);padding:4px;min-width:180px;display:flex;flex-direction:column;gap:2px}
+.navmenu-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:none;cursor:pointer;color:var(--text);font-family:inherit;font-size:var(--fs-body);padding:9px 10px;border-radius:var(--radius-sm)}
+.navmenu-item:hover{background:var(--surface)}
+.navmenu-note{font-size:var(--fs-nano);color:var(--text-muted);padding:7px 10px 3px;border-top:1px solid var(--border);margin-top:2px}
+.botbar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;background:var(--card);border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -2px 10px rgba(0,0,0,.08)}
+.botbtn{flex:1;min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:none;border:none;cursor:pointer;color:var(--text-secondary);font-family:inherit;padding:5px 0}
+.botbtn.on{color:var(--accent)}
+.botbtn .bl{font-size:var(--fs-nano);font-weight:600}
 .sl{font-size:var(--fs-micro);color:var(--text-muted);text-transform:uppercase;letter-spacing:.12em;font-weight:600;font-family:'Inter',system-ui,sans-serif}
 .pb{border-radius:var(--radius-sm);padding:4px 7px;margin-bottom:3px;cursor:pointer;display:flex;flex-direction:column;gap:1px;min-height:40px;font-size:var(--fs-nano);font-weight:600;overflow:hidden;justify-content:flex-start;min-width:0;transition:outline-color .15s}
 .pb:hover{outline:1.5px solid var(--accent)}
@@ -573,7 +583,7 @@ const SCHEMA_VERSION=2;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="2.11.1";
+const APP_VERSION="2.12.0";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -2034,7 +2044,12 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
     <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Display</div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{[["light","\u2600\uFE0F Light"],["dark","\u{1F319} Dark"],["light-hc","\u2600\uFE0F Bold"],["dark-hc","\u{1F319} Bold"]].map(([k,lbl])=><button key={k} onClick={()=>setDisplayMode(k)} style={{padding:"7px 14px",borderRadius:"var(--radius-sm)",border:displayMode===k?"2px solid var(--accent)":"1px solid var(--border)",background:displayMode===k?"var(--accent-light)":"var(--surface)",cursor:"pointer",fontSize:"var(--fs-body)",color:displayMode===k?"var(--accent)":"var(--text-secondary)",fontWeight:displayMode===k?600:400,transition:"all .15s"}}>{lbl}</button>)}</div>
       <div style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",marginTop:8}}>Bold modes use higher contrast colours for improved readability.</div>
-      <div style={{marginTop:12,display:"flex",alignItems:"center",gap:10}}><button onClick={()=>up({showGam:cfg.showGam===false})} style={{padding:"7px 14px",borderRadius:"var(--radius-sm)",border:cfg.showGam!==false?"2px solid var(--accent)":"1px solid var(--border)",background:cfg.showGam!==false?"var(--accent-light)":"var(--surface)",cursor:"pointer",fontSize:"var(--fs-body)",color:cfg.showGam!==false?"var(--accent)":"var(--text-secondary)",fontWeight:cfg.showGam!==false?600:400,transition:"all .15s"}}>{cfg.showGam!==false?"\u2713 Gamification on":"Gamification off"}</button><span style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)"}}>Hides XP bar and awards. Planning counts still tracked.</span></div></div>
+      <div style={{marginTop:12,display:"flex",alignItems:"center",gap:10}}><button onClick={()=>up({showGam:cfg.showGam===false})} style={{padding:"7px 14px",borderRadius:"var(--radius-sm)",border:cfg.showGam!==false?"2px solid var(--accent)":"1px solid var(--border)",background:cfg.showGam!==false?"var(--accent-light)":"var(--surface)",cursor:"pointer",fontSize:"var(--fs-body)",color:cfg.showGam!==false?"var(--accent)":"var(--text-secondary)",fontWeight:cfg.showGam!==false?600:400,transition:"all .15s"}}>{cfg.showGam!==false?"\u2713 Gamification on":"Gamification off"}</button><span style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)"}}>Hides XP bar and awards. Planning counts still tracked.</span></div>
+      <div style={{marginTop:14}}>
+        <div style={{fontSize:"var(--fs-micro)",fontWeight:600,color:"var(--text-secondary)",marginBottom:6}}>Nav style <span style={{fontWeight:400,color:"var(--text-muted)"}}>(experimental {"—"} phone only, below 800px)</span></div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{[["current","Current"],["compact","Compact"],["bottom","Bottom bar"]].map(([v,l])=>{const on=(cfg.navStyle||"current")===v;return<button key={v} onClick={()=>up({navStyle:v})} style={{padding:"6px 12px",borderRadius:"var(--radius-sm)",border:on?"2px solid var(--accent)":"1px solid var(--border)",background:on?"var(--accent-light)":"var(--surface)",cursor:"pointer",fontSize:"var(--fs-body)",color:on?"var(--accent)":"var(--text-secondary)",fontWeight:on?600:400}}>{l}</button>})}</div>
+        <div style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",marginTop:6,lineHeight:1.5}}>Try each on your phone. <strong>Compact</strong> shrinks the top tabs to icons (the current tab keeps its label) and tucks search, theme, and data into a {"⋯"} menu. <strong>Bottom bar</strong> moves the six views to a fixed bar at the base of the screen. Neither changes anything on a wide screen.</div>
+      </div></div>
 
     <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>School & Cycle</div>
       <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:10}}><div style={{flex:1,minWidth:180}}><label className="fl">Your Name (optional)</label><input className="inp" value={cfg.userName||""} onChange={e=>up({userName:e.target.value})} placeholder="e.g. Ms Smith"/></div></div>
@@ -2378,6 +2393,12 @@ class ErrorBoundary extends React.Component{
 function App(){
   const[dispMode,setDispMode]=useState(()=>{const v=localStorage.getItem("planner-theme");if(["light","dark","light-hc","dark-hc"].includes(v))return v;return "light-hc"});
   const[showSearch,setShowSearch]=useState(false);
+  // Nav prototype (v2.12.0, EXPERIMENTAL): isNarrow tracks the <800px phone breakpoint so
+  // the compact and bottom-bar nav variants can restructure below it; navMenu toggles the
+  // overflow (⋯) menu those variants share. Driven by cfg.navStyle (default "current").
+  const[isNarrow,setIsNarrow]=useState(()=>typeof window!=="undefined"&&window.matchMedia("(max-width:799px)").matches);
+  useEffect(()=>{const m=window.matchMedia("(max-width:799px)");const h=e=>setIsNarrow(e.matches);m.addEventListener?m.addEventListener("change",h):m.addListener(h);return()=>{m.removeEventListener?m.removeEventListener("change",h):m.removeListener(h)}},[]);
+  const[navMenu,setNavMenu]=useState(false);
   const today=useToday();const[cfg,setCfg]=useState(()=>migrateConfig(sGet("planner-config")));
   const eng=useMemo(()=>makeDateEngine(cfg),[cfg]);const planMon=useMemo(()=>getPlanMon(today),[today]);const planWN=eng?eng.wkN(planMon):8;
   const[view,setView]=useState("week");const[base,setBase]=useState(planMon);const[detDate,setDetDate]=useState(null);
@@ -2560,7 +2581,22 @@ function App(){
     anchor:{date:"2026-04-02",day:2},timetable:{},classes:[],duties:[],theme:"coffee",exportStyle:"plain",school:"Dio",userName:""};sSet("planner-config",blank);setCfg(blank)}},[cfg]);
   if(!cfg||!eng)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>Loading...</div>;
 
-  return<CfgCtx.Provider value={eng}><div style={{minHeight:"100vh",padding:16}}><div style={{maxWidth:VIEW_WIDTHS[view]||720,margin:"0 auto"}}>
+  // ── Nav variant wiring (experimental; see cfg.navStyle) ──────────────────────
+  const navStyle=cfg.navStyle||"current";
+  const compact=isNarrow&&navStyle==="compact";   // icon-only tabs + ⋯ menu, inline
+  const bottom=isNarrow&&navStyle==="bottom";      // tabs move to a fixed bottom bar
+  const overflow=compact||bottom;                  // both share the ⋯ overflow menu
+  const TABS=[["term","\u{1F4C5}","Term"],["week","\u{1F5D3}","Week"],["day","\u{1F4CB}","Day"],["class","\u{1F4DA}","Class"],["lab",gam.th.icon,"Lab"],["setup","⚙️","Setup"]];
+  const onTab=v=>{setNavMenu(false);if(v==="day")goDayTab();else{setView(v);setGR(r=>r+1)}};
+  // One inline tab button. In compact mode only the active tab keeps its word.
+  const tabBtn=([v,ico,lbl])=>{const a=view===v;const showLabel=!compact||a;return<button key={v} className={`vtab${a?" on":""}`} title={lbl} onClick={()=>onTab(v)}>{ico}{showLabel?" "+lbl:""}</button>};
+  const toggleTheme=()=>{const dk=dispMode.startsWith("dark"),hc=dispMode.endsWith("-hc");setDispMode((dk?"light":"dark")+(hc?"-hc":""))};
+  // Backup/sync nudge text + colour, shared by the current-mode pill and the ⋯ menu.
+  const nudge=(()=>{let amber=false,text;if(syncConnected()){if(syncSt==="error"){amber=true;text="Sync error"}else{text="Synced"}}else{const lb=localStorage.getItem("planner-last-backup");if(!lb){amber=true;text="Not backed up"}else{const days=Math.floor((Date.now()-Date.parse(lb))/864e5);if(days<=0)text="Backed up today";else{text=`Backup ${days}d ago`;if(days>=14)amber=true}}}return{amber,text}})();
+  const syncDot=syncConnected()&&<span style={{position:"absolute",top:2,right:2,width:7,height:7,borderRadius:"50%",background:syncSt==="syncing"?"var(--accent)":syncSt==="error"?"var(--error)":syncSt==="conflict"?"var(--flag)":"var(--success)",border:"1px solid var(--card)"}}/>;
+  const utilBtnStyle={background:"var(--surface)",border:"1px solid var(--border)",color:"var(--text)",borderRadius:"var(--radius-sm)",padding:"5px 10px",cursor:"pointer",fontSize:"var(--fs-title)",lineHeight:1,position:"relative"};
+
+  return<CfgCtx.Provider value={eng}><div style={{minHeight:"100vh",padding:16,paddingBottom:bottom?"calc(60px + env(safe-area-inset-bottom))":16}}><div style={{maxWidth:VIEW_WIDTHS[view]||720,margin:"0 auto"}}>
     <div className="np" style={{marginBottom:16,borderBottom:"1px solid var(--border)",paddingBottom:14}}>
       <div style={{marginBottom:10}}>
         <div className="hd" style={{fontSize:"var(--fs-display)",fontWeight:400,color:"var(--accent)",letterSpacing:"-.3px"}}>{"\u{1F4C5}"} {eng.school} Planner</div>
@@ -2568,9 +2604,17 @@ function App(){
         <div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",marginTop:3}}>v{APP_VERSION} {"·"} <a href="guide.html" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Guide</a> {"·"} <a href="https://github.com/vcanela/lesson-planner/blob/main/CHANGELOG.md" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Changelog</a></div>
       </div>
       <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-        <div style={{display:"flex",gap:3,background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-md)",padding:3}}>
-          {[["term","\u{1F4C5} Term"],["week","\u{1F5D3} Week"],["day","\u{1F4CB} Day"],["class","\u{1F4DA} Class"],["lab",`${gam.th.icon} Lab`],["setup","\u2699\uFE0F Setup"]].map(([v,lbl])=>{const a=view===v;return<button key={v} className={`vtab${a?" on":""}`} onClick={()=>{if(v==="day")goDayTab();else{setView(v);setGR(r=>r+1)}}}>{lbl}</button>})}
-        </div>
+        {!bottom&&<div style={{display:"flex",gap:3,background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-md)",padding:3}}>{TABS.map(tabBtn)}</div>}
+        {overflow&&<div style={{display:"flex",gap:6,alignItems:"center",marginLeft:"auto",position:"relative"}}>
+          <button onClick={()=>setNavMenu(v=>!v)} title="More" style={{...utilBtnStyle,fontWeight:700}}>{"\u22EF"}{syncDot}</button>
+          {navMenu&&<div className="navmenu">
+            <button className="navmenu-item" onClick={()=>{setShowSearch(true);setNavMenu(false)}}>{"\u{1F50D}"} Search</button>
+            <button className="navmenu-item" onClick={toggleTheme}>{dispMode.startsWith("dark")?"\u2600\uFE0F":"\u{1F319}"} {dispMode.startsWith("dark")?"Day mode":"Night mode"}</button>
+            <button className="navmenu-item" onClick={()=>{setShowDP(true);setNavMenu(false)}}>{"\u{1F4BE}"} Data & Sync</button>
+            <div className="navmenu-note" style={{color:nudge.amber?"var(--error)":"var(--text-muted)"}}>{nudge.amber?"\u26A0 ":""}{nudge.text}</div>
+          </div>}
+        </div>}
+        {!overflow&&<React.Fragment>
         <button onClick={()=>setShowSearch(true)} title="Search all notes" style={{background:"var(--surface)",border:"1px solid var(--border)",color:"var(--text)",borderRadius:"var(--radius-sm)",padding:"5px 10px",cursor:"pointer",fontSize:"var(--fs-title)",lineHeight:1}}>{"\u{1F50D}"}</button>
         <button onClick={()=>{const dk=dispMode.startsWith("dark"),hc=dispMode.endsWith("-hc");setDispMode((dk?"light":"dark")+(hc?"-hc":""))}} title={dispMode.startsWith("dark")?"Switch to day mode":"Switch to night mode"} style={{background:"var(--surface)",border:"1px solid var(--border)",color:"var(--text)",borderRadius:"var(--radius-sm)",padding:"5px 10px",cursor:"pointer",fontSize:"var(--fs-title)",lineHeight:1}}>{dispMode.startsWith("dark")?"☀️":"\u{1F319}"}</button>
         <button onClick={()=>setShowDP(true)} title={syncSt==="conflict"?"Sync conflict — open to resolve":"Data & Sync"} style={{background:"var(--surface)",border:"1px solid var(--border)",color:"var(--text)",borderRadius:"var(--radius-sm)",padding:"5px 10px",cursor:"pointer",fontSize:"var(--fs-title)",lineHeight:1,position:"relative"}}>{"\u{1F4BE}"}{syncConnected()&&<span style={{position:"absolute",top:2,right:2,width:7,height:7,borderRadius:"50%",background:syncSt==="syncing"?"var(--accent)":syncSt==="synced"?"var(--success)":syncSt==="error"?"var(--error)":syncSt==="conflict"?"var(--flag)":"var(--success)",border:"1px solid var(--card)"}}/>}</button>
@@ -2585,6 +2629,7 @@ function App(){
               if(days<=0)text="Backed up today";else{text=`Backup ${days}d ago`;if(days>=14)amber=true}}}
           return<button onClick={()=>setShowDP(true)} title="Backup and sync status. Click to back up or set up cloud sync." style={{background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:"var(--fs-nano)",lineHeight:1.1,whiteSpace:"nowrap",padding:"0 2px",color:amber?"var(--error)":"var(--text-muted)",fontWeight:amber?600:400}}>{amber?"⚠ ":""}{text}</button>;
         })()}
+        </React.Fragment>}
       </div>
     </div>
     {storageFailed&&<div className="card" style={{padding:"12px 16px",marginBottom:14,border:"1px solid var(--error)",background:"var(--surface)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:"var(--fs-title)"}}>{"⚠"}</span><div style={{flex:1,minWidth:200}}><div className="hd" style={{fontSize:"var(--fs-emph)",fontWeight:600,color:"var(--error)"}}>Browser storage is full</div><div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",lineHeight:1.5}}>Recent changes have not been saved. Cloud sync is paused while this is unresolved. Open the Data Panel to download a backup, then clear old data in your browser settings.</div></div><button className="btn-a" onClick={()=>setShowDP(true)} style={{padding:"6px 14px",fontSize:"var(--fs-body)"}}>Open Data Panel</button><button className="btn" onClick={()=>{storageFailedRef.current=false;setStorageFailed(false)}} style={{padding:"4px 10px",fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}>Dismiss</button></div>}
@@ -2599,6 +2644,7 @@ function App(){
     {view==="lab"&&<LabView g={gam}/>}
     {view==="setup"&&<SettingsView onSave={newCfg=>{setCfg(newCfg);setGR(r=>r+1)}} displayMode={dispMode} setDisplayMode={setDispMode}/>}
     </ErrorBoundary>
+    {bottom&&<nav className="botbar">{TABS.map(([v,ico,lbl])=>{const a=view===v;return<button key={v} className={`botbtn${a?" on":""}`} onClick={()=>onTab(v)}><span style={{fontSize:18,lineHeight:1}}>{ico}</span><span className="bl">{lbl}</span></button>})}</nav>}
   </div></div></CfgCtx.Provider>;
 }
 
