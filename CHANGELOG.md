@@ -6,6 +6,23 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.14.0 — 2026-07-12
+
+### Features
+- **Faster loads: the deployed site is now precompiled.** Until now every visitor's browser transpiled the whole app with Babel on each load (about 2.4s of work on a fast laptop, plus a ~1MB Babel download). Deployment now transpiles once, ahead of time, so visitors receive an already-compiled app. The `'unsafe-eval'` allowance the in-browser Babel required has been dropped from the deployed page's Content-Security-Policy (review 4.1).
+
+### Implementation
+- **`index.html` is still the single source of truth** and still runs as-is when opened directly (it keeps its `text/babel` script and the Babel CDN tag), so a colleague handed the raw file gets a working app. The only source change is a one-line comment noting the deploy path, plus the version bump.
+- New **`build.mjs`** (Node, ~40 lines): reads `index.html`, transpiles the `text/babel` body with the `react` preset, and writes `dist/index.html` with the script tag now plain JS, the Babel CDN tag removed, and `'unsafe-eval'` stripped from the CSP; everything else byte-identical. It also copies `guide.html` and `tests.html` into `dist/` so the deployed site still resolves the in-app Guide link and the test harness. `@babel/standalone@7.23.2` (matching the CDN version) is its only dependency, installed at build time, not committed.
+- New **GitHub Action** (`.github/workflows/deploy.yml`): on push to `main` (and manual dispatch) it installs the build dependency, runs `build.mjs`, and publishes `dist/` to Pages. Requires a one-time repo setting change (Settings → Pages → Source = "GitHub Actions"), documented in the PR.
+- `dist/`, `node_modules/`, and any build-time `package*.json` are gitignored.
+- Verified by serving `dist/` locally: no `text/babel` tag, no Babel loaded, no `'unsafe-eval'` in the CSP, React/ReactDOM still from CDN; all six views click through; `tests.html` runs 50/50 against the dist copy (the test-core markers survive transpilation); the app boots under the stricter CSP, confirming nothing needs eval at runtime. Measured transpile cost removed: ~2.4s for the 241KB app body.
+
+### Note
+- The README's offline claim is intentionally left as-is for now; a later change makes the app genuinely offline-capable and will update that wording then.
+
+---
+
 ## 2.13.0 — 2026-07-12
 
 ### Features
