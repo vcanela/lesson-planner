@@ -6,6 +6,21 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.13.0 — 2026-07-12
+
+### Features
+- **Compact phone nav is now the standard below 800px** (the experimental selector and the bottom-bar prototype are gone). On a phone the view tabs shrink to icons with the active tab keeping its word, and search / theme / data collapse into a single ⋯ overflow menu. Laptops and wide screens are unchanged.
+- **Week view on a phone is now for glancing, not squinting.** Each lesson pill shows only the centred class code plus a status marker: "–" when there is no plan and a filled dot ● when there is one. The truncated, half-readable topic line is gone; tap a pill for the quick editor, or open Day view for the full detail. Day notes become a tappable indicator ("notes", or "● notes" when written) that opens Day view to edit. The row-label column is a little wider so "before" no longer clips. Desktop Week view is unchanged (it keeps the topic text and inline editing).
+- **Term view reads at a glance.** Each day now stacks its periods as P1 on top, P2 to P5 in the middle, and P6 at the bottom, so a free first or last period is obvious (handy for arriving late or leaving early), and the old lopsided wrapping is gone. A busy period is a filled colour box; a free period is an empty outlined box, which stays clearly visible in dark mode where the old filled marker had all but disappeared.
+
+### Implementation
+- 7b cleanup: removed `cfg.navStyle`, the Setup selector, the bottom-bar JSX and its `.botbar`/`.botbtn` styles; `compact` is now simply `isNarrow` (the `(max-width:799px)` match).
+- Week phone layout is CSS-only, keyed to `@media (max-width:799px)`: the pill renders an always-present `.pb-mark` (hidden on desktop) and the day-notes cell an always-present `.wk-daynote-m` indicator (hidden on desktop), so no `isNarrow` had to be threaded into WeekView. The label column moved from an inline `grid-template-columns` to `.wk-grid` so the phone media query can widen it (32px → 44px).
+- Term view periods restructured into three rows (P1 / P2–P5 / P6); free periods switch from a `--nc-bg` fill to a transparent box with a `--text-secondary` border (visible on both light and dark cards). This one change applies on desktop too, since it is a shared layout and a straight visibility win.
+- Verified in preview, light and dark: desktop nav, desktop Week pills, and desktop editing unchanged; phone shows compact nav, centred code + "–"/"●" markers, "notes"/"● notes" day indicators, no label clipping, and the three-row Term layout with a visible free box in dark mode; no console errors; `tests.html` all 50 green.
+
+---
+
 ## 2.12.0 — 2026-07-12 (experimental)
 
 ### Features (experimental, opt-in)
