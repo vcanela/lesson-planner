@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.16.1 — 2026-07-12
+
+### Fixes
+- **No more sideways jump when switching views on a wide screen.** Since v2.11.0 each view centred a column of a different max width (Week 1080, Term/Setup 1000, Lab 900, Class 800, Day 760); because the column is centred, a narrower view re-centred and slid the whole frame — nav included — inward, most noticeably going into Day or Class. Every view now uses a single 1000px centred column, so the layout stays perfectly still across tabs. The dense views are unaffected (1000 was already Term/Setup's width and is visually identical to Week's old 1080); Day/Class/Lab gain a little width. Narrow windows and phones were never affected and are unchanged.
+
+---
+
 ## 2.16.0 — 2026-07-12
 
 ### Features

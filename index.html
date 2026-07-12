@@ -598,7 +598,7 @@ const SCHEMA_VERSION=2;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="2.16.0";
+const APP_VERSION="2.16.1";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -2372,11 +2372,12 @@ function SearchOverlay({eng,onGo,onClose}){
   </div>;
 }
 
-// VIEW_WIDTHS: per-view max width for the centred content wrapper (v2.11.0). Dense grid
-// views (Week/Term/Setup) get more room on a wide screen; reading/editing views stay
-// narrow for comfortable line length. Below ~800px viewport these are all wider than the
-// screen, so the layout is unchanged on phones/tablets. Falls back to 720 for any view.
-const VIEW_WIDTHS={term:1000,week:1080,day:760,class:800,lab:900,setup:1000};
+// CONTENT_MAX: one max width for the centred content wrapper, shared by every view
+// (v2.16.1). This deliberately replaces the earlier per-view widths: a centred column of
+// varying width re-centres when you switch views, sliding the whole frame (nav included)
+// sideways on a wide screen. A single width keeps the layout perfectly still across tabs.
+// Below this width the wrapper is capped by the viewport, so phones/tablets are unchanged.
+const CONTENT_MAX=1000;
 // ErrorBoundary: wraps the active view only (NOT the whole app), so a render crash in one
 // view degrades to a recovery card while the header and tabs keep working. React error
 // boundaries must be class components (getDerivedStateFromError / componentDidCatch). The
@@ -2609,7 +2610,7 @@ function App(){
   const syncDot=syncConnected()&&<span style={{position:"absolute",top:2,right:2,width:7,height:7,borderRadius:"50%",background:syncSt==="syncing"?"var(--accent)":syncSt==="error"?"var(--error)":syncSt==="conflict"?"var(--flag)":"var(--success)",border:"1px solid var(--card)"}}/>;
   const utilBtnStyle={background:"var(--surface)",border:"1px solid var(--border)",color:"var(--text)",borderRadius:"var(--radius-sm)",padding:"5px 10px",cursor:"pointer",fontSize:"var(--fs-title)",lineHeight:1,position:"relative"};
 
-  return<CfgCtx.Provider value={eng}><div style={{minHeight:"100vh",padding:16}}><div style={{maxWidth:VIEW_WIDTHS[view]||720,margin:"0 auto"}}>
+  return<CfgCtx.Provider value={eng}><div style={{minHeight:"100vh",padding:16}}><div style={{maxWidth:CONTENT_MAX,margin:"0 auto"}}>
     <div className="np" style={{marginBottom:16,borderBottom:"1px solid var(--border)",paddingBottom:14}}>
       <div style={{marginBottom:10}}>
         <div className="hd" style={{fontSize:"var(--fs-display)",fontWeight:400,color:"var(--accent)",letterSpacing:"-.3px"}}>{"\u{1F4C5}"} {eng.school} Planner</div>
