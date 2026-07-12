@@ -24,4 +24,6 @@ All planning data stays in your browser's localStorage. Nothing is sent to any s
 
 ## Tech
 
-Single HTML file. React 18 and Babel loaded via CDN, transpiled in-browser. No build step, no npm, no dependencies to install. Just open the file or visit the GitHub Pages link.
+The source is a single self-contained file, `index.html`: open it directly and it just works, because React 18 loads from a CDN and the file transpiles its own JSX in the browser. That is the only file to edit, and there is no build step to run to work on it.
+
+The **deployed** copy at the link above is precompiled for speed: a GitHub Action runs `build.mjs` on every push to `main`, transpiling the JSX ahead of time into `dist/index.html` and dropping the in-browser Babel transformer, so visitors load an already-compiled app instead of paying the transpile on every visit. The source file is left untouched and still runs on its own.

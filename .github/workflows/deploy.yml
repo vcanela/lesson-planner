@@ -1,0 +1,48 @@
+name: Deploy planner to Pages
+
+# Builds the precompiled copy (dist/) with build.mjs and publishes it to GitHub Pages.
+# One-time repo setting required: Settings -> Pages -> Build and deployment -> Source =
+# "GitHub Actions" (was "Deploy from a branch"). Until that is switched, the deploy step
+# will fail while the build step still succeeds.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish; queue at most one more.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install build-time dependency
+        run: npm install @babel/standalone@7.23.2 --no-save --no-package-lock
+      - name: Build dist/
+        run: node build.mjs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
