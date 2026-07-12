@@ -11,7 +11,7 @@ A browser-based lesson planner built for schools that use a **7-day rotating tim
 - **Multiple views** -- term overview, week grid, day detail, class view (all lessons for one class across a term)
 - **Gamification** -- XP, levels, achievements, and streaks to keep planning momentum going. 5 swappable themes (Physics, Coffee, Cooking, Ocean, NZ Birds)
 - **4 display modes** -- light, dark, and high-contrast variants of each
-- **Works offline** -- all data stored in the browser via localStorage. No account required, no server
+- **Works offline** -- after the first visit a service worker caches the app, so it opens and runs with no network; all planning data lives in the browser via localStorage. No account, no server. (The first visit needs a connection to download the app, and cloud sync needs one to reach GitHub.)
 - **Optional cloud sync** -- connect a GitHub Personal Access Token to sync via Gist across devices
 
 ## Getting started

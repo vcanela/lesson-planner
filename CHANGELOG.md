@@ -6,6 +6,18 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.15.0 — 2026-07-12
+
+### Features
+- **Genuinely works offline.** After the first online visit, a service worker caches the app (the built HTML, the React CDN scripts, and the fonts), so it opens and runs with no network connection. The README's long-standing "works offline" claim is now literally true; the only caveats are the first visit (needs a connection to download the app) and cloud sync (needs one to reach GitHub).
+
+### Implementation
+- New **`sw.js`** (deployed only): precaches `index.html`, the two React scripts, and the Google Fonts stylesheet on install; font `woff2` files are cached on first fetch since their URLs are user-agent specific. Fetch strategy is **network-first for app pages** (so a redeploy is picked up on the next online load, with the cached copy as the offline fallback — no eternal staleness, per review 1.3) and **cache-first for the immutable CDN scripts and fonts**. The GitHub API (sync) is never cached. The cache name is tied to `APP_VERSION`, and `activate` deletes any cache from a different version.
+- `build.mjs` now writes `dist/sw.js` with the current `APP_VERSION` substituted into its cache name, and injects the registration (`if ('serviceWorker' in navigator) …`, guarded, after `load`) into `dist/index.html`. The registration lives in the built copy only: a service worker needs HTTPS or localhost, so it has no place in a `file://` open of the source, and the source stays free of deploy concerns. No CSP change was needed — `script-src 'self'` already permits a same-origin worker.
+- Verified locally by serving `dist/`: the worker registers and controls the page; the cache (`planner-2.15.0`) holds all four precached entries and the app shell is retrievable for the offline fallback. Bumping the version and rebuilding confirmed the new worker installs, activates, and deletes the previous cache (only the new one remains) — so a redeploy is not stuck behind a stale cache. `tests.html` runs 50/50 against the dist copy. The final "turn off the network and reload" check is a one-click devtools step for a live confirmation.
+
+---
+
 ## 2.14.1 — 2026-07-12
 
 ### Fixes

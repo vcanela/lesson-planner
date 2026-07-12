@@ -35,9 +35,19 @@ out = out.replace(/^[ \t]*<script\b[^>]*\bbabel-standalone\b[^>]*><\/script>\n/m
 out = out.replace(/^[ \t]*<!--[^\n]*precompiled by build\.mjs[^\n]*-->\n/m, '');         // drop the source-only deploy note
 out = out.replace(" 'unsafe-eval'", '');                                                 // Babel was the only reason for it
 
+// 4. Offline: register the service worker (built copy only — SW needs HTTPS/localhost, so it
+// has no place in a file:// open of the source). script-src 'self' already allows it.
+const reg = `<script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script>\n`;
+out = out.replace('</body>', reg + '</body>');
+
+// 5. Emit dist. sw.js gets APP_VERSION baked into its cache name so each release drops the old cache.
+const version = (src.match(/APP_VERSION\s*=\s*"([^"]+)"/) || [])[1] || '0';
+const sw = (await readFile('sw.js', 'utf8')).replace('__APP_VERSION__', version);
+
 await mkdir('dist', { recursive: true });
 await writeFile('dist/index.html', out);
+await writeFile('dist/sw.js', sw);
 await copyFile('guide.html', 'dist/guide.html');
 await copyFile('tests.html', 'dist/tests.html');
 
-console.log(`built dist/index.html (${out.length} bytes; source ${src.length}); copied guide.html, tests.html`);
+console.log(`built dist/index.html (${out.length} bytes; source ${src.length}); sw.js@${version}; copied guide.html, tests.html`);
