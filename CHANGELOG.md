@@ -6,6 +6,22 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.16.0 — 2026-07-12
+
+### Features
+- **Day View is now keyboard-operable and screen-reader-legible** (first slice of the accessibility pass; later releases repeat this for the other views). Every expand/collapse row — each period, each B-slot row, the Reflections panel, and the resurfaced past-reflection — can be reached with Tab and toggled with Enter or Space, announces itself with a descriptive label (e.g. "P3, 9SCI3, planned, expand"), and exposes its open/closed state to assistive tech.
+- **A visible keyboard-focus ring across the whole app.** A global `:focus-visible` outline in the theme accent now marks the focused control on every view (keyboard only; mouse clicks are unaffected).
+
+### Implementation
+- The toggle rows keep their exact styling: they gain `role="button"`, `tabIndex={0}`, `aria-expanded`, an `aria-label`, and a shared `kAct` Enter/Space key handler, rather than becoming native `<button>`s that would fight the existing flex-row CSS. The genuinely button-like controls in Day View (Back/Prev/Next/Today/Print, Quick/Detailed, bell times, No-lesson, +Before/After school) were already native `<button>`s and are unchanged.
+- The `:focus-visible` rule is placed last in the stylesheet so it wins specificity ties (e.g. over inputs' `outline:none`).
+- Verified in preview with keyboard only: focusing a period row and pressing Enter expands it (`aria-expanded` flips, the editor appears, the label updates to "collapse"); Space expands a B-slot row; Enter opens Reflections. Tab order runs top-to-bottom (header, nav, controls, then the day's rows). No console errors; styling visually unchanged.
+
+### To check manually
+- A VoiceOver / screen-reader pass could not be run headlessly. Worth a spot-check: tab through Day View with VoiceOver on and confirm each row is announced as a button with its label and expanded/collapsed state, and that expanding a period moves focus sensibly into the editor fields.
+
+---
+
 ## 2.15.0 — 2026-07-12
 
 ### Features
