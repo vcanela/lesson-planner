@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.14.1 — 2026-07-12
+
+### Fixes
+- **Week view B-slot labels ("before 3", "after 2", "before school", …) no longer clip.** The v2.13.0 attempt widened the label column in a CSS media query, but the `.wk-grid` div still set `grid-template-columns` as an inline style, and an inline style overrides a stylesheet rule, so the column stayed 32px and the widest word ("before", 31–34px) lost its leading "b". The inline value is removed so the CSS controls the column, and the base column width is now 44px, which fits "before" at both the phone (nano) and wide-screen (micro) text sizes. This clipped on desktop too, so the fix applies to both; the extra 12px comes out of the five day columns (about 2px each, imperceptible).
+
+---
+
 ## 2.14.0 — 2026-07-12
 
 ### Features
