@@ -67,9 +67,9 @@ async function loadCore(ls){
   // time (const CfgCtx=createContext(null)); everything else is pure JS + globals.
   const stub=()=>({});
   const factory=new Function("localStorage","createContext","useContext",
-    src+"\nreturn {recTs,isEmptyRecord,pickNewer,mergeData,gcEmpties,importAllData,"+
+    src+"\nreturn {recordTimestamp,isEmptyRecord,pickNewer,mergeData,gcEmpties,importAllData,"+
     "migrateConfig,migrateStorage,makeDateEngine,resolveSlot,asmBellsForDate,"+
-    "NOTE_KEY_RE,META_KEY_RE,GC_HORIZON_MS,dk,sGet,sSet,eN,eM,nM,getAllData};");
+    "NOTE_KEY_RE,META_KEY_RE,GC_HORIZON_MS,toDateKey,storageGet,storageSet,emptyNote,emptyMeta,normalizeMeta,getAllData};");
   return factory(ls,stub,stub);
 }
 // fresh isolated core+storage for tests that write to localStorage
