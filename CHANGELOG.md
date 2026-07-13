@@ -6,6 +6,19 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.17.1 — 2026-07-14
+
+### Documentation
+- **User guide caught up with the features shipped since v2.9**, checked against how they actually landed:
+  - **Cloud sync**: added a plain note on the access-token trade-off. The token uses GitHub's "gist" scope, which can read and write every gist on that account (not just the planner's); fine-grained tokens do not currently cover gists; and a separate free GitHub account used only for the planner drops the stake to zero.
+  - **Offline**: the guide now states plainly that after the first online visit the app works with no connection (a service worker caches it), and that only the first visit and cloud sync need the network.
+  - **Compact phone bar**: documented that on a narrow screen the tabs shrink to icons (active tab keeps its label) and search / day-night / data collapse into a ⋯ menu, with the full bar returning on wide screens (the bottom-bar prototype was not adopted).
+  - **Version footer**: explained the `v…` line under the title and its Guide and Changelog links.
+  - **Error-recovery screen**: described the "Something went wrong displaying this view" card, its Download Backup and Reload buttons, and that saved data is untouched.
+- No app behaviour change; `APP_VERSION` bumped to keep it in step with this entry.
+
+---
+
 ## 2.17.0 — 2026-07-14
 
 ### Implementation

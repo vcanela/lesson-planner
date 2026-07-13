@@ -308,7 +308,7 @@ a:hover{text-decoration:underline}
 <p>That's it. Bookmark it. Everything runs on your device.</p>
 
 <h3>Adding it to your home screen</h3>
-<p>You can save it to your home screen so it opens like a standalone app, and once you have opened it recently it will usually still open without internet.</p>
+<p>You can save it to your home screen so it opens like a standalone app. After the first time you open it online, it keeps working with no internet connection: the app is stored on your device, and your planning data lives there too. You only need a connection for that first visit and for cloud sync.</p>
 
 <p><strong>On a laptop (Chrome or Edge):</strong></p>
 <ol>
@@ -332,6 +332,9 @@ a:hover{text-decoration:underline}
   <li>Tap "Add to Home Screen" or "Install App"</li>
   <li>Confirm</li>
 </ol>
+
+<h3>On a phone: the compact top bar</h3>
+<p>On a narrow screen the top bar tidies itself up automatically. The six view tabs shrink to their icons, with the tab you are on keeping its label so you always know where you are, and search, the day/night toggle, and the data panel tuck into a single &#8943; menu on the right. Nothing is removed; everything is still one tap away. On a laptop or a wide window the full labels and separate buttons return.</p>
 
 <h2>What's already set up for you</h2>
 <p>You do not need to configure any of the following:</p>
@@ -750,6 +753,9 @@ a:hover{text-decoration:underline}
 <h3>The backup reminder</h3>
 <p>Next to the save icon you will see a small status: <strong>Synced</strong> if cloud sync is on, or <strong>Backup N days ago</strong> if it is not. If you have never backed up, or it has been more than about two weeks, it turns amber as a gentle nudge. Click it to open the panel and download a backup or set up sync. If you use cloud sync, you are already covered and it simply reads "Synced".</p>
 
+<h3>If a screen ever fails to load</h3>
+<p>If something goes wrong while drawing a view, the planner shows a small recovery card rather than a blank screen. It reads "Something went wrong displaying this view. Your data is safe on this device," and it gives you a <strong>Download Backup</strong> button and a <strong>Reload</strong> button. This only concerns what is drawn on screen; your saved data is not touched. Switching to another tab often clears it on its own. If it keeps happening, download a backup and reload.</p>
+
 <h2>Cloud sync (optional)</h2>
 <p>If you want your data to stay in sync across multiple devices, you can connect the planner to a GitHub Gist. This requires a free GitHub account and a personal access token.</p>
 <div class="callout-info">
@@ -765,11 +771,17 @@ a:hover{text-decoration:underline}
   <li>Click "Connect"; the planner will create a private Gist for you</li>
   <li>That's it. Repeat the same steps on your other devices, pasting the same Gist ID, and they will all stay in sync</li>
 </ol>
+<div class="callout-info">
+  <span class="callout-label">About the access token</span>
+  <p>Worth knowing before you set this up: the token uses GitHub's "gist" permission, and that permission can read and write every gist on that GitHub account, not just the planner's. GitHub's newer fine-grained tokens do not currently cover gists at all, so the classic "gist" scope is the only option available. If that breadth is more than you are comfortable with, the simplest answer is to create a separate free GitHub account used only for the planner. Then the token can reach nothing you care about, and the stake drops to zero.</p>
+</div>
 <p>A small coloured dot on the save icon shows your sync status: green = connected, pulsing = syncing, red = something went wrong.</p>
 <p>The planner syncs automatically a few seconds after you edit something, and again when you return to the tab, so in most cases you never touch the buttons. The "Push" and "Pull" buttons both do the same thing now: they merge your device and the cloud copy together, newest change per lesson winning, so neither button can overwrite work done on another device. Editing different lessons on two devices is always safe; only editing the very same lesson on two devices before they sync will keep just the most recent version.</p>
 
 <h2>Updates to the planner itself</h2>
-<p>From time to time the planner may be updated with improvements or fixes. This happens automatically; the next time you open the app, your browser fetches the latest version. Your planning data is never affected by updates.</p>
+<p>From time to time the planner is updated with improvements or fixes. This happens automatically: the next time you open the app while online, it fetches the latest version. Your planning data is never affected by updates.</p>
+<p>You can see which version you are running in the small grey line just under the title, for example <strong>v2.17.0</strong>. Beside it are links to this <strong>Guide</strong> and to the <strong>Changelog</strong>, which lists what changed in each version. Both open in a new tab.</p>
+<p><strong>Working offline.</strong> Once you have opened the planner online at least once, it works with no internet connection, because it is stored on your device. When you are next online it quietly refreshes to the latest version, so you are never stuck on an old copy. The only things that need a connection are that first visit and cloud sync, which has to reach GitHub.</p>
 </div>
 
 <!-- ══════ 8. SETUP ══════ -->
