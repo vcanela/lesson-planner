@@ -6,6 +6,18 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.17.0 — 2026-07-14
+
+### Implementation
+- **Renamed the short legacy identifiers to full English**, so the code reads as documentation. No behaviour changes; done in three layered commits with the test harness green before and after each, plus a full click-through of all six views and the Week quick-editor at the end.
+  - **Storage / sync:** `sGet→storageGet`, `sSet→storageSet`, `eN→emptyNote`, `eM→emptyMeta`, `nM→normalizeMeta`, `recTs→recordTimestamp`, and the date-key function `dk→toDateKey`.
+  - **Date engine:** `cycD→cycleDayFor`, `isSD→isSchoolDay`, `isTD→isTeachingDay`, `nearSD→nearestSchoolDay`, `getTermWks→getTermWeeks`, `clsLessons→classLessons`, `lesCtx→lessonContext`.
+  - **Component props / hooks:** `mc→metaCache`, `uM→updateMeta`, `hFoc→handleFocus`, `hBlr→handleBlur`, `ss→saveStatus`, and the gamification prop `g→gam`.
+- **Deliberate non-renames** (would have introduced bugs, so left as-is): `toDateKey`'s output FORMAT (`YYYY-M-D`, unpadded, zero-indexed month) is unchanged; the dark-mode boolean local also named `dk`, the lesson-shift gap counter local `g` (renamed to `gap` for clarity), the `.dk` data property on lesson objects, and the `mcR`/`setMC` companions of `metaCache` are all distinct from the renamed identifiers and were preserved. The 22 "e.g." strings and two `/…/g` regex flags were protected during the `g→gam` pass.
+- `tests.html` (its factory return-list and `eng.*` calls) was updated in lockstep with the storage and engine commits so the harness kept passing. Architecture comment refreshed to describe the new names.
+
+---
+
 ## 2.16.1 — 2026-07-12
 
 ### Fixes

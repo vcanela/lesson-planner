@@ -355,10 +355,12 @@ textarea,input,button,select{font-family:'Inter',system-ui,sans-serif}
  *
  * FOR FUTURE READERS
  *
- *   The single-letter / two-letter naming convention (storageGet, emptyNote, dk, hBlr) is a
- *   legacy from when this file was kept compact for readability of a single
- *   long script. A future pass will rename these to full English. Until then,
- *   the comments above each function explain what's what.
+ *   Identifiers use full English names (storageGet, toDateKey, cycleDayFor,
+ *   isSchoolDay, metaCache, handleBlur, ...). This file was once kept compact with
+ *   short names (sGet, dk, cycD, isSD, mc, hBlr); v2.17.0 renamed them layer by
+ *   layer. The one deliberate exception is toDateKey's output FORMAT (YYYY-M-D,
+ *   unpadded, zero-indexed month), which is load-bearing and unchanged — see its
+ *   comment. Each function still carries a comment explaining what it does.
  * ════════════════════════════════════════════════════════════════════════════
  */
 const {useState,useEffect,useRef,useCallback,useMemo,createContext,useContext}=React;
@@ -598,7 +600,7 @@ const SCHEMA_VERSION=2;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="2.16.1";
+const APP_VERSION="2.17.0";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -1078,9 +1080,9 @@ function compGam(eng,pwn,themeKey){
  *   1. On mount or sk change: read sk from localStorage, merge with defaults
  *      (dv), expose as `data`.
  *   2. updateField(f, v): mutate the in-memory record and re-render.
- *   3. hFoc / hBlr: cancel or schedule a save with BLUR_SAVE_MS debounce.
+ *   3. handleFocus / handleBlur: cancel or schedule a save with BLUR_SAVE_MS debounce.
  *   4. save(): synchronously call storageSet, fire onSave/sync/gam-refresh hooks
- *      on success, surface a status pill via `ss` for STATUS_PILL_MS.
+ *      on success, surface a status pill via `saveStatus` for STATUS_PILL_MS.
  *   5. On tab close (beforeunload/pagehide/visibilitychange): flush any
  *      pending blur-debounce timer so typed text is never lost.
  *
@@ -1088,14 +1090,14 @@ function compGam(eng,pwn,themeKey){
  *   sk     — localStorage key, or null/empty to disable persistence
  *   dv     — defaults object, merged with the stored value at read time
  *   onSave — optional callback fired with the saved record (used by Day View
- *            to update its in-memory mc cache)
+ *            to update its in-memory metaCache cache)
  *
- * Returns: { data, updateField, ss, hFoc, hBlr, save }
+ * Returns: { data, updateField, saveStatus, handleFocus, handleBlur, save }
  * ═══════════════════════════════════════════════════════════════════════
  */
 function useAutoSave(sk,dv,onSave){
   const dr=useRef(dv);const[data,setData]=useState(()=>{if(!sk)return null;const s=storageGet(sk);return{...dr.current,...(s||{})}});
-  const ref=useRef(data||{...dv});const[ss,setSS]=useState("idle");const bt=useRef(null),st=useRef(null);
+  const ref=useRef(data||{...dv});const[saveStatus,setSS]=useState("idle");const bt=useRef(null),st=useRef(null);
   // dirtyRef tracks whether ref.current holds typed-but-not-yet-saved content. Set by
   // updateField on every keystroke; cleared after a successful save; reset on sk change.
   // The unmount-cleanup uses it to decide whether to flush before the consumer unmounts
@@ -1118,9 +1120,9 @@ function useAutoSave(sk,dv,onSave){
     return()=>{window.removeEventListener("beforeunload",flush);window.removeEventListener("pagehide",flush);document.removeEventListener("visibilitychange",onVis)};
   },[save]);
   const updateField=useCallback((f,v)=>{const u={...ref.current,[f]:v};ref.current=u;dirtyRef.current=true;setData({...u})},[]);
-  const hFoc=useCallback(()=>clearTimeout(bt.current),[]);
-  const hBlr=useCallback(()=>{clearTimeout(bt.current);bt.current=setTimeout(save,BLUR_SAVE_MS)},[save]);
-  return{data,updateField,ss,hFoc,hBlr,save};
+  const handleFocus=useCallback(()=>clearTimeout(bt.current),[]);
+  const handleBlur=useCallback(()=>{clearTimeout(bt.current);bt.current=setTimeout(save,BLUR_SAVE_MS)},[save]);
+  return{data,updateField,saveStatus,handleFocus,handleBlur,save};
 }
 // useToday: returns "today" as a midnight-aligned Date, and re-renders the
 // caller automatically when the calendar day rolls over (so a tab left open
@@ -1177,15 +1179,15 @@ function TTCombo({value,onChange,classes}){
 // Btn: a generic styled button.
 const Btn=({children,onClick,style={},disabled})=><button className="btn" onClick={onClick} disabled={disabled} style={style}>{children}</button>;
 // SvH: tiny "save handle" pill. Shows "saving" / "saved" / "failed" next to a field.
-const SvH=({ss})=>{if(!ss||ss==="idle")return null;const m={saving:["var(--text-muted)","saving..."],saved:["var(--success)","\u2713 saved"],error:["var(--error)","\u26A0 failed"]};const[c,l]=m[ss]||["",""];return<span style={{fontSize:"var(--fs-nano)",color:c,marginLeft:6}}>{l}</span>};
+const SvH=({saveStatus})=>{if(!saveStatus||saveStatus==="idle")return null;const m={saving:["var(--text-muted)","saving..."],saved:["var(--success)","\u2713 saved"],error:["var(--error)","\u26A0 failed"]};const[c,l]=m[saveStatus]||["",""];return<span style={{fontSize:"var(--fs-nano)",color:c,marginLeft:6}}>{l}</span>};
 // AInp: auto-resizing input/textarea bound to one field of a useAutoSave record.
 // `multi` switches to a textarea that grows to fit its content as you type.
-const AInp=({data,field,updateField,hFoc,hBlr,ph,multi,rows})=>{const ref=useRef(null);const val=(data&&data[field])||"";useEffect(()=>{if(multi&&ref.current){ref.current.style.height="auto";ref.current.style.height=ref.current.scrollHeight+"px"}},[val,multi]);if(!multi)return<input className="inp" value={val} onChange={e=>updateField(field,e.target.value)} onFocus={hFoc} onBlur={hBlr} placeholder={ph||""}/>;return<textarea ref={ref} className="ta" value={val} onChange={e=>{updateField(field,e.target.value);if(ref.current){ref.current.style.height="auto";ref.current.style.height=ref.current.scrollHeight+"px"}}} onFocus={hFoc} onBlur={hBlr} placeholder={ph||""} rows={rows||3}/>};
+const AInp=({data,field,updateField,handleFocus,handleBlur,ph,multi,rows})=>{const ref=useRef(null);const val=(data&&data[field])||"";useEffect(()=>{if(multi&&ref.current){ref.current.style.height="auto";ref.current.style.height=ref.current.scrollHeight+"px"}},[val,multi]);if(!multi)return<input className="inp" value={val} onChange={e=>updateField(field,e.target.value)} onFocus={handleFocus} onBlur={handleBlur} placeholder={ph||""}/>;return<textarea ref={ref} className="ta" value={val} onChange={e=>{updateField(field,e.target.value);if(ref.current){ref.current.style.height="auto";ref.current.style.height=ref.current.scrollHeight+"px"}}} onFocus={handleFocus} onBlur={handleBlur} placeholder={ph||""} rows={rows||3}/>};
 // CBadge: pill showing a class code with its theme colour. "nc" renders as "Non-contact".
 const CBadge=({cc,style={}})=>{const eng=useCfg();const nc=!cc||cc==="nc";const clr=nc?null:(eng&&eng.classMap[cc]);return<span className="mn" style={{padding:"2px 8px",borderRadius:4,fontSize:"var(--fs-body)",fontWeight:700,background:nc?"var(--nc-bg)":(clr&&clr.bg)||"var(--nc-bg)",color:nc?"var(--nc-text)":(clr&&clr.tx)||"var(--nc-text)",minWidth:84,textAlign:"center",flexShrink:0,...style}}>{nc?"Non-contact":cc}</span>};
 // XpStrip: level icon, level title, XP bar, total XP, and streak indicator.
-// Rendered at the top of every gamification-aware view (gated by g.showGam).
-const XpStrip=({g})=>{const prog=g.nxt?(g.xp-(g.levXp||0))/((g.nxtXp||1)-(g.levXp||0))*100:100;return<div className="xps np"><span style={{fontSize:"var(--fs-emph)"}}>{g.lev.icon}</span><span className="hd" style={{fontWeight:600,fontSize:"var(--fs-caption)",color:"var(--text)",whiteSpace:"nowrap"}}>{g.lev.title}</span><div className="xpbo"><div className="xpbf" style={{width:Math.min(100,prog)+"%"}}/></div><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",whiteSpace:"nowrap"}}>{g.xp} XP</span>{g.sk>0&&<span style={{fontSize:"var(--fs-micro)",whiteSpace:"nowrap"}}>{"\u{1F525}"}{g.sk}</span>}</div>};
+// Rendered at the top of every gamification-aware view (gated by gam.showGam).
+const XpStrip=({gam})=>{const prog=gam.nxt?(gam.xp-(gam.levXp||0))/((gam.nxtXp||1)-(gam.levXp||0))*100:100;return<div className="xps np"><span style={{fontSize:"var(--fs-emph)"}}>{gam.lev.icon}</span><span className="hd" style={{fontWeight:600,fontSize:"var(--fs-caption)",color:"var(--text)",whiteSpace:"nowrap"}}>{gam.lev.title}</span><div className="xpbo"><div className="xpbf" style={{width:Math.min(100,prog)+"%"}}/></div><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",whiteSpace:"nowrap"}}>{gam.xp} XP</span>{gam.sk>0&&<span style={{fontSize:"var(--fs-micro)",whiteSpace:"nowrap"}}>{"\u{1F525}"}{gam.sk}</span>}</div>};
 // kAct: keyboard activation for role="button" elements. Fires fn on Enter or Space and
 // stops Space from scrolling the page, so a mouse is never required to operate a row.
 const kAct=fn=>e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();fn()}};
@@ -1236,7 +1238,7 @@ function pickResurfaced(viewedDate){
   return{date:pick.date,text:pick.text,bucketLabel:bucket==="week"?"about a week ago":bucket==="month"?"about a month ago":"earlier in the term"};
 }
 
-function ReflectionsPanel({meta,updateField,hFoc,hBlr,ss,date,save}){
+function ReflectionsPanel({meta,updateField,handleFocus,handleBlur,saveStatus,date,save}){
   const[open,setOpen]=useState(false);const[showPast,setShowPast]=useState(false);
   const dkey=date?toDateKey(date):null;
   const past=useMemo(()=>date?pickResurfaced(date):null,[dkey]);
@@ -1245,8 +1247,8 @@ function ReflectionsPanel({meta,updateField,hFoc,hBlr,ss,date,save}){
   return<div className="card" style={{padding:"12px 16px",marginTop:14}}><div onClick={()=>setOpen(!open)} role="button" tabIndex={0} aria-expanded={open} aria-label={`Reflections, ${open?"collapse":"expand"}`} onKeyDown={kAct(()=>setOpen(!open))} style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}><div style={{display:"flex",alignItems:"center",gap:6}}><span className="hd" style={{fontSize:"var(--fs-body)",fontWeight:600,color:"var(--accent)"}}>Reflections</span>{hasContent&&!open&&<span style={{width:6,height:6,borderRadius:"50%",background:"var(--accent)"}}/>}</div><span style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}>{open?"\u25B2":"\u25BC"}</span></div>
     {open&&<div style={{marginTop:10}}>
       {past&&<div onClick={()=>setShowPast(!showPast)} role="button" tabIndex={0} aria-expanded={showPast} aria-label={`Past reflection from ${past.bucketLabel}, ${showPast?"collapse":"expand"}`} onKeyDown={kAct(()=>setShowPast(!showPast))} style={{background:"var(--surface)",borderRadius:6,padding:"8px 10px",marginBottom:10,cursor:"pointer"}}><div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",marginBottom:3,display:"flex",justifyContent:"space-between",gap:8}}><span>A while back ({past.bucketLabel}) you wrote</span><span>{showPast?"\u25B2":"\u25BC"}</span></div>{showPast?<div><div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",whiteSpace:"pre-wrap",lineHeight:1.5}}>{past.text}</div><div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",marginTop:5}}>{fmtF(past.date)}</div></div>:<div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",fontStyle:"italic"}}>{grabLine(past.text)}</div>}</div>}
-      <div style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",marginBottom:6}}>What went well? What would you change?{!hasContent&&<button onClick={insertTemplate} style={{background:"none",border:"1px dashed var(--border-strong)",borderRadius:4,padding:"1px 7px",fontSize:"var(--fs-nano)",color:"var(--accent)",cursor:"pointer",fontFamily:"inherit",marginLeft:6}}>+ Glow/Grow/Grab</button>} <SvH ss={ss}/></div>
-      <AInp data={meta} field="reflections" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="End-of-day thoughts, observations, things to remember" multi rows={4}/></div>}</div>;
+      <div style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",marginBottom:6}}>What went well? What would you change?{!hasContent&&<button onClick={insertTemplate} style={{background:"none",border:"1px dashed var(--border-strong)",borderRadius:4,padding:"1px 7px",fontSize:"var(--fs-nano)",color:"var(--accent)",cursor:"pointer",fontFamily:"inherit",marginLeft:6}}>+ Glow/Grow/Grab</button>} <SvH saveStatus={saveStatus}/></div>
+      <AInp data={meta} field="reflections" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="End-of-day thoughts, observations, things to remember" multi rows={4}/></div>}</div>;
 }
 
 /* ═══ PERIOD CARD ════════════════════════════════════════════════════════
@@ -1260,7 +1262,7 @@ function PCard({period,dateKey,cDay,date,initOpen}){
   const eng=useCfg();const cc=cDay?eng.classAt(date,cDay,period.id):null;const isNc=cc==="nc";
   const[open,setOpen]=useState(initOpen||false);const[mode,setMode]=useState(initOpen?"detailed":"quick");
   const sk=(dateKey&&cDay)?`note:${dateKey}:${period.id}`:null;const as=useAutoSave(sk,emptyNote());
-  const{data,updateField,ss,hFoc,hBlr,save}=as;const isNl=!isNc&&data&&data.status==="nl";const has=data&&(data.subject||data.notes||data.resources||isNl);const fl=hasF(data&&data.notes)||hasF(data&&data.subject);
+  const{data,updateField,saveStatus,handleFocus,handleBlur,save}=as;const isNl=!isNc&&data&&data.status==="nl";const has=data&&(data.subject||data.notes||data.resources||isNl);const fl=hasF(data&&data.notes)||hasF(data&&data.subject);
   // nlConfirm: when the user clicks "No lesson" with existing topic text, we ask first rather
   // than silently clearing it. Inline confirm (not a popup) to match the rest of the app's UX.
   const[nlConfirm,setNlConfirm]=useState(false);
@@ -1270,19 +1272,19 @@ function PCard({period,dateKey,cDay,date,initOpen}){
   const ctx=useMemo(()=>eng.lessonContext(cc,dateKey,period.id),[cc,dateKey,period.id]);
   if(period.brk)return<div className="brk"><span>{period.label}</span><span className="mn" style={{fontSize:"var(--fs-micro)"}}>{period.start}{"\u2013"}{period.end}</span></div>;
   return<div style={{borderBottom:"1px solid var(--border)"}}><div className={`pr${open?" exp":""}`} onClick={()=>cDay&&setOpen(o=>!o)} role={cDay?"button":undefined} tabIndex={cDay?0:undefined} aria-expanded={cDay?open:undefined} aria-label={cDay?`${period.label}, ${isNc?"non-contact":cc}, ${isNl?"no lesson":has?"planned":"empty"}, ${open?"collapse":"expand"}`:undefined} onKeyDown={cDay?kAct(()=>setOpen(o=>!o)):undefined} style={cDay?{}:{cursor:"default"}}><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",width:38,flexShrink:0}}>{period.start}</span><CBadge cc={cc}/><span style={{fontSize:"var(--fs-body)",color:isNl?"var(--text-muted)":"var(--text-secondary)",fontStyle:isNl?"italic":"normal",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isNl?(data.subject?"No lesson \u2014 "+data.subject:"No lesson"):data&&data.subject||""}</span><span className="hd" style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",flexShrink:0}}>{period.label}</span>{fl&&<span style={{color:"var(--flag)",fontSize:"var(--fs-micro)",flexShrink:0}}>{"\u2691"}</span>}{has&&!fl&&<span style={{width:5,height:5,borderRadius:"50%",background:"var(--success)",flexShrink:0}}/>}{cDay&&<span style={{color:"var(--text-muted)",fontSize:"var(--fs-caption)"}}>{open?"\u25B2":"\u25BC"}</span>}</div>
-    {open&&data&&<div className="prd" onFocus={hFoc} onBlur={hBlr}><div style={{display:"grid",gap:9}}>{ctx&&<div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",background:"var(--surface)",padding:"4px 8px",borderRadius:4,lineHeight:1.5}}>Lesson <span className="mn" style={{fontWeight:700}}>{ctx.num}/{ctx.total}</span> this term{ctx.prev&&<span> {"\u00B7"} prev: {fmtS(ctx.prev.date)}</span>}{ctx.next&&<span> {"\u00B7"} next: {fmtS(ctx.next.date)}</span>}</div>}{!isNc&&<div style={{display:"flex",gap:4}}>{["quick","detailed"].map(m=><button key={m} className="hd" onClick={()=>setMode(m)} style={{padding:"2px 10px",borderRadius:4,border:"none",cursor:"pointer",fontSize:"var(--fs-micro)",fontWeight:mode===m?700:400,background:mode===m?"var(--accent)":"var(--surface)",color:mode===m?"var(--on-accent)":"var(--text-muted)"}}>{m==="quick"?"Quick":"Detailed"}</button>)}</div>}
-      {(mode==="quick"||isNc)?<div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}><label className="fl" style={{marginBottom:0}}>{isNc?"Notes":isNl?"Reason (optional)":"Topic / Quick note"} <SvH ss={ss}/></label>{!isNc&&(nlConfirm?<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:"var(--fs-nano)",color:"var(--flag)"}}>Replace topic with No Lesson?<button onMouseDown={e=>{e.preventDefault();markNL()}} style={{background:"var(--accent)",color:"var(--on-accent)",border:"none",borderRadius:3,fontSize:"var(--fs-nano)",padding:"2px 8px",cursor:"pointer",fontWeight:600}}>Yes</button><button onMouseDown={e=>{e.preventDefault();setNlConfirm(false)}} style={{background:"none",border:"none",fontSize:"var(--fs-nano)",cursor:"pointer",color:"var(--text-muted)",padding:"0 4px"}}>Cancel</button></span>:<button onMouseDown={e=>{e.preventDefault();isNl?clearNL():askNL()}} style={{background:"none",border:"none",fontSize:"var(--fs-micro)",cursor:"pointer",color:isNl?"var(--error)":"var(--text-muted)",padding:"0 2px"}}>{isNl?"\u2715 Remove no lesson":"No lesson"}</button>)}</div><AInp data={data} field={isNc?"notes":"subject"} updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph={isNc?"Meeting, marking, prep":isNl?"e.g. Class has an assembly":"e.g. Newton's 3rd Law"}/></div>:<><div><label className="fl">Topic / Subject <SvH ss={ss}/></label><AInp data={data} field="subject" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="e.g. Newton's 3rd Law"/></div><div><label className="flb">Notes & Tasks</label><AInp data={data} field="notes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Lesson plan, tasks" multi rows={3}/></div><div><label className="flb">Resources & Links</label><AInp data={data} field="resources" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="URLs, file names"/></div></>}</div></div>}</div>;
+    {open&&data&&<div className="prd" onFocus={handleFocus} onBlur={handleBlur}><div style={{display:"grid",gap:9}}>{ctx&&<div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",background:"var(--surface)",padding:"4px 8px",borderRadius:4,lineHeight:1.5}}>Lesson <span className="mn" style={{fontWeight:700}}>{ctx.num}/{ctx.total}</span> this term{ctx.prev&&<span> {"\u00B7"} prev: {fmtS(ctx.prev.date)}</span>}{ctx.next&&<span> {"\u00B7"} next: {fmtS(ctx.next.date)}</span>}</div>}{!isNc&&<div style={{display:"flex",gap:4}}>{["quick","detailed"].map(m=><button key={m} className="hd" onClick={()=>setMode(m)} style={{padding:"2px 10px",borderRadius:4,border:"none",cursor:"pointer",fontSize:"var(--fs-micro)",fontWeight:mode===m?700:400,background:mode===m?"var(--accent)":"var(--surface)",color:mode===m?"var(--on-accent)":"var(--text-muted)"}}>{m==="quick"?"Quick":"Detailed"}</button>)}</div>}
+      {(mode==="quick"||isNc)?<div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}><label className="fl" style={{marginBottom:0}}>{isNc?"Notes":isNl?"Reason (optional)":"Topic / Quick note"} <SvH saveStatus={saveStatus}/></label>{!isNc&&(nlConfirm?<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:"var(--fs-nano)",color:"var(--flag)"}}>Replace topic with No Lesson?<button onMouseDown={e=>{e.preventDefault();markNL()}} style={{background:"var(--accent)",color:"var(--on-accent)",border:"none",borderRadius:3,fontSize:"var(--fs-nano)",padding:"2px 8px",cursor:"pointer",fontWeight:600}}>Yes</button><button onMouseDown={e=>{e.preventDefault();setNlConfirm(false)}} style={{background:"none",border:"none",fontSize:"var(--fs-nano)",cursor:"pointer",color:"var(--text-muted)",padding:"0 4px"}}>Cancel</button></span>:<button onMouseDown={e=>{e.preventDefault();isNl?clearNL():askNL()}} style={{background:"none",border:"none",fontSize:"var(--fs-micro)",cursor:"pointer",color:isNl?"var(--error)":"var(--text-muted)",padding:"0 2px"}}>{isNl?"\u2715 Remove no lesson":"No lesson"}</button>)}</div><AInp data={data} field={isNc?"notes":"subject"} updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph={isNc?"Meeting, marking, prep":isNl?"e.g. Class has an assembly":"e.g. Newton's 3rd Law"}/></div>:<><div><label className="fl">Topic / Subject <SvH saveStatus={saveStatus}/></label><AInp data={data} field="subject" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="e.g. Newton's 3rd Law"/></div><div><label className="flb">Notes & Tasks</label><AInp data={data} field="notes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Lesson plan, tasks" multi rows={3}/></div><div><label className="flb">Resources & Links</label><AInp data={data} field="resources" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="URLs, file names"/></div></>}</div></div>}</div>;
 }
 
 /* ═══ DAY VIEW ═══════════════════════════════════════════════════════════
  * DayView: a single day, all periods stacked. The richest editor: each PCard
  * has Quick and Detailed modes, plus a Reflections panel and Day Notes.
- * Reads `mc` (meta cache) for the day's mid-morning type; writes via onMS.
+ * Reads `metaCache` (meta cache) for the day's mid-morning type; writes via onMS.
  * `fp` is an optional period ID to auto-expand (e.g. when navigating from
  * Week View's "Full detail" link).
  * ═══════════════════════════════════════════════════════════════════════
  */
-function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
+function DayView({date,setDate,onBack,metaCache,onMS,fp,gam,onUpdateCfg,cfg}){
   const eng=useCfg();const today=useToday();const cd=eng.cycleDayFor(date),dateKey=toDateKey(date),isZ=cd===0,sch=eng.isSchoolDay(date);
   const twn=eng.termWkN(getWDs(date));
   const prev=eng.nearestSchoolDay(date,-1),next=eng.nearestSchoolDay(date,1);
@@ -1292,7 +1294,7 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
   // upcoming school day within the engine's walk window.
   const todayTarget=eng.isSchoolDay(today)?today:eng.nearestSchoolDay(today,1);
   const hms=useCallback(saved=>{if(dateKey)onMS(dateKey,saved)},[dateKey]);
-  const as=useAutoSave(`daymeta:${dateKey}`,emptyMeta(),hms);const{data:meta,updateField,ss,hFoc,hBlr,save}=as;
+  const as=useAutoSave(`daymeta:${dateKey}`,emptyMeta(),hms);const{data:meta,updateField,saveStatus,handleFocus,handleBlur,save}=as;
   // forceShow: per-date ad-hoc reveals for B0/B3 so the teacher can add a one-off
   // before/after-school event even when no cycle default exists. Cleared on date change.
   const[forceShow,setForceShow]=useState({});
@@ -1320,26 +1322,26 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
     updateField("overrides",next);
     setTimeout(save,0);
   };
-  return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
+  return<div>{gam.showGam&&<><XpStrip gam={gam}/><Badges achs={gam.achs}/></>}
     <div style={{marginBottom:12,marginTop:10}}><div className="hd" style={{fontSize:"var(--fs-display)",fontWeight:600,color:"var(--text)",lineHeight:1.2}}>{fmtF(date)}</div><div className="hd" style={{fontSize:"var(--fs-emph)",marginTop:4,color:isZ?"var(--dz-text)":sch?"var(--accent)":"var(--error)"}}>{isZ?"Day 0 \u2014 no class structure":sch?`Day ${cd} rotation`:eng.inT(date)?"Holiday / Weekend":"School Holiday"}{twn&&<span style={{color:"var(--text-secondary)",fontWeight:400}}> {"\u00B7"} Term {twn.tn}, Week {twn.wk}</span>}</div></div>
-    <div className="np" style={{display:"flex",alignItems:"center",gap:7,marginBottom:14,flexWrap:"wrap"}}><Btn onClick={onBack}>{"\u2190"} Back</Btn><Btn onClick={()=>prev&&setDate(prev)} disabled={!prev}>{"\u2039"} Prev</Btn><Btn onClick={()=>next&&setDate(next)} disabled={!next}>Next {"\u203A"}</Btn><Btn onClick={()=>todayTarget&&setDate(todayTarget)} disabled={!todayTarget}>Today</Btn><div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}><SvH ss={ss}/><Btn onClick={()=>window.print()}>{"\u{1F5A8}"} Print</Btn></div></div>
+    <div className="np" style={{display:"flex",alignItems:"center",gap:7,marginBottom:14,flexWrap:"wrap"}}><Btn onClick={onBack}>{"\u2190"} Back</Btn><Btn onClick={()=>prev&&setDate(prev)} disabled={!prev}>{"\u2039"} Prev</Btn><Btn onClick={()=>next&&setDate(next)} disabled={!next}>Next {"\u203A"}</Btn><Btn onClick={()=>todayTarget&&setDate(todayTarget)} disabled={!todayTarget}>Today</Btn><div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}><SvH saveStatus={saveStatus}/><Btn onClick={()=>window.print()}>{"\u{1F5A8}"} Print</Btn></div></div>
     {!sch?<div style={{color:"var(--text-secondary)",padding:30,textAlign:"center",fontSize:"var(--fs-emph)"}}>No classes scheduled.</div>
-    :isZ?<div className="card" style={{padding:18,marginBottom:14,borderColor:"var(--dz-border)",background:"var(--dz-bg)"}}><div className="hd" style={{fontSize:"var(--fs-emph)",color:"var(--dz-text)",fontWeight:600,marginBottom:12}}>Day 0 {"\u2014"} No class structure</div>{meta&&<div style={{display:"grid",gap:10}} onFocus={hFoc} onBlur={hBlr}><div><label className="fl">Label / Activity <SvH ss={ss}/></label><AInp data={meta} field="day0label" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="e.g. Orientation, EOTC"/></div><div><label className="flb">Notes</label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Notes" multi rows={3}/></div></div>}</div>
+    :isZ?<div className="card" style={{padding:18,marginBottom:14,borderColor:"var(--dz-border)",background:"var(--dz-bg)"}}><div className="hd" style={{fontSize:"var(--fs-emph)",color:"var(--dz-text)",fontWeight:600,marginBottom:12}}>Day 0 {"\u2014"} No class structure</div>{meta&&<div style={{display:"grid",gap:10}} onFocus={handleFocus} onBlur={handleBlur}><div><label className="fl">Label / Activity <SvH saveStatus={saveStatus}/></label><AInp data={meta} field="day0label" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="e.g. Orientation, EOTC"/></div><div><label className="flb">Notes</label><AInp data={meta} field="dayNotes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Notes" multi rows={3}/></div></div>}</div>
     :<>{meta&&<div className="np" style={{display:"flex",alignItems:"center",gap:6,marginBottom:12,flexWrap:"wrap"}}>
       <span style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)"}}>Bell times</span>
       {[["auto","Auto"],["std","Standard"],["asm","Assembly"]].map(([v,lbl])=>{const cur=(meta.bells==="asm"||meta.bells==="std")?meta.bells:"auto";const active=cur===v;return<button key={v} onClick={()=>{updateField("bells",v);setTimeout(save,0)}} style={{padding:"3px 10px",borderRadius:"var(--radius-sm)",border:active?"none":"1px solid var(--border)",cursor:"pointer",fontSize:"var(--fs-micro)",fontWeight:active?700:400,background:active?"var(--accent)":"var(--surface)",color:active?"var(--on-accent)":"var(--text-secondary)",fontFamily:"inherit"}}>{lbl}</button>})}
       {(()=>{const cfgR={timetable:eng.timetableForDate(date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]};const overridden=meta.bells==="asm"||meta.bells==="std";const autoAsm=asmBellsForDate(cd,date,cfgR,{...meta,bells:"auto"});const eff=overridden?meta.bells==="asm":autoAsm;return<span style={{fontSize:"var(--fs-nano)",color:overridden?"var(--flag)":"var(--text-muted)"}}>{overridden?`${eff?"Assembly":"Standard"} (manual)`:autoAsm?"Assembly today (FSA)":"Standard"}</span>})()}
-    </div>}{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH ss={ss}/></label><AInp data={meta} field="dayNotes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Meetings, reminders, duty" multi rows={2}/></div>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>
+    </div>}{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH saveStatus={saveStatus}/></label><AInp data={meta} field="dayNotes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Meetings, reminders, duty" multi rows={2}/></div>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>
   {!hasB0&&<div style={{padding:"6px 12px",borderBottom:"1px solid var(--border)"}}><button onClick={()=>setForceShow(s=>({...s,B0:true}))} style={{background:"none",border:"1px dashed var(--border-strong)",borderRadius:4,padding:"3px 10px",fontSize:"var(--fs-micro)",color:"var(--text-muted)",cursor:"pointer",fontFamily:"inherit"}}>+ Before school</button></div>}
   {slots.map(s=>{
     if(s.type==="period")return<PCard key={`${dateKey}-${s.id}`} period={s} dateKey={dateKey} cDay={cd} date={date} initOpen={fp===s.id}/>;
     const code=s.code;
     const cyc=((eng.timetableForDate(date)||{})[cd]||{})[code]||null;
     const current=s.type==="bslot"?s.value:null;
-    return<BSlotRow key={`${dateKey}-${code}`} slot={s} dateKey={dateKey} cycleDay={cd} current={current} cycleDefault={cyc} isOverride={!!s.isOverride} clash={!!s.clash} duties={duties} onSaveToday={v=>setOverride(code,v)} hFoc={hFoc} hBlr={hBlr} initOpen={!!s.forced}/>;
+    return<BSlotRow key={`${dateKey}-${code}`} slot={s} dateKey={dateKey} cycleDay={cd} current={current} cycleDefault={cyc} isOverride={!!s.isOverride} clash={!!s.clash} duties={duties} onSaveToday={v=>setOverride(code,v)} handleFocus={handleFocus} handleBlur={handleBlur} initOpen={!!s.forced}/>;
   })}
   {!hasB3&&<div style={{padding:"6px 12px",borderTop:"1px solid var(--border)"}}><button onClick={()=>setForceShow(s=>({...s,B3:true}))} style={{background:"none",border:"1px dashed var(--border-strong)",borderRadius:4,padding:"3px 10px",fontSize:"var(--fs-micro)",color:"var(--text-muted)",cursor:"pointer",fontFamily:"inherit"}}>+ After school</button></div>}
-</div><ReflectionsPanel meta={meta} updateField={updateField} hFoc={hFoc} hBlr={hBlr} ss={ss} date={date} save={save}/></>}
+</div><ReflectionsPanel meta={meta} updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} saveStatus={saveStatus} date={date} save={save}/></>}
   </div>;
 }
 
@@ -1350,18 +1352,18 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
  * a "Wk" button to open Week View. Defaults to the active term.
  * ═══════════════════════════════════════════════════════════════════════
  */
-function TermView({onDay,onWk,mc,g,cfg}){
+function TermView({onDay,onWk,metaCache,gam,cfg}){
   const eng=useCfg();const today=useToday();const[termIdx,setTermIdx]=useState(()=>{if(!eng||!eng.terms)return 0;const now=new Date();now.setHours(0,0,0,0);let ati=0;for(let i=0;i<eng.terms.length;i++){if(now<=eng.terms[i].end){ati=i;break}else ati=i}return ati});
   const term=eng.terms[termIdx];const weeks=useMemo(()=>term?eng.getTermWeeks(term):[],[term]);
   const ts=useMemo(()=>{if(!term)return new Date();const d=new Date(term.start);d.setHours(0,0,0,0);return d},[term]);
   const te=useMemo(()=>{if(!term)return new Date();const d=new Date(term.end);d.setHours(23,59,59,999);return d},[term]);
   const cov=useMemo(()=>{const c={};weeks.flat().forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;const key=toDateKey(d);let p=0,t=0;eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,cd,pid);if(cls==="nc")return;t++;const n=storageGet(`note:${key}:${pid}`);if(n&&(n.subject||n.notes||n.status==="nl"))p++});c[key]={p,t}});return c},[weeks]);
   if(!term)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>No terms configured. Head to Setup to get started.</div>;
-  return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
+  return<div>{gam.showGam&&<><XpStrip gam={gam}/><Badges achs={gam.achs}/></>}
     <div style={{marginBottom:14,marginTop:10}}><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4}}>{eng.terms.map((t,i)=><button key={i} className="hd" onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:termIdx===i?700:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div><div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}>{term.start.toLocaleDateString("en-NZ",{day:"numeric",month:"short"})} {"\u2013"} {term.end.toLocaleDateString("en-NZ",{day:"numeric",month:"short",year:"numeric"})}</div></div>
     <div style={{display:"grid",gridTemplateColumns:"58px repeat(5,1fr)",gap:3,marginBottom:4}}><div/>{["Mon","Tue","Wed","Thu","Fri"].map(d=><div key={d} className="hd" style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",textAlign:"center",fontWeight:600}}>{d}</div>)}</div>
     {weeks.map((days,wi)=><div key={wi} style={{display:"grid",gridTemplateColumns:"58px repeat(5,1fr)",gap:3,marginBottom:3,alignItems:"start"}}><div style={{paddingTop:2}}><Btn onClick={()=>onWk(days[0])} style={{padding:"3px 0",fontSize:"var(--fs-nano)",width:"100%",textAlign:"center",borderRadius:5}}>Wk {wi+1}</Btn></div>
-      {days.map(d=>{const dn=new Date(d);dn.setHours(0,0,0,0);const iT=dn>=ts&&dn<=te,sch=eng.isSchoolDay(d),isT=dn.toDateString()===today.toDateString(),cd=sch?eng.cycleDayFor(d):null,isZ=cd===0,k=toDateKey(d),meta=mc[k]||emptyMeta(),cv=cov[k];
+      {days.map(d=>{const dn=new Date(d);dn.setHours(0,0,0,0);const iT=dn>=ts&&dn<=te,sch=eng.isSchoolDay(d),isT=dn.toDateString()===today.toDateString(),cd=sch?eng.cycleDayFor(d):null,isZ=cd===0,k=toDateKey(d),meta=metaCache[k]||emptyMeta(),cv=cov[k];
         if(!iT||!sch)return<div key={k} style={{background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-sm)",minHeight:50,display:"flex",alignItems:"center",justifyContent:"center",padding:"2px 4px"}}>{iT&&(()=>{const hol=(cfg.holidays||[]).find(h=>(typeof h==="string"?h:h.date)===fmtISO(d));return<span style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",textAlign:"center",lineHeight:1.3}}>{hol&&typeof hol!=="string"?hol.name:"holiday"}</span>})()}</div>;
         return<div key={k} onClick={()=>onDay(d)} style={{background:isT?"var(--today-bg)":isZ?"var(--dz-bg)":"var(--card)",border:`1px solid ${isT?"var(--today-border)":isZ?"var(--dz-border)":"var(--border)"}`,borderRadius:"var(--radius-sm)",padding:"4px 5px",cursor:"pointer",minHeight:50}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:2}}><span className="hd" style={{fontSize:"var(--fs-body)",fontWeight:700,color:isZ?"var(--dz-text)":isT?"var(--accent)":"var(--text)"}}>{d.getDate()}<span style={{fontSize:"var(--fs-nano)",fontWeight:400,color:"var(--text-muted)",marginLeft:2}}>{d.toLocaleDateString("en-NZ",{month:"short"})}</span></span><span className="mn" style={{fontSize:"var(--fs-nano)",fontWeight:600,color:isZ?"var(--dz-text)":"var(--accent)"}}>{isZ?"D0":`D${cd}`}</span></div>
@@ -1380,7 +1382,7 @@ function TermView({onDay,onWk,mc,g,cfg}){
  * doDownload: trigger a browser download of the given text content.
  * ═══════════════════════════════════════════════════════════════════════
  */
-function buildWkTxt(style,days,wl,wkLabel,sum,mc,eng,wNotes,cfg){
+function buildWkTxt(style,days,wl,wkLabel,sum,metaCache,eng,wNotes,cfg){
   const h1=s=>style==="org"?`* ${s}\n`:style==="plain"?`${s}\n${"=".repeat(Math.min(s.length,44))}\n`:`# ${s}\n`;
   const h2=s=>style==="org"?`** ${s}\n`:style==="plain"?`${s}\n${"-".repeat(Math.min(s.length,44))}\n`:`## ${s}\n`;
   const h3=s=>style==="org"?`*** ${s}\n`:style==="plain"?`  ${s}:\n`:`### ${s}\n`;
@@ -1410,7 +1412,7 @@ function buildWkTxt(style,days,wl,wkLabel,sum,mc,eng,wNotes,cfg){
   let out=h1(`Week Plan \u2014 ${wl}`);
   out+=style==="md"?`**${wkLabel}** \u00B7 ${sum.p}/${sum.t} planned\n\n`:`${wkLabel} \u00B7 ${sum.p}/${sum.t} planned\n\n`;
   days.forEach(d=>{
-    const cd=eng.cycleDayFor(d),sch=eng.isSchoolDay(d),isZ=cd===0,key=toDateKey(d),meta=mc[key]||emptyMeta();
+    const cd=eng.cycleDayFor(d),sch=eng.isSchoolDay(d),isZ=cd===0,key=toDateKey(d),meta=metaCache[key]||emptyMeta();
     out+=sep+h2(fmtF(d));
     if(!sch){out+=(style==="md"?"*No school*":"No school")+"\n\n";return}
     if(isZ){out+=`Day 0${meta.day0label?": "+meta.day0label:""}\n\n`;if(meta.dayNotes)out+=meta.dayNotes+"\n\n";return}
@@ -1447,11 +1449,11 @@ function buildWkTxt(style,days,wl,wkLabel,sum,mc,eng,wNotes,cfg){
   });
   return out;
 }
-function buildReflTxt(style,days,wl,mc){
+function buildReflTxt(style,days,wl,metaCache){
   const h1=s=>style==="org"?`* ${s}\n`:style==="plain"?`${s}\n${"=".repeat(Math.min(s.length,44))}\n`:`# ${s}\n`;
   const h2=s=>style==="org"?`** ${s}\n`:style==="plain"?`${s}\n${"-".repeat(Math.min(s.length,44))}\n`:`## ${s}\n`;
   let out=h1(`Reflections \u2014 ${wl}\n`)+"\n";
-  days.forEach(d=>{const r=(mc[toDateKey(d)]||emptyMeta()).reflections;if(r){out+=h2(fmtF(d))+"\n"+r+"\n\n"}});
+  days.forEach(d=>{const r=(metaCache[toDateKey(d)]||emptyMeta()).reflections;if(r){out+=h2(fmtF(d))+"\n"+r+"\n\n"}});
   return out;
 }
 function doDownload(content,filename){const blob=new Blob([content],{type:"text/plain"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url)}
@@ -1464,7 +1466,7 @@ function doDownload(content,filename){const blob=new Blob([content],{type:"text/
  * The export card lets you download or copy the week as text.
  * ═══════════════════════════════════════════════════════════════════════
  */
-function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
+function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg}){
   const eng=useCfg();const today=useToday();const days=getWDs(base),wn=eng.wkN(base);
   const twn=eng.termWkN(days);const wkLabel=twn?`Term ${twn.tn}, Week ${twn.wk}`:"School Holidays";
   // coarse = touch/stylus pointer; skip autoFocus when opening a cell so a glance
@@ -1479,7 +1481,7 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
   // if qe was open at mousedown on this cell, treat the click as "close".
   const qeAtMouseDownRef=useRef(null);
   const wNotes=useMemo(()=>{const m={};days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;const key=toDateKey(d);eng.PIDS.forEach(pid=>{const n=storageGet(`note:${key}:${pid}`);m[`${key}:${pid}`]={...emptyNote(),...(n||{})}})});return m},[days.map(toDateKey).join(","),nr]);
-  const sum=useMemo(()=>{let p=0,t=0,f=0;days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,cd,pid);if(cls==="nc")return;t++;const n=wNotes[`${toDateKey(d)}:${pid}`];if(n&&(n.subject||n.notes||n.status==="nl"))p++;if(n&&(hasF(n.notes)||hasF(n.subject)))f++})});let ud=0;days.forEach(d=>{if(eng.cycleDayFor(d)===0){const m=mc[toDateKey(d)];if(!m||!m.day0label)ud++}});return{p,t,f,ud}},[days,wNotes,mc]);
+  const sum=useMemo(()=>{let p=0,t=0,f=0;days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,cd,pid);if(cls==="nc")return;t++;const n=wNotes[`${toDateKey(d)}:${pid}`];if(n&&(n.subject||n.notes||n.status==="nl"))p++;if(n&&(hasF(n.notes)||hasF(n.subject)))f++})});let ud=0;days.forEach(d=>{if(eng.cycleDayFor(d)===0){const m=metaCache[toDateKey(d)];if(!m||!m.day0label)ud++}});return{p,t,f,ud}},[days,wNotes,metaCache]);
   const oQE=(key,pid,cls,date)=>{const n=wNotes[`${key}:${pid}`];setQV(n&&n.subject||"");setQE({dk:key,pid,cc:cls,date});setNlConfirm(false)};
   // sQE saves the typed input. It preserves the existing status (so editing the
   // reason of a no-lesson period does not silently downgrade it back to a topic).
@@ -1491,7 +1493,7 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
   const wl=fmtS(days[0])+" \u2013 "+fmtS(days[4]);
 
   const gridCells=useMemo(()=>{
-    const dd=days.map(d=>({d,k:toDateKey(d),cd:eng.cycleDayFor(d),sch:eng.isSchoolDay(d),isZ:eng.cycleDayFor(d)===0,isT:d.toDateString()===today.toDateString(),meta:mc[toDateKey(d)]||emptyMeta()}));
+    const dd=days.map(d=>({d,k:toDateKey(d),cd:eng.cycleDayFor(d),sch:eng.isSchoolDay(d),isZ:eng.cycleDayFor(d)===0,isT:d.toDateString()===today.toDateString(),meta:metaCache[toDateKey(d)]||emptyMeta()}));
     const cells=[];const lS={display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:4};const lT={fontSize:"var(--fs-nano)",color:"var(--text-muted)",fontWeight:700};
     const bg=x=>x.isT?"var(--today-bg)":x.isZ?"var(--dz-bg)":x.sch?"var(--card)":"var(--surface)";
     const bd=x=>`1px solid ${x.isT?"var(--today-border)":x.isZ?"var(--dz-border)":"var(--border)"}`;
@@ -1500,7 +1502,7 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
     cells.push(<div key="ln" style={lS}><span className="hd" style={lT}>{"\u270D"}</span></div>);
     dd.forEach((x,i)=>{if(!x.sch){cells.push(<div key={`n${i}`} style={{background:"var(--surface)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",padding:4}}><span style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}>{isWE(x.d)?"Weekend":"Holiday"}</span></div>);return}
       if(x.isZ){cells.push(<div key={`n${i}`} onClick={()=>onDet(x.d)} style={{background:bg(x),border:bd(x),padding:4,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:"var(--fs-nano)",color:"var(--dz-text)",fontStyle:"italic"}}>{x.meta.day0label||"Day 0 \u2014 tap"}</span></div>);return}
-      const val=x.meta.dayNotes||"";cells.push(<div key={`n${i}`} style={{background:bg(x),border:bd(x),padding:"3px 4px",display:"flex",alignItems:"stretch"}}><textarea className="ta wk-daynote" value={val} onChange={e=>uM(x.k,{dayNotes:e.target.value})} placeholder="Day notes" rows={1} style={{fontSize:"var(--fs-nano)",padding:"2px 4px",borderRadius:3,background:val?"var(--surface-open)":"transparent",borderColor:val?"var(--accent)":"var(--border)",minHeight:28,lineHeight:1.3,width:"100%",maxWidth:"100%",boxSizing:"border-box"}}/><div className="wk-daynote-m" onClick={()=>onDet(x.d)} title="Open Day view to edit notes" style={{color:val?"var(--accent)":"var(--text-muted)",fontWeight:val?600:400}}>{val?"● notes":"notes"}</div></div>);
+      const val=x.meta.dayNotes||"";cells.push(<div key={`n${i}`} style={{background:bg(x),border:bd(x),padding:"3px 4px",display:"flex",alignItems:"stretch"}}><textarea className="ta wk-daynote" value={val} onChange={e=>updateMeta(x.k,{dayNotes:e.target.value})} placeholder="Day notes" rows={1} style={{fontSize:"var(--fs-nano)",padding:"2px 4px",borderRadius:3,background:val?"var(--surface-open)":"transparent",borderColor:val?"var(--accent)":"var(--border)",minHeight:28,lineHeight:1.3,width:"100%",maxWidth:"100%",boxSizing:"border-box"}}/><div className="wk-daynote-m" onClick={()=>onDet(x.d)} title="Open Day view to edit notes" style={{color:val?"var(--accent)":"var(--text-muted)",fontWeight:val?600:400}}>{val?"● notes":"notes"}</div></div>);
     });
     // Resolve a B-slot value for one day. Shared resolveSlot helper handles
     // override > weekly > cycle default precedence. Local wrappers return the bits the
@@ -1561,17 +1563,17 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
     pSlotRow("P5",4);pSlotRow("P6",5);
     if(bRowVisible("B3"))bSlotRow("B3");
     return cells;
-  // g (gam) included as a re-render trigger: any note save anywhere bumps the App-level
-  // gam refresh counter via window._plannerGamRefresh. Including g here forces gridCells
+  // gam (gam) included as a re-render trigger: any note save anywhere bumps the App-level
+  // gam refresh counter via window._plannerGamRefresh. Including gam here forces gridCells
   // to re-evaluate (and bRowVisible to re-read localStorage) after an out-of-view note
   // save, e.g. a B-slot note flushed from useAutoSave's unmount cleanup when navigating
   // away from Day View.
-  },[days,today,mc,wNotes,eng,duties,g]);
+  },[days,today,metaCache,wNotes,eng,duties,gam]);
 
   const flags=useMemo(()=>{const fl=[];days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;const key=toDateKey(d);eng.PIDS.forEach(pid=>{const n=wNotes[`${key}:${pid}`];if(n&&(hasF(n.notes)||hasF(n.subject))){const cls=eng.classAt(d,cd,pid);fl.push({date:d,pid,cls,subject:n.subject||"",notes:n.notes||""})}})});return fl},[days,wNotes]);
   const spotHits=useMemo(()=>{if(!spot)return[];const h=[];days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{if(eng.classAt(d,cd,pid)===spot){const per=bldP(asmBellsForDate(cd,d,{timetable:eng.timetableForDate(d),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]})).find(p=>p.id===pid);h.push({d,per,cd})}})});return h},[spot,days]);
 
-  return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
+  return<div>{gam.showGam&&<><XpStrip gam={gam}/><Badges achs={gam.achs}/></>}
     <div className="np" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10,marginTop:10,flexWrap:"wrap"}}><div style={{display:"flex",alignItems:"center",gap:7}}><Btn onClick={()=>setBase(d=>addD(d,-7))} style={{padding:"4px 10px"}}>{"\u2039"}</Btn><div style={{textAlign:"center",width:"190px",flexShrink:0}}><div style={{fontSize:"var(--fs-body)",color:"var(--text-secondary)"}}>{wl}</div><div className="hd" style={{fontSize:"var(--fs-caption)",color:"var(--accent)",fontWeight:600}}>{wkLabel}</div></div><Btn onClick={()=>setBase(d=>addD(d,7))} style={{padding:"4px 10px"}}>{"\u203A"}</Btn></div><Btn onClick={()=>setBase(getPlanMon(today))} style={{padding:"4px 10px",fontSize:"var(--fs-caption)"}}>Today</Btn></div>
     <div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginBottom:10,padding:"6px 10px",background:"var(--surface)",borderRadius:"var(--radius-md)",display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}><span>{wkLabel} {"\u00B7"} <strong className="mn" style={{color:sum.p===sum.t?"var(--success)":"var(--text)"}}>{sum.p}/{sum.t}</strong> planned</span>{sum.f>0&&<span style={{color:"var(--flag)"}}>{"\u2691"} {sum.f} flagged</span>}{sum.ud>0&&<span style={{color:"var(--dz-text)"}}>{"\u26A0"} {sum.ud} unlabelled D0</span>}<span style={{marginLeft:"auto"}}><FlagBank/></span></div>
     {eng.classCodes.length>0&&<div className="np" style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c];const activeThisWeek=eng.classActiveOn(c,days[0])||eng.classActiveOn(c,days[4]);return<span key={c} className="mn" title={activeThisWeek?undefined:"This class is not active this week (semester boundary)"} onClick={()=>setSpot(spot===c?null:c)} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"3px 10px",borderRadius:4,fontSize:"var(--fs-caption)",fontWeight:700,cursor:"pointer",outline:spot===c?"2px solid var(--accent)":"none",opacity:activeThisWeek?1:.35}}>{c}</span>})}</div>}
@@ -1579,24 +1581,24 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
     {qe&&<div className="qe"><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}><div style={{display:"flex",alignItems:"center",gap:8}}><CBadge cc={qe.cc} style={{fontSize:"var(--fs-caption)",padding:"2px 6px",minWidth:0}}/><span style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)"}}>{qe.pid.toUpperCase()} {"\u00B7"} {fmtS(qe.date)}</span></div><div style={{display:"flex",gap:6}}><button onMouseDown={e=>{e.preventDefault();onDet(qe.date,qe.pid)}} style={{background:"none",border:"none",color:"var(--accent)",cursor:"pointer",fontSize:"var(--fs-caption)"}}>Full detail {"\u2192"}</button><button onMouseDown={e=>{e.preventDefault();setQE(null)}} style={{background:"none",border:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:"var(--fs-emph)"}}>{"\u2715"}</button></div></div><div style={{display:"flex",gap:6,alignItems:"center"}}><input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null)}} onBlur={sQE} autoFocus={!coarse} placeholder={wNotes[`${qe.dk}:${qe.pid}`]?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/><button onMouseDown={e=>{e.preventDefault();askNL()}} style={{background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-sm)",color:"var(--text-secondary)",cursor:"pointer",fontSize:"var(--fs-micro)",padding:"6px 10px",whiteSpace:"nowrap",flexShrink:0}}>No lesson</button></div>{nlConfirm&&<div style={{display:"flex",alignItems:"center",gap:6,fontSize:"var(--fs-micro)",color:"var(--flag)",marginTop:6,padding:"4px 0"}}><span>Replace your topic with No Lesson?</span><button onMouseDown={e=>{e.preventDefault();sNL("")}} style={{background:"var(--accent)",color:"var(--on-accent)",border:"none",borderRadius:"var(--radius-sm)",fontSize:"var(--fs-nano)",padding:"3px 10px",cursor:"pointer",fontWeight:600}}>Yes, mark No Lesson</button><button onMouseDown={e=>{e.preventDefault();setNlConfirm(false)}} style={{background:"none",border:"none",fontSize:"var(--fs-nano)",cursor:"pointer",color:"var(--text-muted)",padding:"0 4px"}}>Cancel</button></div>}</div>}
     {flags.length>0&&<div className="card" style={{padding:"10px 14px",marginBottom:10}}><div className="sl" style={{marginBottom:8}}>{"\u2691"} Flagged Items {"\u00B7"} <span className="mn">{flags.length}</span></div>{flags.map((f,i)=>{const clr=f.cls!=="nc"&&eng.classMap[f.cls];return<div key={i} onClick={()=>onDet(f.date,f.pid)} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:i>0?"1px solid var(--border)":"none",cursor:"pointer"}}><span className="mn" style={{fontSize:"var(--fs-nano)",fontWeight:700,padding:"1px 6px",borderRadius:3,background:clr?clr.bg:"var(--nc-bg)",color:clr?clr.tx:"var(--nc-text)"}}>{f.cls==="nc"?"NC":f.cls}</span><span style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)"}}>{fmtS(f.date)} {f.pid.toUpperCase()}</span><span style={{fontSize:"var(--fs-micro)",color:"var(--text)",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.subject||f.notes}</span><span style={{color:"var(--flag)",fontSize:"var(--fs-micro)"}}>{"\u2691"}</span></div>})}</div>}
     <div className="card np" style={{padding:"10px 14px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6}}><div className="sl">Export week</div><div style={{display:"flex",gap:6}}>
-      {(()=>{const refs=days.filter(d=>(mc[toDateKey(d)]||emptyMeta()).reflections);const xst=(storageGet("planner-config")||{}).exportStyle||"org";return refs.length>0?<Btn onClick={()=>{doDownload(buildReflTxt(xst,days,wl,mc),`reflections-${fmtISO(days[0])}.txt`)}} style={{padding:"3px 10px",fontSize:"var(--fs-micro)"}}>{"\u{1F4DD}"} Reflections ({refs.length})</Btn>:null})()}
-      {(()=>{const xst=(storageGet("planner-config")||{}).exportStyle||"org";const getTxt=()=>buildWkTxt(xst,days,wl,wkLabel,sum,mc,eng,wNotes,cfg);return<React.Fragment><Btn onClick={()=>doDownload(getTxt(),`week-plan-${fmtISO(days[0])}.txt`)} style={{padding:"3px 10px",fontSize:"var(--fs-micro)"}}>{"\u{1F4E5}"} Download</Btn><Btn onClick={()=>navigator.clipboard&&navigator.clipboard.writeText(getTxt())} style={{padding:"3px 10px",fontSize:"var(--fs-micro)"}}>{"\u{1F4CB}"} Copy</Btn></React.Fragment>})()}</div></div>
+      {(()=>{const refs=days.filter(d=>(metaCache[toDateKey(d)]||emptyMeta()).reflections);const xst=(storageGet("planner-config")||{}).exportStyle||"org";return refs.length>0?<Btn onClick={()=>{doDownload(buildReflTxt(xst,days,wl,metaCache),`reflections-${fmtISO(days[0])}.txt`)}} style={{padding:"3px 10px",fontSize:"var(--fs-micro)"}}>{"\u{1F4DD}"} Reflections ({refs.length})</Btn>:null})()}
+      {(()=>{const xst=(storageGet("planner-config")||{}).exportStyle||"org";const getTxt=()=>buildWkTxt(xst,days,wl,wkLabel,sum,metaCache,eng,wNotes,cfg);return<React.Fragment><Btn onClick={()=>doDownload(getTxt(),`week-plan-${fmtISO(days[0])}.txt`)} style={{padding:"3px 10px",fontSize:"var(--fs-micro)"}}>{"\u{1F4E5}"} Download</Btn><Btn onClick={()=>navigator.clipboard&&navigator.clipboard.writeText(getTxt())} style={{padding:"3px 10px",fontSize:"var(--fs-micro)"}}>{"\u{1F4CB}"} Copy</Btn></React.Fragment>})()}</div></div>
     {bsEdit&&(()=>{
       const cd=bsEdit.cycleDay;
       const code=bsEdit.slotCode;
       const dateKey=bsEdit.dateKey;
-      const meta=mc[dateKey]||emptyMeta();
+      const meta=metaCache[dateKey]||emptyMeta();
       const cyc=((eng.timetableForDate(bsEdit.date)||{})[cd]||{})[code]||null;
       const r=resolveSlot(code,cd,bsEdit.date,{timetable:eng.timetableForDate(bsEdit.date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta);
       const current=r.value;
       const clash=r.clash;
       const slot={code,label:BSLOT_LABELS[code]};
       const saveToday=v=>{
-        const cur=(mc[dateKey]||emptyMeta()).overrides||{};
+        const cur=(metaCache[dateKey]||emptyMeta()).overrides||{};
         const next={...cur};
         if(valEq(v,cyc))delete next[code];
         else next[code]=v;
-        uM(dateKey,{overrides:next});
+        updateMeta(dateKey,{overrides:next});
       };
       // Compute overlay position based on the captured anchor rect.
       const a=bsEdit.anchor;const W=260;const Hmax=320;const pad=6;
@@ -1638,16 +1640,16 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
  */
 function DetailedNoteEditor({dateKey,pid,onSave}){
   const as=useAutoSave(`note:${dateKey}:${pid}`,emptyNote(),onSave);
-  const{data,updateField,ss,hFoc,hBlr,save}=as;
+  const{data,updateField,saveStatus,handleFocus,handleBlur,save}=as;
   // Flush latest save on unmount — captures `save` via ref so the cleanup uses
   // the closure-current function and doesn't fire stale.
   const saveRef=useRef(save);saveRef.current=save;
   useEffect(()=>()=>saveRef.current(),[]);
   if(!data)return null;
-  return<div onFocus={hFoc} onBlur={hBlr} style={{display:"grid",gap:8,marginTop:6}}>
-    <div><label className="fl">Topic / Subject <SvH ss={ss}/></label><AInp data={data} field="subject" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="e.g. Newton's 3rd Law"/></div>
-    <div><label className="flb">Notes &amp; Tasks</label><AInp data={data} field="notes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Lesson plan, tasks" multi rows={3}/></div>
-    <div><label className="flb">Resources &amp; Links</label><AInp data={data} field="resources" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="URLs, file names"/></div>
+  return<div onFocus={handleFocus} onBlur={handleBlur} style={{display:"grid",gap:8,marginTop:6}}>
+    <div><label className="fl">Topic / Subject <SvH saveStatus={saveStatus}/></label><AInp data={data} field="subject" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="e.g. Newton's 3rd Law"/></div>
+    <div><label className="flb">Notes &amp; Tasks</label><AInp data={data} field="notes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Lesson plan, tasks" multi rows={3}/></div>
+    <div><label className="flb">Resources &amp; Links</label><AInp data={data} field="resources" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="URLs, file names"/></div>
   </div>;
 }
 /* ═══ CLASS VIEW ═════════════════════════════════════════════════════════
@@ -1657,7 +1659,7 @@ function DetailedNoteEditor({dateKey,pid,onSave}){
  * without leaving the Class View.
  * ═══════════════════════════════════════════════════════════════════════
  */
-function ClassView({onDet,g}){
+function ClassView({onDet,gam}){
   const eng=useCfg();const today=useToday();const[sel,setSel]=useState(eng.classCodes[0]||"");
   const[termIdx,setTermIdx]=useState(()=>{if(!eng||!eng.terms)return 0;const now=new Date();now.setHours(0,0,0,0);let ati=0;for(let i=0;i<eng.terms.length;i++){if(now<=eng.terms[i].end){ati=i;break}else ati=i}return ati});
   const[qe,setQE]=useState(null);const[qv,setQV]=useState("");const[nr,setNR]=useState(0);
@@ -1712,13 +1714,13 @@ function ClassView({onDet,g}){
   const doShift=(fromIdx,reason)=>{
     const r=shiftLanding(fromIdx);
     if(r.stop){setShiftMsg({err:true,text:r.stop==="barrier"?"The next break is a No-lesson day, so there's no room to shift here. Clear a slot first, or move lessons manually.":"There's no free lesson before the end of term to absorb the shift."});setShiftConfirm(false);return}
-    const g=r.gap,snap={};
-    for(let i=fromIdx;i<=g;i++){const k=`note:${lessons[i].dk}:${lessons[i].pid}`;snap[k]=localStorage.getItem(k)}
-    for(let i=g;i>fromIdx;i--){const src=storageGet(`note:${lessons[i-1].dk}:${lessons[i-1].pid}`);const dst=`note:${lessons[i].dk}:${lessons[i].pid}`;if(src)writeRecord(dst,src);else writeRecord(dst,{...emptyNote()})}
+    const gap=r.gap,snap={};
+    for(let i=fromIdx;i<=gap;i++){const k=`note:${lessons[i].dk}:${lessons[i].pid}`;snap[k]=localStorage.getItem(k)}
+    for(let i=gap;i>fromIdx;i--){const src=storageGet(`note:${lessons[i-1].dk}:${lessons[i-1].pid}`);const dst=`note:${lessons[i].dk}:${lessons[i].pid}`;if(src)writeRecord(dst,src);else writeRecord(dst,{...emptyNote()})}
     writeRecord(`note:${lessons[fromIdx].dk}:${lessons[fromIdx].pid}`,{...emptyNote(),subject:(reason||"").trim(),status:"nl"});
     setShiftUndo(snap);setShiftConfirm(false);setShiftReason("");setQE(null);setNR(x=>x+1);
     if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh();
-    setShiftMsg({err:false,text:`Pushed lessons #${fromIdx+1}–#${g+1} forward by one.`});
+    setShiftMsg({err:false,text:`Pushed lessons #${fromIdx+1}–#${gap+1} forward by one.`});
   };
   // Undo restores each affected slot, but via writeRecord so the restored copy is
   // freshly stamped and therefore wins the sync merge (otherwise the shifted
@@ -1731,7 +1733,7 @@ function ClassView({onDet,g}){
     if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh();
   };
   if(eng.classCodes.length===0)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>No classes configured. Head to Setup to add your classes.</div>;
-  return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
+  return<div>{gam.showGam&&<><XpStrip gam={gam}/><Badges achs={gam.achs}/></>}
     <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14,marginTop:10}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c],a=c===sel,sem=cl&&cl.semester;return<span key={c} className="mn" onClick={()=>{setSel(c);setQE(null)}} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"4px 12px",borderRadius:6,fontSize:"var(--fs-body)",fontWeight:700,cursor:"pointer",outline:a?"2px solid var(--accent)":"none",outlineOffset:2}}>{c}{sem&&sem!=="full"&&<span style={{fontSize:"var(--fs-nano)",fontWeight:600,marginLeft:5,opacity:.7}}>{sem}</span>}</span>})}</div>
     <div style={{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"}}><button onClick={()=>setTermIdx(-1)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:termIdx===-1?600:400,background:termIdx===-1?"var(--accent)":"var(--surface)",color:termIdx===-1?"var(--on-accent)":"var(--text-secondary)"}}>All terms</button>{eng.terms.map((t,i)=><button key={i} onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:termIdx===i?600:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div>
     <div style={{marginBottom:14}}><div className="hd" style={{fontSize:"var(--fs-title)",fontWeight:600,color:clr.tx}}><span style={{background:clr.bg,padding:"2px 10px",borderRadius:5}}>{sel}</span></div>{clr.desc&&<div style={{fontSize:"var(--fs-body)",color:"var(--text-secondary)",marginTop:4}}>{clr.desc}</div>}<div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginTop:4}}>{lessons.length} lessons {"\u00B7"} <strong className="mn" style={{color:planned===lessons.length?"var(--success)":"var(--text)"}}>{planned} planned</strong> {"\u00B7"} {lessons.length-planned} empty{flagged>0&&<span style={{color:"var(--flag)",marginLeft:6}}>{"\u2691"} {flagged}</span>}</div></div>
@@ -1822,20 +1824,20 @@ function WeeklyBar({pct,theme}){
  * (the result of compGam, recomputed on every save).
  * ═══════════════════════════════════════════════════════════════════════
  */
-function LabView({g}){
-  const eng=useCfg();const th=g.th;const tPct=g.term.tl>0?Math.round(g.term.tp/g.term.tl*100):0;const cwPct=g.cw.t>0?Math.round(g.cw.p/g.cw.t*100):0;
-  const xpProg=g.nxt?(g.xp-(g.levXp||0))/((g.nxtXp||1)-(g.levXp||0))*100:100;const uCnt=g.achs.filter(a=>a.unlocked).length;
+function LabView({gam}){
+  const eng=useCfg();const th=gam.th;const tPct=gam.term.tl>0?Math.round(gam.term.tp/gam.term.tl*100):0;const cwPct=gam.cw.t>0?Math.round(gam.cw.p/gam.cw.t*100):0;
+  const xpProg=gam.nxt?(gam.xp-(gam.levXp||0))/((gam.nxtXp||1)-(gam.levXp||0))*100:100;const uCnt=gam.achs.filter(a=>a.unlocked).length;
   const curMs=th.milestones.slice().reverse().find(m=>cwPct>=m.pc);const msLabel=curMs?curMs.l:"Getting started...";
   return<div><div style={{marginBottom:14}}><div className="hd" style={{fontSize:"var(--fs-title)",fontWeight:600,color:"var(--accent)"}}>{th.icon} {th.labTitle}</div><div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}>{th.labSub}</div></div>
     <div style={{display:"flex",gap:14,marginBottom:20,flexWrap:"wrap",alignItems:"start"}}>
-      <div className="card" style={{flex:"0 0 220px",padding:"14px 12px",textAlign:"center"}}><div className="hd" style={{fontSize:"var(--fs-body)",color:"var(--text-secondary)",marginBottom:4,fontWeight:600}}>This Week</div><WeeklyBar pct={cwPct} theme={th}/><div className="mn" style={{fontSize:"var(--fs-emph)",fontWeight:700,color:cwPct>=100?"var(--success)":"var(--text)",marginTop:8}}>{g.cw.p}/{g.cw.t} planned</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",marginTop:3}}>{msLabel}</div></div>
+      <div className="card" style={{flex:"0 0 220px",padding:"14px 12px",textAlign:"center"}}><div className="hd" style={{fontSize:"var(--fs-body)",color:"var(--text-secondary)",marginBottom:4,fontWeight:600}}>This Week</div><WeeklyBar pct={cwPct} theme={th}/><div className="mn" style={{fontSize:"var(--fs-emph)",fontWeight:700,color:cwPct>=100?"var(--success)":"var(--text)",marginTop:8}}>{gam.cw.p}/{gam.cw.t} planned</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",marginTop:3}}>{msLabel}</div></div>
       <div style={{flex:1,minWidth:220}}>
-        <div className="card" style={{padding:16,marginBottom:10}}><div className="sl" style={{marginBottom:10}}>XP &amp; Level</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",marginBottom:10}}>XP you earn from planning all year. Reach milestones to level up.</div><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><span style={{fontSize:"var(--fs-display)"}}>{g.lev.icon}</span><div style={{flex:1}}><div className="hd" style={{fontSize:"var(--fs-title)",fontWeight:600,color:"var(--text)"}}>{g.lev.title}</div><div className="mn" style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)"}}>{g.xp} XP{g.nxt?` \u00B7 ${(g.nxtXp||0)-g.xp} to ${g.nxt.title}`:` \u00B7 Max!`}</div></div></div>{g.nxt&&<div style={{height:8,background:"var(--xp-bar-bg)",borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,xpProg)}%`,background:"var(--xp-bar)",borderRadius:4,transition:"width .6s",boxShadow:"0 0 8px var(--xp-glow)"}}/></div>}<div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",marginTop:6}}>+10 XP/lesson {"\u00B7"} +50 XP/perfect week {"\u00B7"} bonus from achievements</div></div>
+        <div className="card" style={{padding:16,marginBottom:10}}><div className="sl" style={{marginBottom:10}}>XP &amp; Level</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",marginBottom:10}}>XP you earn from planning all year. Reach milestones to level up.</div><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><span style={{fontSize:"var(--fs-display)"}}>{gam.lev.icon}</span><div style={{flex:1}}><div className="hd" style={{fontSize:"var(--fs-title)",fontWeight:600,color:"var(--text)"}}>{gam.lev.title}</div><div className="mn" style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)"}}>{gam.xp} XP{gam.nxt?` \u00B7 ${(gam.nxtXp||0)-gam.xp} to ${gam.nxt.title}`:` \u00B7 Max!`}</div></div></div>{gam.nxt&&<div style={{height:8,background:"var(--xp-bar-bg)",borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,xpProg)}%`,background:"var(--xp-bar)",borderRadius:4,transition:"width .6s",boxShadow:"0 0 8px var(--xp-glow)"}}/></div>}<div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",marginTop:6}}>+10 XP/lesson {"\u00B7"} +50 XP/perfect week {"\u00B7"} bonus from achievements</div></div>
         <div className="sl" style={{margin:"14px 0 8px"}}>Your progress</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}}>{[{v:g.cum.tp,l:"lessons planned (all year)"},{v:tPct+"%",l:"this term coverage",c:tPct>=75?"var(--success)":null},{v:g.sk,l:`streak${g.sk>0?" \u{1F525}":""}`,c:g.sk>=3?"var(--success)":null,sub:g.ls>g.sk?`best: ${g.ls}`:null},{v:g.term.pw,l:"perfect weeks (this term)",c:g.term.pw>0?"var(--success)":null}].map((s,i)=><div key={i} className="card" style={{padding:10,textAlign:"center"}}><div className="hd" style={{fontSize:"var(--fs-display)",fontWeight:700,color:s.c||"var(--text)"}}>{s.v}</div><div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}>{s.l}</div>{s.sub&&<div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",marginTop:1}}>{s.sub}</div>}</div>)}</div>
-        <div className="card" style={{padding:12,marginTop:10}}><div className="sl" style={{marginBottom:8}}>Coverage by class (this term)</div>{eng.classCodes.map(c=>{const d=g.term.cd[c]||{p:0,t:0};const pct=d.t>0?Math.round(d.p/d.t*100):0;const cl=eng.classMap[c];return<div key={c} style={{marginBottom:6}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}><span className="mn" style={{fontSize:"var(--fs-micro)",fontWeight:700,color:cl&&cl.tx,background:cl&&cl.bg,padding:"1px 6px",borderRadius:3}}>{c}</span><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}>{d.p}/{d.t} {"\u00B7"} {pct}%</span></div><div style={{height:8,background:"var(--xp-bar-bg)",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:cl&&cl.bg,borderRadius:3,transition:"width .5s"}}/></div></div>})}</div></div></div>
-    <div style={{marginBottom:10}}><div className="sl">Achievements {"\u00B7"} <span className="mn">{uCnt}/{g.achs.length}</span> unlocked</div></div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8}}>{g.achs.map(a=><div key={a.id} className={`card ach${a.unlocked?" un":""}`} style={{padding:14,opacity:a.unlocked?1:.35}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><span style={{fontSize:"var(--fs-display)",filter:a.unlocked?"none":"grayscale(1)"}}>{a.icon}</span><div style={{flex:1}}><div className="hd" style={{fontSize:"var(--fs-emph)",fontWeight:600,color:a.unlocked?"var(--text)":"var(--text-muted)"}}>{a.title}</div><div style={{fontSize:"var(--fs-nano)",color:a.unlocked?"var(--accent)":"var(--text-muted)"}}>{a.unlocked?`\u2713 +${a.xp} XP`:a.desc}</div></div></div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)"}}>{a.desc}</div>{a.unlocked&&<div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",fontStyle:"italic",marginTop:5,lineHeight:1.4,borderTop:"1px solid var(--border)",paddingTop:5}}>"{a.detail}"</div>}</div>)}</div></div>;
+        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}}>{[{v:gam.cum.tp,l:"lessons planned (all year)"},{v:tPct+"%",l:"this term coverage",c:tPct>=75?"var(--success)":null},{v:gam.sk,l:`streak${gam.sk>0?" \u{1F525}":""}`,c:gam.sk>=3?"var(--success)":null,sub:gam.ls>gam.sk?`best: ${gam.ls}`:null},{v:gam.term.pw,l:"perfect weeks (this term)",c:gam.term.pw>0?"var(--success)":null}].map((s,i)=><div key={i} className="card" style={{padding:10,textAlign:"center"}}><div className="hd" style={{fontSize:"var(--fs-display)",fontWeight:700,color:s.c||"var(--text)"}}>{s.v}</div><div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}>{s.l}</div>{s.sub&&<div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",marginTop:1}}>{s.sub}</div>}</div>)}</div>
+        <div className="card" style={{padding:12,marginTop:10}}><div className="sl" style={{marginBottom:8}}>Coverage by class (this term)</div>{eng.classCodes.map(c=>{const d=gam.term.cd[c]||{p:0,t:0};const pct=d.t>0?Math.round(d.p/d.t*100):0;const cl=eng.classMap[c];return<div key={c} style={{marginBottom:6}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}><span className="mn" style={{fontSize:"var(--fs-micro)",fontWeight:700,color:cl&&cl.tx,background:cl&&cl.bg,padding:"1px 6px",borderRadius:3}}>{c}</span><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}>{d.p}/{d.t} {"\u00B7"} {pct}%</span></div><div style={{height:8,background:"var(--xp-bar-bg)",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:cl&&cl.bg,borderRadius:3,transition:"width .5s"}}/></div></div>})}</div></div></div>
+    <div style={{marginBottom:10}}><div className="sl">Achievements {"\u00B7"} <span className="mn">{uCnt}/{gam.achs.length}</span> unlocked</div></div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8}}>{gam.achs.map(a=><div key={a.id} className={`card ach${a.unlocked?" un":""}`} style={{padding:14,opacity:a.unlocked?1:.35}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><span style={{fontSize:"var(--fs-display)",filter:a.unlocked?"none":"grayscale(1)"}}>{a.icon}</span><div style={{flex:1}}><div className="hd" style={{fontSize:"var(--fs-emph)",fontWeight:600,color:a.unlocked?"var(--text)":"var(--text-muted)"}}>{a.title}</div><div style={{fontSize:"var(--fs-nano)",color:a.unlocked?"var(--accent)":"var(--text-muted)"}}>{a.unlocked?`\u2713 +${a.xp} XP`:a.desc}</div></div></div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)"}}>{a.desc}</div>{a.unlocked&&<div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",fontStyle:"italic",marginTop:5,lineHeight:1.4,borderTop:"1px solid var(--border)",paddingTop:5}}>"{a.detail}"</div>}</div>)}</div></div>;
 }
 
 /* ═══ B-SLOT EDITOR ══════════════════════════════════════════════════════
@@ -1963,11 +1965,11 @@ function BSlotEditor({slot,cycleDay,current,cycleDefault,clash,duties,onSaveToda
  * override dot (if applicable). Expanded swaps in the inline BSlotEditor
  * plus a notes textarea backed by note:<date>:<slotCode>.
  */
-function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,clash,duties,onSaveToday,hFoc,hBlr,initOpen}){
+function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,clash,duties,onSaveToday,handleFocus,handleBlur,initOpen}){
   const[expanded,setExpanded]=useState(!!initOpen);
   const noteKey=`note:${dateKey}:${slot.code}`;
   const as=useAutoSave(noteKey,emptyNote());
-  const{data:note,updateField,ss:noteSs}=as;
+  const{data:note,updateField,saveStatus:noteSs}=as;
   const hasNote=!!(note&&note.notes&&note.notes.trim());
   const isGap=!current;
   const summary=<div className={`bs-row${isGap?" gap":""}`} onClick={()=>setExpanded(e=>!e)} role="button" tabIndex={0} aria-expanded={expanded} aria-label={`${slot.label}, ${current?"set":"free"}${hasNote?", has notes":""}, ${expanded?"collapse":"expand"}`} onKeyDown={kAct(()=>setExpanded(e=>!e))}>
@@ -1984,8 +1986,8 @@ function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,clash,d
     <div className="bs-row-editor">
       <BSlotEditor slot={slot} cycleDay={cycleDay} current={current} cycleDefault={cycleDefault} clash={clash} duties={duties} onSaveToday={onSaveToday} onClose={()=>setExpanded(false)}/>
       <div className="bs-note-area">
-        <label className="fl" style={{fontSize:"var(--fs-micro)"}}>Notes <SvH ss={noteSs}/></label>
-        <AInp data={note} field="notes" updateField={updateField} hFoc={hFoc} hBlr={hBlr} ph="Notes for this slot today" multi rows={2}/>
+        <label className="fl" style={{fontSize:"var(--fs-micro)"}}>Notes <SvH saveStatus={noteSs}/></label>
+        <AInp data={note} field="notes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Notes for this slot today" multi rows={2}/>
       </div>
     </div>
   </>;
@@ -2296,7 +2298,7 @@ function DataPanel({onClose,onImported,onSync,onSyncConn,onSyncDisc,lastSync,tok
  *
  *   - cfg / eng     — the config and the derived date engine
  *   - view          — which top-level view is showing (term/week/day/...)
- *   - mc, mcR       — daymeta cache (state for re-render + ref for stable callbacks)
+ *   - metaCache, mcR       — daymeta cache (state for re-render + ref for stable callbacks)
  *   - planWN        — the "current week" used as the gamification reference
  *   - gam           — gamification snapshot (re-memoed on every save via gr counter)
  *   - dispMode      — display mode (light/dark/light-hc/dark-hc)
@@ -2418,7 +2420,7 @@ function App(){
   const eng=useMemo(()=>makeDateEngine(cfg),[cfg]);const planMon=useMemo(()=>getPlanMon(today),[today]);const planWN=eng?eng.wkN(planMon):8;
   const[view,setView]=useState("week");const[base,setBase]=useState(planMon);const[detDate,setDetDate]=useState(null);
   const[prevV,setPrevV]=useState("week");const[fp,setFP]=useState(null);
-  const[mc,setMC]=useState({});const mcR=useRef({});const[showDP,setShowDP]=useState(false);const[gr,setGR]=useState(0);
+  const[metaCache,setMC]=useState({});const mcR=useRef({});const[showDP,setShowDP]=useState(false);const[gr,setGR]=useState(0);
   // storageFailed: set when any storageSet call hits a quota error. The ref mirrors the state so
   // triggerSync can read it synchronously without re-creating the useCallback. While true,
   // we suspend the gist push to avoid syncing partial/inconsistent state.
@@ -2431,7 +2433,7 @@ function App(){
   const syncConnected=()=>ghToken&&ghGistId;
   useEffect(()=>{if(ghToken)localStorage.setItem("planner-gh-token",ghToken);else localStorage.removeItem("planner-gh-token")},[ghToken]);
   useEffect(()=>{if(ghGistId)localStorage.setItem("planner-gist-id",ghGistId);else localStorage.removeItem("planner-gist-id")},[ghGistId]);
-  useEffect(()=>{mcR.current=mc},[mc]);
+  useEffect(()=>{mcR.current=metaCache},[metaCache]);
 
   // Display mode + theme accent
   useEffect(()=>{document.documentElement.setAttribute("data-theme",dispMode);localStorage.setItem("planner-theme",dispMode)},[dispMode]);
@@ -2552,7 +2554,7 @@ function App(){
 
   const themeKey=cfg&&cfg.theme||"physics";
   const gam=useMemo(()=>({...compGam(eng,planWN,themeKey),showGam:cfg?.showGam!==false}),[gr,view,planWN,eng,themeKey,cfg]);
-  const uM=useCallback((key,ch)=>{const cur=mcR.current[key]||emptyMeta(),u={...cur,...ch};mcR.current={...mcR.current,[key]:u};setMC(c=>({...c,[key]:u}));writeRecord(`daymeta:${key}`,u);triggerSync()},[triggerSync]);
+  const updateMeta=useCallback((key,ch)=>{const cur=mcR.current[key]||emptyMeta(),u={...cur,...ch};mcR.current={...mcR.current,[key]:u};setMC(c=>({...c,[key]:u}));writeRecord(`daymeta:${key}`,u);triggerSync()},[triggerSync]);
   // onUpdateCfg: lets a non-Settings view (e.g. DayView's "Save to D{cd}") write
   // a partial change into cfg.timetable. Persists to localStorage and bumps the
   // gamification refresh counter so any view that reads through eng picks up the
@@ -2651,11 +2653,11 @@ function App(){
     {showSearch&&<SearchOverlay eng={eng} onGo={goDay} onClose={()=>setShowSearch(false)}/>}
     {showDP&&<DataPanel onClose={()=>setShowDP(false)} onImported={handleImport} onSync={syncNow} onSyncConn={(tok,gid)=>{setGhToken(tok);setGhGistId(gid);triggerSync()}} onSyncDisc={()=>{setGhToken("");setGhGistId("");clearTimeout(syncTimer.current);setSyncSt("idle");setLastSync(null)}} lastSync={lastSync} token={ghToken} gistId={ghGistId} setToken={setGhToken} setGistId={setGhGistId}/>}
     <ErrorBoundary key={view}>
-    {view==="term"&&<TermView onDay={goDay} onWk={goWk} mc={mc} g={gam} cfg={cfg}/>}
-    {view==="week"&&<WeekView base={base} setBase={setBase} onDet={(d,pid)=>goDay(d,pid)} mc={mc} uM={uM} g={gam} onUpdateCfg={onUpdateCfg} cfg={cfg}/>}
-    {view==="day"&&detDate&&<DayView date={detDate} setDate={d=>{setDetDate(d);setFP(null);setView("day")}} onBack={()=>{setFP(null);setGR(r=>r+1);setView(prevV==="day"?"week":prevV)}} mc={mc} onMS={onMS} fp={fp} g={gam} onUpdateCfg={onUpdateCfg} cfg={cfg}/>}
-    {view==="class"&&<ClassView onDet={(d,pid)=>goDay(d,pid)} g={gam}/>}
-    {view==="lab"&&<LabView g={gam}/>}
+    {view==="term"&&<TermView onDay={goDay} onWk={goWk} metaCache={metaCache} gam={gam} cfg={cfg}/>}
+    {view==="week"&&<WeekView base={base} setBase={setBase} onDet={(d,pid)=>goDay(d,pid)} metaCache={metaCache} updateMeta={updateMeta} gam={gam} onUpdateCfg={onUpdateCfg} cfg={cfg}/>}
+    {view==="day"&&detDate&&<DayView date={detDate} setDate={d=>{setDetDate(d);setFP(null);setView("day")}} onBack={()=>{setFP(null);setGR(r=>r+1);setView(prevV==="day"?"week":prevV)}} metaCache={metaCache} onMS={onMS} fp={fp} gam={gam} onUpdateCfg={onUpdateCfg} cfg={cfg}/>}
+    {view==="class"&&<ClassView onDet={(d,pid)=>goDay(d,pid)} gam={gam}/>}
+    {view==="lab"&&<LabView gam={gam}/>}
     {view==="setup"&&<SettingsView onSave={newCfg=>{setCfg(newCfg);setGR(r=>r+1)}} displayMode={dispMode} setDisplayMode={setDispMode}/>}
     </ErrorBoundary>
   </div></div></CfgCtx.Provider>;
