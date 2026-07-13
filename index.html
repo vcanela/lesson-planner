@@ -321,15 +321,15 @@ textarea,input,button,select{font-family:'Inter',system-ui,sans-serif}
  * THE KEY ENGINE
  *
  *   makeDateEngine(cfg) returns an object exposing:
- *     isSD(d)   — is d a school day? (weekday & in term & not a holiday)
- *     cycD(d)   — what's d's rotation cycle day (1..N), or 0 if it's a Day 0 event
- *     nearSD(d, dir) — walk forward/back from d to find the next school day
- *     getTermWks(term) — list of [Mon..Fri] weeks within a term
+ *     isSchoolDay(d)   — is d a school day? (weekday & in term & not a holiday)
+ *     cycleDayFor(d)   — what's d's rotation cycle day (1..N), or 0 if it's a Day 0 event
+ *     nearestSchoolDay(d, dir) — walk forward/back from d to find the next school day
+ *     getTermWeeks(term) — list of [Mon..Fri] weeks within a term
  *     timetable, classMap, classCodes, PIDS, terms, ...
  *
  *   The cycle-day calculation is the cleverest piece of code in the file. It
  *   walks teaching-days from a user-defined anchor, skipping weekends, holidays
- *   and Day 0 events, to compute a number 1..N. See cycD() for full details.
+ *   and Day 0 events, to compute a number 1..N. See cycleDayFor() for full details.
  *
  * DATA FLOW
  *
@@ -851,7 +851,7 @@ const getWDs=b=>{const m=getMon(b);return[0,1,2,3,4].map(i=>addD(m,i))};
 
 // makeDateEngine: build the canonical "what day is what" object from a config.
 // Holds the timetable, term boundaries, holiday/dayZero sets, and exposes the
-// cycle-day calculator (cycD), school-day predicate (isSD), and various walks.
+// cycle-day calculator (cycleDayFor), school-day predicate (isSchoolDay), and various walks.
 // Consumed by every view via a React context (CfgCtx / useCfg).
 function makeDateEngine(cfg){
   if(!cfg)return null;
@@ -900,7 +900,7 @@ function makeDateEngine(cfg){
   const PIDS=[];for(let i=1;i<=6;i++)PIDS.push("P"+i);
   const isPH=d=>holSet.has(dck(d));const isDZ=d=>dzSet.has(dck(d));
   const inT=d=>terms.some(t=>d>=t.start&&d<=t.end);
-  const isSD=d=>!isWE(d)&&!isPH(d)&&inT(d);const isTD=d=>isSD(d)&&!isDZ(d);
+  const isSchoolDay=d=>!isWE(d)&&!isPH(d)&&inT(d);const isTeachingDay=d=>isSchoolDay(d)&&!isDZ(d);
   const wkN=b=>8+Math.round((getMon(b)-(anchor?getMon(anchor.date):getMon(new Date())))/(7*864e5));
 
   function termWkN(weekdays){
@@ -912,12 +912,12 @@ function makeDateEngine(cfg){
       }
     }return null;
   }
-  // nearSD: walk forward (dir=+1) or back (dir=-1) one day at a time until we hit
+  // nearestSchoolDay: walk forward (dir=+1) or back (dir=-1) one day at a time until we hit
   // a school day, or give up after CYCLE_WALK_MAX_DAYS. Used for Prev/Next nav
   // and for snapping to a school day when entering Day View on a holiday.
-  function nearSD(d,dir){let x=addD(d,dir);for(let i=0;i<CYCLE_WALK_MAX_DAYS;i++){if(isSD(x))return x;x=addD(x,dir)}return null}
+  function nearestSchoolDay(d,dir){let x=addD(d,dir);for(let i=0;i<CYCLE_WALK_MAX_DAYS;i++){if(isSchoolDay(x))return x;x=addD(x,dir)}return null}
   /*
-   * cycD: compute the rotation cycle day for `date`, in 1..nCycle.
+   * cycleDayFor: compute the rotation cycle day for `date`, in 1..nCycle.
    *
    * Returns:
    *   null  — not a school day (weekend, holiday, outside terms)
@@ -928,7 +928,7 @@ function makeDateEngine(cfg){
    *
    * The user pins one date to one cycle day (anchor.date, anchor.day). To find
    * the cycle day for any other date, we count "teaching days" between the
-   * two (isTD: school days that are not Day 0 events) and add or subtract
+   * two (isTeachingDay: school days that are not Day 0 events) and add or subtract
    * that count from anchor.day, modulo nCycle.
    *
    * Forward walk (target on or after anchor): start at anchor, step +1 day,
@@ -942,7 +942,7 @@ function makeDateEngine(cfg){
    * current term, and views never render more than a year of dates at once.
    */
   // cdMemo: lazily-built Map<dateKey, cycleDay> covering every teaching day in
-  // every term, so cycD is an O(1) lookup instead of an O(distance-from-anchor)
+  // every term, so cycleDayFor is an O(1) lookup instead of an O(distance-from-anchor)
   // walk per call (the old behaviour made compGam quadratic late in the year).
   // Built in two linear passes out from the anchor. Recreated automatically
   // whenever the engine is rebuilt (i.e. on any cfg change), so no manual
@@ -954,39 +954,39 @@ function makeDateEngine(cfg){
     let lo=null,hi=null;
     terms.forEach(tm=>{const s=new Date(tm.start);s.setHours(0,0,0,0);const e=new Date(tm.end);e.setHours(0,0,0,0);if(!lo||s<lo)lo=s;if(!hi||e>hi)hi=e});
     const a=new Date(anchor.date);a.setHours(0,0,0,0);
-    // Forward (anchor → hi): n = isTD count in [anchor, d); set cycle then advance n.
+    // Forward (anchor → hi): n = isTeachingDay count in [anchor, d); set cycle then advance n.
     let n=0,d=new Date(a);
-    while(d<=hi){if(isTD(d)){cdMemo.set(toDateKey(d),((anchor.day-1+n)%nCycle)+1);n++}d.setDate(d.getDate()+1)}
-    // Backward (anchor-1 → lo): m = isTD count in [d, anchor); advance m then set cycle.
+    while(d<=hi){if(isTeachingDay(d)){cdMemo.set(toDateKey(d),((anchor.day-1+n)%nCycle)+1);n++}d.setDate(d.getDate()+1)}
+    // Backward (anchor-1 → lo): m = isTeachingDay count in [d, anchor); advance m then set cycle.
     let m=0;d=new Date(a);d.setDate(d.getDate()-1);
-    while(d>=lo){if(isTD(d)){m++;cdMemo.set(toDateKey(d),(((anchor.day-1-m)%nCycle)+nCycle)%nCycle+1)}d.setDate(d.getDate()-1)}
+    while(d>=lo){if(isTeachingDay(d)){m++;cdMemo.set(toDateKey(d),(((anchor.day-1-m)%nCycle)+nCycle)%nCycle+1)}d.setDate(d.getDate()-1)}
   }
   // cycDcompute: the original O(distance) walk. Kept as a safety fallback for any
   // teaching day outside the precomputed term span (should not occur in practice).
   function cycDcompute(t){
     const a=new Date(anchor.date);a.setHours(0,0,0,0);
     let n=0,d=new Date(a);
-    if(t>=a){while(d<t){if(isTD(d))n++;d.setDate(d.getDate()+1)}return((anchor.day-1+n)%nCycle)+1}
-    while(d>t){d.setDate(d.getDate()-1);if(isTD(d))n++}return(((anchor.day-1-n)%nCycle)+nCycle)%nCycle+1;
+    if(t>=a){while(d<t){if(isTeachingDay(d))n++;d.setDate(d.getDate()+1)}return((anchor.day-1+n)%nCycle)+1}
+    while(d>t){d.setDate(d.getDate()-1);if(isTeachingDay(d))n++}return(((anchor.day-1-n)%nCycle)+nCycle)%nCycle+1;
   }
-  function cycD(date){
+  function cycleDayFor(date){
     const t=new Date(date);t.setHours(0,0,0,0);
-    if(!isSD(t))return null;     // weekend, holiday, or outside terms
+    if(!isSchoolDay(t))return null;     // weekend, holiday, or outside terms
     if(isDZ(t))return 0;         // teaching paused: Day 0 event
     if(!anchor)return 1;         // no anchor configured yet
     if(!cdMemo)buildCdMemo();
     const v=cdMemo.get(toDateKey(t));
     return v!==undefined?v:cycDcompute(t);
   }
-  function getTermWks(term){
+  function getTermWeeks(term){
     const ts=new Date(term.start);ts.setHours(0,0,0,0);const te=new Date(term.end);te.setHours(23,59,59,999);
     const ws=[];let d=getMon(ts);while(d<=te){const days=[0,1,2,3,4].map(i=>addD(d,i));if(days.some(x=>{const xn=new Date(x);xn.setHours(0,0,0,0);return xn>=ts&&xn<=te}))ws.push(days);d=addD(d,7)}return ws;
   }
-  // clsLessons routes through classAt, so semester-bounded classes and S2 timetable
+  // classLessons routes through classAt, so semester-bounded classes and S2 timetable
   // variants are honoured: a date that no longer carries the class produces no entry.
-  function clsLessons(cc,ti=0){const term=terms[ti];if(!term)return[];const ls=[];getTermWks(term).flat().forEach(d=>{const cd=cycD(d);if(!cd||cd===0)return;PIDS.forEach(pid=>{if(classAt(d,cd,pid)===cc)ls.push({date:new Date(d),dk:toDateKey(d),pid,cd})})});return ls}
-  function lesCtx(cc,dateKey,pid,ti=0){if(!cc||cc==="nc")return null;const ls=clsLessons(cc,ti);const idx=ls.findIndex(l=>l.dk===dateKey&&l.pid===pid);if(idx===-1)return null;return{num:idx+1,total:ls.length,prev:ls[idx-1]||null,next:ls[idx+1]||null}}
-  return{isPH,isDZ,inT,isSD,isTD,wkN,termWkN,nearSD,cycD,getTermWks,clsLessons,lesCtx,terms,timetable,timetableForDate,classAt,classActiveOn,semesterBoundary,classMap,classCodes,PIDS,nCycle,school:cfg.school||"My School"};
+  function classLessons(cc,ti=0){const term=terms[ti];if(!term)return[];const ls=[];getTermWeeks(term).flat().forEach(d=>{const cd=cycleDayFor(d);if(!cd||cd===0)return;PIDS.forEach(pid=>{if(classAt(d,cd,pid)===cc)ls.push({date:new Date(d),dk:toDateKey(d),pid,cd})})});return ls}
+  function lessonContext(cc,dateKey,pid,ti=0){if(!cc||cc==="nc")return null;const ls=classLessons(cc,ti);const idx=ls.findIndex(l=>l.dk===dateKey&&l.pid===pid);if(idx===-1)return null;return{num:idx+1,total:ls.length,prev:ls[idx-1]||null,next:ls[idx+1]||null}}
+  return{isPH,isDZ,inT,isSchoolDay,isTeachingDay,wkN,termWkN,nearestSchoolDay,cycleDayFor,getTermWeeks,classLessons,lessonContext,terms,timetable,timetableForDate,classAt,classActiveOn,semesterBoundary,classMap,classCodes,PIDS,nCycle,school:cfg.school||"My School"};
 }
 
 /* ═══ DATA DEFAULTS ══════════════════════════════════════════════════════ */
@@ -1033,8 +1033,8 @@ function compGam(eng,pwn,themeKey){
   // place that touches localStorage in compGam; everything else is derived from these counts.
   function calcStats(termList){
     const wd={},cd={};let tp=0,tl=0;
-    termList.forEach(term=>{eng.getTermWks(term).flat().forEach(d=>{
-      const c=eng.cycD(d);if(!c||c===0)return;const key=toDateKey(d),wn=eng.wkN(d);
+    termList.forEach(term=>{eng.getTermWeeks(term).flat().forEach(d=>{
+      const c=eng.cycleDayFor(d);if(!c||c===0)return;const key=toDateKey(d),wn=eng.wkN(d);
       if(!wd[wn])wd[wn]={p:0,t:0};
       eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,c,pid);if(cls==="nc")return;
         tl++;wd[wn].t++;if(!cd[cls])cd[cls]={p:0,t:0};cd[cls].t++;
@@ -1267,7 +1267,7 @@ function PCard({period,dateKey,cDay,date,initOpen}){
   const markNL=()=>{updateField("status","nl");updateField("subject","");setTimeout(save,0);setNlConfirm(false)};
   const clearNL=()=>{updateField("status","");setTimeout(save,0)};
   const askNL=()=>{if(data&&data.subject)setNlConfirm(true);else markNL()};
-  const ctx=useMemo(()=>eng.lesCtx(cc,dateKey,period.id),[cc,dateKey,period.id]);
+  const ctx=useMemo(()=>eng.lessonContext(cc,dateKey,period.id),[cc,dateKey,period.id]);
   if(period.brk)return<div className="brk"><span>{period.label}</span><span className="mn" style={{fontSize:"var(--fs-micro)"}}>{period.start}{"\u2013"}{period.end}</span></div>;
   return<div style={{borderBottom:"1px solid var(--border)"}}><div className={`pr${open?" exp":""}`} onClick={()=>cDay&&setOpen(o=>!o)} role={cDay?"button":undefined} tabIndex={cDay?0:undefined} aria-expanded={cDay?open:undefined} aria-label={cDay?`${period.label}, ${isNc?"non-contact":cc}, ${isNl?"no lesson":has?"planned":"empty"}, ${open?"collapse":"expand"}`:undefined} onKeyDown={cDay?kAct(()=>setOpen(o=>!o)):undefined} style={cDay?{}:{cursor:"default"}}><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",width:38,flexShrink:0}}>{period.start}</span><CBadge cc={cc}/><span style={{fontSize:"var(--fs-body)",color:isNl?"var(--text-muted)":"var(--text-secondary)",fontStyle:isNl?"italic":"normal",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isNl?(data.subject?"No lesson \u2014 "+data.subject:"No lesson"):data&&data.subject||""}</span><span className="hd" style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",flexShrink:0}}>{period.label}</span>{fl&&<span style={{color:"var(--flag)",fontSize:"var(--fs-micro)",flexShrink:0}}>{"\u2691"}</span>}{has&&!fl&&<span style={{width:5,height:5,borderRadius:"50%",background:"var(--success)",flexShrink:0}}/>}{cDay&&<span style={{color:"var(--text-muted)",fontSize:"var(--fs-caption)"}}>{open?"\u25B2":"\u25BC"}</span>}</div>
     {open&&data&&<div className="prd" onFocus={hFoc} onBlur={hBlr}><div style={{display:"grid",gap:9}}>{ctx&&<div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",background:"var(--surface)",padding:"4px 8px",borderRadius:4,lineHeight:1.5}}>Lesson <span className="mn" style={{fontWeight:700}}>{ctx.num}/{ctx.total}</span> this term{ctx.prev&&<span> {"\u00B7"} prev: {fmtS(ctx.prev.date)}</span>}{ctx.next&&<span> {"\u00B7"} next: {fmtS(ctx.next.date)}</span>}</div>}{!isNc&&<div style={{display:"flex",gap:4}}>{["quick","detailed"].map(m=><button key={m} className="hd" onClick={()=>setMode(m)} style={{padding:"2px 10px",borderRadius:4,border:"none",cursor:"pointer",fontSize:"var(--fs-micro)",fontWeight:mode===m?700:400,background:mode===m?"var(--accent)":"var(--surface)",color:mode===m?"var(--on-accent)":"var(--text-muted)"}}>{m==="quick"?"Quick":"Detailed"}</button>)}</div>}
@@ -1283,14 +1283,14 @@ function PCard({period,dateKey,cDay,date,initOpen}){
  * ═══════════════════════════════════════════════════════════════════════
  */
 function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
-  const eng=useCfg();const today=useToday();const cd=eng.cycD(date),dateKey=toDateKey(date),isZ=cd===0,sch=eng.isSD(date);
+  const eng=useCfg();const today=useToday();const cd=eng.cycleDayFor(date),dateKey=toDateKey(date),isZ=cd===0,sch=eng.isSchoolDay(date);
   const twn=eng.termWkN(getWDs(date));
-  const prev=eng.nearSD(date,-1),next=eng.nearSD(date,1);
+  const prev=eng.nearestSchoolDay(date,-1),next=eng.nearestSchoolDay(date,1);
   // "Today" target: if today itself is a school day, use it; otherwise walk forward
   // to the next school day. Mirrors Week View's getPlanMon behaviour (Weekend mode
   // surfaces the next teaching day rather than the weekend). Null when there is no
   // upcoming school day within the engine's walk window.
-  const todayTarget=eng.isSD(today)?today:eng.nearSD(today,1);
+  const todayTarget=eng.isSchoolDay(today)?today:eng.nearestSchoolDay(today,1);
   const hms=useCallback(saved=>{if(dateKey)onMS(dateKey,saved)},[dateKey]);
   const as=useAutoSave(`daymeta:${dateKey}`,emptyMeta(),hms);const{data:meta,updateField,ss,hFoc,hBlr,save}=as;
   // forceShow: per-date ad-hoc reveals for B0/B3 so the teacher can add a one-off
@@ -1352,16 +1352,16 @@ function DayView({date,setDate,onBack,mc,onMS,fp,g,onUpdateCfg,cfg}){
  */
 function TermView({onDay,onWk,mc,g,cfg}){
   const eng=useCfg();const today=useToday();const[termIdx,setTermIdx]=useState(()=>{if(!eng||!eng.terms)return 0;const now=new Date();now.setHours(0,0,0,0);let ati=0;for(let i=0;i<eng.terms.length;i++){if(now<=eng.terms[i].end){ati=i;break}else ati=i}return ati});
-  const term=eng.terms[termIdx];const weeks=useMemo(()=>term?eng.getTermWks(term):[],[term]);
+  const term=eng.terms[termIdx];const weeks=useMemo(()=>term?eng.getTermWeeks(term):[],[term]);
   const ts=useMemo(()=>{if(!term)return new Date();const d=new Date(term.start);d.setHours(0,0,0,0);return d},[term]);
   const te=useMemo(()=>{if(!term)return new Date();const d=new Date(term.end);d.setHours(23,59,59,999);return d},[term]);
-  const cov=useMemo(()=>{const c={};weeks.flat().forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;const key=toDateKey(d);let p=0,t=0;eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,cd,pid);if(cls==="nc")return;t++;const n=storageGet(`note:${key}:${pid}`);if(n&&(n.subject||n.notes||n.status==="nl"))p++});c[key]={p,t}});return c},[weeks]);
+  const cov=useMemo(()=>{const c={};weeks.flat().forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;const key=toDateKey(d);let p=0,t=0;eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,cd,pid);if(cls==="nc")return;t++;const n=storageGet(`note:${key}:${pid}`);if(n&&(n.subject||n.notes||n.status==="nl"))p++});c[key]={p,t}});return c},[weeks]);
   if(!term)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>No terms configured. Head to Setup to get started.</div>;
   return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
     <div style={{marginBottom:14,marginTop:10}}><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4}}>{eng.terms.map((t,i)=><button key={i} className="hd" onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:termIdx===i?700:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div><div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}>{term.start.toLocaleDateString("en-NZ",{day:"numeric",month:"short"})} {"\u2013"} {term.end.toLocaleDateString("en-NZ",{day:"numeric",month:"short",year:"numeric"})}</div></div>
     <div style={{display:"grid",gridTemplateColumns:"58px repeat(5,1fr)",gap:3,marginBottom:4}}><div/>{["Mon","Tue","Wed","Thu","Fri"].map(d=><div key={d} className="hd" style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",textAlign:"center",fontWeight:600}}>{d}</div>)}</div>
     {weeks.map((days,wi)=><div key={wi} style={{display:"grid",gridTemplateColumns:"58px repeat(5,1fr)",gap:3,marginBottom:3,alignItems:"start"}}><div style={{paddingTop:2}}><Btn onClick={()=>onWk(days[0])} style={{padding:"3px 0",fontSize:"var(--fs-nano)",width:"100%",textAlign:"center",borderRadius:5}}>Wk {wi+1}</Btn></div>
-      {days.map(d=>{const dn=new Date(d);dn.setHours(0,0,0,0);const iT=dn>=ts&&dn<=te,sch=eng.isSD(d),isT=dn.toDateString()===today.toDateString(),cd=sch?eng.cycD(d):null,isZ=cd===0,k=toDateKey(d),meta=mc[k]||emptyMeta(),cv=cov[k];
+      {days.map(d=>{const dn=new Date(d);dn.setHours(0,0,0,0);const iT=dn>=ts&&dn<=te,sch=eng.isSchoolDay(d),isT=dn.toDateString()===today.toDateString(),cd=sch?eng.cycleDayFor(d):null,isZ=cd===0,k=toDateKey(d),meta=mc[k]||emptyMeta(),cv=cov[k];
         if(!iT||!sch)return<div key={k} style={{background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-sm)",minHeight:50,display:"flex",alignItems:"center",justifyContent:"center",padding:"2px 4px"}}>{iT&&(()=>{const hol=(cfg.holidays||[]).find(h=>(typeof h==="string"?h:h.date)===fmtISO(d));return<span style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",textAlign:"center",lineHeight:1.3}}>{hol&&typeof hol!=="string"?hol.name:"holiday"}</span>})()}</div>;
         return<div key={k} onClick={()=>onDay(d)} style={{background:isT?"var(--today-bg)":isZ?"var(--dz-bg)":"var(--card)",border:`1px solid ${isT?"var(--today-border)":isZ?"var(--dz-border)":"var(--border)"}`,borderRadius:"var(--radius-sm)",padding:"4px 5px",cursor:"pointer",minHeight:50}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:2}}><span className="hd" style={{fontSize:"var(--fs-body)",fontWeight:700,color:isZ?"var(--dz-text)":isT?"var(--accent)":"var(--text)"}}>{d.getDate()}<span style={{fontSize:"var(--fs-nano)",fontWeight:400,color:"var(--text-muted)",marginLeft:2}}>{d.toLocaleDateString("en-NZ",{month:"short"})}</span></span><span className="mn" style={{fontSize:"var(--fs-nano)",fontWeight:600,color:isZ?"var(--dz-text)":"var(--accent)"}}>{isZ?"D0":`D${cd}`}</span></div>
@@ -1410,7 +1410,7 @@ function buildWkTxt(style,days,wl,wkLabel,sum,mc,eng,wNotes,cfg){
   let out=h1(`Week Plan \u2014 ${wl}`);
   out+=style==="md"?`**${wkLabel}** \u00B7 ${sum.p}/${sum.t} planned\n\n`:`${wkLabel} \u00B7 ${sum.p}/${sum.t} planned\n\n`;
   days.forEach(d=>{
-    const cd=eng.cycD(d),sch=eng.isSD(d),isZ=cd===0,key=toDateKey(d),meta=mc[key]||emptyMeta();
+    const cd=eng.cycleDayFor(d),sch=eng.isSchoolDay(d),isZ=cd===0,key=toDateKey(d),meta=mc[key]||emptyMeta();
     out+=sep+h2(fmtF(d));
     if(!sch){out+=(style==="md"?"*No school*":"No school")+"\n\n";return}
     if(isZ){out+=`Day 0${meta.day0label?": "+meta.day0label:""}\n\n`;if(meta.dayNotes)out+=meta.dayNotes+"\n\n";return}
@@ -1478,8 +1478,8 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
   // Used by the period cell's onClick to make the same-period toggle robust:
   // if qe was open at mousedown on this cell, treat the click as "close".
   const qeAtMouseDownRef=useRef(null);
-  const wNotes=useMemo(()=>{const m={};days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;const key=toDateKey(d);eng.PIDS.forEach(pid=>{const n=storageGet(`note:${key}:${pid}`);m[`${key}:${pid}`]={...emptyNote(),...(n||{})}})});return m},[days.map(toDateKey).join(","),nr]);
-  const sum=useMemo(()=>{let p=0,t=0,f=0;days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,cd,pid);if(cls==="nc")return;t++;const n=wNotes[`${toDateKey(d)}:${pid}`];if(n&&(n.subject||n.notes||n.status==="nl"))p++;if(n&&(hasF(n.notes)||hasF(n.subject)))f++})});let ud=0;days.forEach(d=>{if(eng.cycD(d)===0){const m=mc[toDateKey(d)];if(!m||!m.day0label)ud++}});return{p,t,f,ud}},[days,wNotes,mc]);
+  const wNotes=useMemo(()=>{const m={};days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;const key=toDateKey(d);eng.PIDS.forEach(pid=>{const n=storageGet(`note:${key}:${pid}`);m[`${key}:${pid}`]={...emptyNote(),...(n||{})}})});return m},[days.map(toDateKey).join(","),nr]);
+  const sum=useMemo(()=>{let p=0,t=0,f=0;days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,cd,pid);if(cls==="nc")return;t++;const n=wNotes[`${toDateKey(d)}:${pid}`];if(n&&(n.subject||n.notes||n.status==="nl"))p++;if(n&&(hasF(n.notes)||hasF(n.subject)))f++})});let ud=0;days.forEach(d=>{if(eng.cycleDayFor(d)===0){const m=mc[toDateKey(d)];if(!m||!m.day0label)ud++}});return{p,t,f,ud}},[days,wNotes,mc]);
   const oQE=(key,pid,cls,date)=>{const n=wNotes[`${key}:${pid}`];setQV(n&&n.subject||"");setQE({dk:key,pid,cc:cls,date});setNlConfirm(false)};
   // sQE saves the typed input. It preserves the existing status (so editing the
   // reason of a no-lesson period does not silently downgrade it back to a topic).
@@ -1491,7 +1491,7 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
   const wl=fmtS(days[0])+" \u2013 "+fmtS(days[4]);
 
   const gridCells=useMemo(()=>{
-    const dd=days.map(d=>({d,k:toDateKey(d),cd:eng.cycD(d),sch:eng.isSD(d),isZ:eng.cycD(d)===0,isT:d.toDateString()===today.toDateString(),meta:mc[toDateKey(d)]||emptyMeta()}));
+    const dd=days.map(d=>({d,k:toDateKey(d),cd:eng.cycleDayFor(d),sch:eng.isSchoolDay(d),isZ:eng.cycleDayFor(d)===0,isT:d.toDateString()===today.toDateString(),meta:mc[toDateKey(d)]||emptyMeta()}));
     const cells=[];const lS={display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:4};const lT={fontSize:"var(--fs-nano)",color:"var(--text-muted)",fontWeight:700};
     const bg=x=>x.isT?"var(--today-bg)":x.isZ?"var(--dz-bg)":x.sch?"var(--card)":"var(--surface)";
     const bd=x=>`1px solid ${x.isT?"var(--today-border)":x.isZ?"var(--dz-border)":"var(--border)"}`;
@@ -1568,8 +1568,8 @@ function WeekView({base,setBase,onDet,mc,uM,g,onUpdateCfg,cfg}){
   // away from Day View.
   },[days,today,mc,wNotes,eng,duties,g]);
 
-  const flags=useMemo(()=>{const fl=[];days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;const key=toDateKey(d);eng.PIDS.forEach(pid=>{const n=wNotes[`${key}:${pid}`];if(n&&(hasF(n.notes)||hasF(n.subject))){const cls=eng.classAt(d,cd,pid);fl.push({date:d,pid,cls,subject:n.subject||"",notes:n.notes||""})}})});return fl},[days,wNotes]);
-  const spotHits=useMemo(()=>{if(!spot)return[];const h=[];days.forEach(d=>{const cd=eng.cycD(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{if(eng.classAt(d,cd,pid)===spot){const per=bldP(asmBellsForDate(cd,d,{timetable:eng.timetableForDate(d),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]})).find(p=>p.id===pid);h.push({d,per,cd})}})});return h},[spot,days]);
+  const flags=useMemo(()=>{const fl=[];days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;const key=toDateKey(d);eng.PIDS.forEach(pid=>{const n=wNotes[`${key}:${pid}`];if(n&&(hasF(n.notes)||hasF(n.subject))){const cls=eng.classAt(d,cd,pid);fl.push({date:d,pid,cls,subject:n.subject||"",notes:n.notes||""})}})});return fl},[days,wNotes]);
+  const spotHits=useMemo(()=>{if(!spot)return[];const h=[];days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{if(eng.classAt(d,cd,pid)===spot){const per=bldP(asmBellsForDate(cd,d,{timetable:eng.timetableForDate(d),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]})).find(p=>p.id===pid);h.push({d,per,cd})}})});return h},[spot,days]);
 
   return<div>{g.showGam&&<><XpStrip g={g}/><Badges achs={g.achs}/></>}
     <div className="np" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10,marginTop:10,flexWrap:"wrap"}}><div style={{display:"flex",alignItems:"center",gap:7}}><Btn onClick={()=>setBase(d=>addD(d,-7))} style={{padding:"4px 10px"}}>{"\u2039"}</Btn><div style={{textAlign:"center",width:"190px",flexShrink:0}}><div style={{fontSize:"var(--fs-body)",color:"var(--text-secondary)"}}>{wl}</div><div className="hd" style={{fontSize:"var(--fs-caption)",color:"var(--accent)",fontWeight:600}}>{wkLabel}</div></div><Btn onClick={()=>setBase(d=>addD(d,7))} style={{padding:"4px 10px"}}>{"\u203A"}</Btn></div><Btn onClick={()=>setBase(getPlanMon(today))} style={{padding:"4px 10px",fontSize:"var(--fs-caption)"}}>Today</Btn></div>
@@ -1665,9 +1665,9 @@ function ClassView({onDet,g}){
   // Used by the lesson row's onClick to make the same-row toggle robust.
   const qeAtMouseDownRef=useRef(null);
   const lessons=useMemo(()=>{
-    if(termIdx===-1){const all=[];eng.terms.forEach((_,ti)=>{all.push(...eng.clsLessons(sel,ti))});
+    if(termIdx===-1){const all=[];eng.terms.forEach((_,ti)=>{all.push(...eng.classLessons(sel,ti))});
       all.sort((a,b)=>a.date-b.date);return all.map(l=>{const n=storageGet(`note:${l.dk}:${l.pid}`);return{...l,notes:{...emptyNote(),...(n||{})}}});}
-    return eng.clsLessons(sel,termIdx).map(l=>{const n=storageGet(`note:${l.dk}:${l.pid}`);return{...l,notes:{...emptyNote(),...(n||{})}}});
+    return eng.classLessons(sel,termIdx).map(l=>{const n=storageGet(`note:${l.dk}:${l.pid}`);return{...l,notes:{...emptyNote(),...(n||{})}}});
   },[sel,termIdx,nr]);
   const planned=lessons.filter(l=>l.notes.subject||l.notes.notes||l.notes.status==="nl").length;const flagged=lessons.filter(l=>hasF(l.notes.notes)||hasF(l.notes.subject)).length;
   const nxtI=lessons.findIndex(l=>{const ld=new Date(l.date);ld.setHours(0,0,0,0);return ld>=today});
@@ -2332,7 +2332,7 @@ function SearchOverlay({eng,onGo,onClose}){
         const dkey=rest.slice(0,ci),pid=rest.slice(ci+1),n=storageGet(k);if(!n)continue;
         const hit=[["subject",n.subject],["notes",n.notes],["resources",n.resources]].find(f=>f[1]&&f[1].toLowerCase().includes(term));
         if(!hit)continue;
-        const date=parseDk(dkey);let cls=null;try{const cd=eng.cycD(date);if(cd)cls=eng.classAt(date,cd,pid)}catch{}
+        const date=parseDk(dkey);let cls=null;try{const cd=eng.cycleDayFor(date);if(cd)cls=eng.classAt(date,cd,pid)}catch{}
         out.push({key:k,date,pid,locator:(cls&&cls!=="nc"?cls+" · ":"")+(SL[pid]||pid),title:n.subject||"",text:hit[1]});
       }else if(k.slice(0,8)==="daymeta:"){
         const dkey=k.slice(8),m=storageGet(k);if(!m)continue;
@@ -2447,7 +2447,7 @@ function App(){
     r.setProperty("--input-focus",ac);
   },[dispMode,cfg&&cfg.theme]);
 
-  useEffect(()=>{if(!eng)return;const p={};eng.terms.forEach(term=>{eng.getTermWks(term).flat().filter(eng.isSD).forEach(d=>{const k=toDateKey(d),v=storageGet(`daymeta:${k}`);if(v)p[k]=normalizeMeta(v)})});mcR.current={...mcR.current,...p};setMC(c=>({...c,...p}))},[eng]);
+  useEffect(()=>{if(!eng)return;const p={};eng.terms.forEach(term=>{eng.getTermWeeks(term).flat().filter(eng.isSchoolDay).forEach(d=>{const k=toDateKey(d),v=storageGet(`daymeta:${k}`);if(v)p[k]=normalizeMeta(v)})});mcR.current={...mcR.current,...p};setMC(c=>({...c,...p}))},[eng]);
   // refreshFromLocal: after localStorage changes (a merge sync), rebuild the
   // config state, the daymeta cache, and bump the render counter. The engine is
   // rebuilt from the freshly-stored config so term walks use the right boundaries.
@@ -2457,7 +2457,7 @@ function App(){
     const freshEng=nc?makeDateEngine(nc):null;
     if(freshEng){
       const p={};
-      freshEng.terms.forEach(term=>{freshEng.getTermWks(term).flat().filter(freshEng.isSD).forEach(d=>{const k=toDateKey(d),v=storageGet(`daymeta:${k}`);if(v)p[k]=normalizeMeta(v)})});
+      freshEng.terms.forEach(term=>{freshEng.getTermWeeks(term).flat().filter(freshEng.isSchoolDay).forEach(d=>{const k=toDateKey(d),v=storageGet(`daymeta:${k}`);if(v)p[k]=normalizeMeta(v)})});
       mcR.current=p;setMC(p);
     }
     setGR(r=>r+1);
@@ -2561,11 +2561,11 @@ function App(){
   const onMS=useCallback((key,m)=>{mcR.current={...mcR.current,[key]:m};setMC(c=>({...c,[key]:m}));triggerSync()},[triggerSync]);
   const goDay=(d,pid)=>{setPrevV(view);setDetDate(d);setFP(pid||null);setView("day")};
   const goWk=d=>{setBase(d);setView("week")};
-  const goDayTab=()=>{if(!detDate){let target;if(view==="week"){target=getMon(base).toDateString()===getMon(today).toDateString()?today:getMon(base)}else{target=planMon}if(eng&&!eng.isSD(target))target=eng.nearSD(target,1)||target;setDetDate(target)}setFP(null);setPrevV(view);setView("day")};
+  const goDayTab=()=>{if(!detDate){let target;if(view==="week"){target=getMon(base).toDateString()===getMon(today).toDateString()?today:getMon(base)}else{target=planMon}if(eng&&!eng.isSchoolDay(target))target=eng.nearestSchoolDay(target,1)||target;setDetDate(target)}setFP(null);setPrevV(view);setView("day")};
   // handleImport runs after a backup-file import lands. We build a fresh engine
   // from the just-imported config rather than using the closed-over `eng` (which
   // still reflects the pre-import config because setCfg has not committed yet).
-  const handleImport=useCallback(()=>{const nc=migrateConfig(storageGet("planner-config"));if(nc)setCfg(nc);const freshEng=nc?makeDateEngine(nc):eng;const p={};if(freshEng)freshEng.terms.forEach(term=>{freshEng.getTermWks(term).flat().filter(freshEng.isSD).forEach(d=>{const k=toDateKey(d),v=storageGet(`daymeta:${k}`);if(v)p[k]=normalizeMeta(v)})});mcR.current=p;setMC(p);setGR(r=>r+1);triggerSync()},[eng,triggerSync]);
+  const handleImport=useCallback(()=>{const nc=migrateConfig(storageGet("planner-config"));if(nc)setCfg(nc);const freshEng=nc?makeDateEngine(nc):eng;const p={};if(freshEng)freshEng.terms.forEach(term=>{freshEng.getTermWeeks(term).flat().filter(freshEng.isSchoolDay).forEach(d=>{const k=toDateKey(d),v=storageGet(`daymeta:${k}`);if(v)p[k]=normalizeMeta(v)})});mcR.current=p;setMC(p);setGR(r=>r+1);triggerSync()},[eng,triggerSync]);
   const onWE=isWE(today);
 
   useEffect(()=>{if(!cfg){    const blank={school:"Dio",cycleDays:7,terms:[

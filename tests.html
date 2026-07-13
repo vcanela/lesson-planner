@@ -177,7 +177,7 @@ try{
   }
 
   // ══ ENGINE: cycle-day walk (weekend / holiday / Day 0 / term boundary) ════════
-  G("Engine (makeDateEngine cycD / isSD)");
+  G("Engine (makeDateEngine cycleDayFor / isSchoolDay)");
   {
     // Term 3 anchored Mon 27 Jul 2026 = cycle day 1; a prior Term 2 week for the
     // backward + term-boundary walk. Holiday on Wed 12 Aug, Day 0 on Tue 18 Aug.
@@ -196,22 +196,22 @@ try{
     const D=(iso)=>C.parseISO?C.parseISO(iso):new Date(iso.split("-")[0],iso.split("-")[1]-1,iso.split("-")[2]);
     const day=iso=>{const[y,m,d]=iso.split("-").map(Number);return new Date(y,m-1,d);};
 
-    eq("anchor date is cycle day 1",eng.cycD(day("2026-07-27")),1);
-    eq("Friday of anchor week is day 5",eng.cycD(day("2026-07-31")),5);
-    eq("weekend returns null",eng.cycD(day("2026-08-01")),null);
-    eq("cycle continues across the weekend (Mon = day 6)",eng.cycD(day("2026-08-03")),6);
-    eq("holiday returns null",eng.cycD(day("2026-08-12")),null);
-    eq("holiday does not consume a cycle number (next day = day 6)",eng.cycD(day("2026-08-13")),6);
-    eq("Day 0 event returns 0",eng.cycD(day("2026-08-18")),0);
-    eq("Day 0 does not advance the cycle (next day = day 2)",eng.cycD(day("2026-08-19")),2);
-    eq("date outside any term returns null",eng.cycD(day("2026-07-15")),null);
+    eq("anchor date is cycle day 1",eng.cycleDayFor(day("2026-07-27")),1);
+    eq("Friday of anchor week is day 5",eng.cycleDayFor(day("2026-07-31")),5);
+    eq("weekend returns null",eng.cycleDayFor(day("2026-08-01")),null);
+    eq("cycle continues across the weekend (Mon = day 6)",eng.cycleDayFor(day("2026-08-03")),6);
+    eq("holiday returns null",eng.cycleDayFor(day("2026-08-12")),null);
+    eq("holiday does not consume a cycle number (next day = day 6)",eng.cycleDayFor(day("2026-08-13")),6);
+    eq("Day 0 event returns 0",eng.cycleDayFor(day("2026-08-18")),0);
+    eq("Day 0 does not advance the cycle (next day = day 2)",eng.cycleDayFor(day("2026-08-19")),2);
+    eq("date outside any term returns null",eng.cycleDayFor(day("2026-07-15")),null);
     // backward walk across the term boundary (gap 4–26 Jul has no teaching days)
-    eq("backward: last teaching day of prior term = day 7",eng.cycD(day("2026-07-03")),7);
-    eq("backward: Mon of prior term week = day 3",eng.cycD(day("2026-06-29")),3);
-    // isSD predicate
-    eq("isSD false on a weekend",eng.isSD(day("2026-08-01")),false);
-    eq("isSD false on a holiday",eng.isSD(day("2026-08-12")),false);
-    eq("isSD true on a Day 0 (it is still a school day)",eng.isSD(day("2026-08-18")),true);
+    eq("backward: last teaching day of prior term = day 7",eng.cycleDayFor(day("2026-07-03")),7);
+    eq("backward: Mon of prior term week = day 3",eng.cycleDayFor(day("2026-06-29")),3);
+    // isSchoolDay predicate
+    eq("isSchoolDay false on a weekend",eng.isSchoolDay(day("2026-08-01")),false);
+    eq("isSchoolDay false on a holiday",eng.isSchoolDay(day("2026-08-12")),false);
+    eq("isSchoolDay true on a Day 0 (it is still a school day)",eng.isSchoolDay(day("2026-08-18")),true);
   }
 
   // ══ resolveSlot precedence + clash ═══════════════════════════════════════════
