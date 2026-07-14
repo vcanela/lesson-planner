@@ -600,7 +600,7 @@ const SCHEMA_VERSION=2;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="2.17.2";
+const APP_VERSION="2.18.0";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -2458,6 +2458,35 @@ class ErrorBoundary extends React.Component{
   }
 }
 
+// HotkeyHelp: the shortcuts cheat-sheet, opened with ? or the footer "Shortcuts" link.
+// Backdrop click or Esc closes it (Esc is handled by App's global key handler).
+function HotkeyHelp({onClose}){
+  const rows=[
+    ["T W D C L S","Jump to Term, Week, Day, Class, Lab, Setup"],
+    ["[ ]","Previous / next (week in Week View, day in Day View)"],
+    [".","Jump to today"],
+    ["/","Search all notes"],
+    ["Esc","Close search, this panel, or a quick editor"],
+    ["?","Show this list"],
+  ];
+  const kbd={display:"inline-block",fontSize:"var(--fs-nano)",fontWeight:700,background:"var(--surface)",border:"1px solid var(--border-strong)",borderRadius:4,padding:"1px 7px",margin:"0 2px 2px 0",color:"var(--text)"};
+  return<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.4)",zIndex:100,display:"flex",justifyContent:"center",alignItems:"flex-start",padding:"10vh 16px 16px"}}>
+    <div className="card" onClick={e=>e.stopPropagation()} style={{maxWidth:460,width:"100%",padding:"18px 20px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div className="hd" style={{fontSize:"var(--fs-emph)",fontWeight:600,color:"var(--accent)"}}>Keyboard shortcuts</div>
+        <button className="btn" onClick={onClose} style={{padding:"3px 10px",fontSize:"var(--fs-caption)"}}>Close</button>
+      </div>
+      <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>
+        {rows.map(([keys,desc],i)=><tr key={i}>
+          <td style={{whiteSpace:"nowrap",verticalAlign:"top",padding:"5px 12px 5px 0"}}>{keys.split(" ").map((kk,j)=><span key={j} className="mn" style={kbd}>{kk}</span>)}</td>
+          <td style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",verticalAlign:"top",padding:"5px 0",lineHeight:1.5}}>{desc}</td>
+        </tr>)}
+      </tbody></table>
+      <div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",marginTop:12}}>Shortcuts pause while you are typing in a field.</div>
+    </div>
+  </div>;
+}
+
 function App(){
   const[dispMode,setDispMode]=useState(()=>{const v=localStorage.getItem("planner-theme");if(["light","dark","light-hc","dark-hc"].includes(v))return v;return "light-hc"});
   const[showSearch,setShowSearch]=useState(false);
@@ -2466,6 +2495,12 @@ function App(){
   const[isNarrow,setIsNarrow]=useState(()=>typeof window!=="undefined"&&window.matchMedia("(max-width:799px)").matches);
   useEffect(()=>{const m=window.matchMedia("(max-width:799px)");const h=e=>setIsNarrow(e.matches);m.addEventListener?m.addEventListener("change",h):m.addListener(h);return()=>{m.removeEventListener?m.removeEventListener("change",h):m.removeListener(h)}},[]);
   const[navMenu,setNavMenu]=useState(false);
+  // Keyboard shortcuts (desktop). The listener is bound once; hotkeyRef.current is refreshed
+  // each render (near the return) so it always sees the latest state without re-binding.
+  // showHelp toggles the shortcuts cheat-sheet.
+  const[showHelp,setShowHelp]=useState(false);
+  const hotkeyRef=useRef(null);
+  useEffect(()=>{const h=e=>hotkeyRef.current&&hotkeyRef.current(e);window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h)},[]);
   const today=useToday();const[cfg,setCfg]=useState(()=>migrateConfig(storageGet("planner-config")));
   const eng=useMemo(()=>makeDateEngine(cfg),[cfg]);const planMon=useMemo(()=>getPlanMon(today),[today]);const planWN=eng?eng.wkN(planMon):8;
   const[view,setView]=useState("week");const[base,setBase]=useState(planMon);const[detDate,setDetDate]=useState(null);
@@ -2640,12 +2675,33 @@ function App(){
   const syncDot=syncConnected()&&<span style={{position:"absolute",top:2,right:2,width:7,height:7,borderRadius:"50%",background:syncSt==="syncing"?"var(--accent)":syncSt==="error"?"var(--error)":syncSt==="conflict"?"var(--flag)":"var(--success)",border:"1px solid var(--card)"}}/>;
   const utilBtnStyle={background:"var(--surface)",border:"1px solid var(--border)",color:"var(--text)",borderRadius:"var(--radius-sm)",padding:"5px 10px",cursor:"pointer",fontSize:"var(--fs-title)",lineHeight:1,position:"relative"};
 
+  // Keyboard shortcuts (bare keys; desktop). Esc works even from a field; every other key is
+  // ignored while typing in an input/textarea/select, and any Ctrl/Cmd/Alt combo is left to
+  // the browser. View letters route through onTab (so Day snaps to a school day); [ ] . drive
+  // prev/next/today in Week and Day, whose base/detDate this component owns.
+  hotkeyRef.current=e=>{
+    const k=e.key;
+    if(k==="Escape"){if(showHelp){setShowHelp(false);e.preventDefault()}else if(showSearch){setShowSearch(false);e.preventDefault()}return}
+    if(e.metaKey||e.ctrlKey||e.altKey)return;
+    const t=e.target,tag=t&&t.tagName;
+    if(tag==="INPUT"||tag==="TEXTAREA"||tag==="SELECT"||(t&&t.isContentEditable))return;
+    if(k==="?"){setShowHelp(true);e.preventDefault();return}
+    if(k==="/"){setShowSearch(true);e.preventDefault();return}
+    const VIEW_KEYS={t:"term",w:"week",d:"day",c:"class",l:"lab",s:"setup"};
+    const lk=k.length===1?k.toLowerCase():k;
+    if(lk in VIEW_KEYS){onTab(VIEW_KEYS[lk]);e.preventDefault();return}
+    if(k==="["||k==="]"||k==="."){
+      if(view==="week"){setBase(k==="."?getPlanMon(today):addD(base,k==="["?-7:7));e.preventDefault()}
+      else if(view==="day"&&detDate){const nd=k==="."?(eng.isSchoolDay(today)?today:eng.nearestSchoolDay(today,1)):eng.nearestSchoolDay(detDate,k==="["?-1:1);if(nd){setDetDate(nd);setFP(null)}e.preventDefault()}
+    }
+  };
+
   return<CfgCtx.Provider value={eng}><div style={{minHeight:"100vh",padding:16}}><div style={{maxWidth:CONTENT_MAX,margin:"0 auto"}}>
     <div className="np" style={{marginBottom:16,borderBottom:"1px solid var(--border)",paddingBottom:14}}>
       <div style={{marginBottom:10}}>
         <div className="hd" style={{fontSize:"var(--fs-display)",fontWeight:400,color:"var(--accent)",letterSpacing:"-.3px"}}>{"\u{1F4C5}"} {eng.school} Planner</div>
         <div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}>{cfg.userName&&<span style={{color:"var(--text-secondary)",fontWeight:500}}>{cfg.userName} {"\u00B7"} </span>}{gam.lev.icon} {gam.lev.title}{gam.sk>0&&<span style={{color:"var(--success)",marginLeft:8}}>{"\u{1F525}"} {gam.sk}wk streak</span>}{onWE&&<span style={{color:"var(--accent)",fontStyle:"italic",marginLeft:8}}>Weekend mode</span>}</div>
-        <div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",marginTop:3}}>v{APP_VERSION} {"·"} <a href="guide.html" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Guide</a> {"·"} <a href="https://github.com/vcanela/lesson-planner/blob/main/CHANGELOG.md" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Changelog</a></div>
+        <div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",marginTop:3}}>v{APP_VERSION} {"·"} <a href="guide.html" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Guide</a> {"·"} <a href="https://github.com/vcanela/lesson-planner/blob/main/CHANGELOG.md" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Changelog</a>{!compact&&<>{" "}{"·"} <button onClick={()=>setShowHelp(true)} title="Keyboard shortcuts (or press ?)" style={{background:"none",border:"none",padding:0,font:"inherit",color:"var(--accent)",cursor:"pointer"}}>Shortcuts</button></>}</div>
       </div>
       <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:3,background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-md)",padding:3}}>{TABS.map(tabBtn)}</div>
@@ -2679,6 +2735,7 @@ function App(){
     {storageFailed&&<div className="card" style={{padding:"12px 16px",marginBottom:14,border:"1px solid var(--error)",background:"var(--surface)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:"var(--fs-title)"}}>{"⚠"}</span><div style={{flex:1,minWidth:200}}><div className="hd" style={{fontSize:"var(--fs-emph)",fontWeight:600,color:"var(--error)"}}>Browser storage is full</div><div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",lineHeight:1.5}}>Recent changes have not been saved. Cloud sync is paused while this is unresolved. Open the Data Panel to download a backup, then clear old data in your browser settings.</div></div><button className="btn-a" onClick={()=>setShowDP(true)} style={{padding:"6px 14px",fontSize:"var(--fs-body)"}}>Open Data Panel</button><button className="btn" onClick={()=>{storageFailedRef.current=false;setStorageFailed(false)}} style={{padding:"4px 10px",fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}>Dismiss</button></div>}
     {(cfg&&(!cfg.classes||cfg.classes.length===0||!cfg.timetable||Object.keys(cfg.timetable).length===0))&&<div className="card" style={{padding:"14px 18px",marginBottom:14,border:"1px solid var(--dz-border)",background:"var(--dz-bg)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:"var(--fs-title)"}}>{"\u{1F44B}"}</span><div style={{flex:1,minWidth:200}}><div className="hd" style={{fontSize:"var(--fs-emph)",fontWeight:600,color:"var(--dz-text)"}}>Welcome! Add your classes and timetable</div><div style={{fontSize:"var(--fs-caption)",color:"var(--dz-text)",opacity:.8}}>Term dates and holidays are already set up. Head to Setup to add your classes and timetable.</div></div><button className="btn-a" onClick={()=>{setView("setup");setGR(r=>r+1)}} style={{padding:"6px 14px",fontSize:"var(--fs-body)"}}>Go to Setup {"\u2192"}</button></div>}
     {showSearch&&<SearchOverlay eng={eng} onGo={goDay} onClose={()=>setShowSearch(false)}/>}
+    {showHelp&&<HotkeyHelp onClose={()=>setShowHelp(false)}/>}
     {showDP&&<DataPanel onClose={()=>setShowDP(false)} onImported={handleImport} onSync={syncNow} onSyncConn={(tok,gid)=>{setGhToken(tok);setGhGistId(gid);triggerSync()}} onSyncDisc={()=>{setGhToken("");setGhGistId("");clearTimeout(syncTimer.current);setSyncSt("idle");setLastSync(null)}} lastSync={lastSync} token={ghToken} gistId={ghGistId} setToken={setGhToken} setGistId={setGhGistId}/>}
     <ErrorBoundary key={view}>
     {view==="term"&&<TermView onDay={goDay} onWk={goWk} metaCache={metaCache} gam={gam} cfg={cfg}/>}

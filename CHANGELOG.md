@@ -6,6 +6,22 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.18.0 — 2026-07-14
+
+### Features
+- **Keyboard shortcuts (desktop).** Bare keys for the common moves, so the planner can be driven without the mouse:
+  - `T` `W` `D` `C` `L` `S` jump to Term / Week / Day / Class / Lab / Setup.
+  - `[` and `]` step to the previous / next week (Week View) or school day (Day View); `.` jumps to today.
+  - `/` opens search; `Esc` closes search, the shortcuts panel, or a quick editor; `?` shows the shortcuts cheat-sheet.
+  - A "Shortcuts" link in the header footer (desktop) opens the same cheat-sheet for mouse users.
+
+### Implementation
+- One `keydown` listener bound once at the App level, reading the latest state through a ref (`hotkeyRef`) so it never re-binds. Three guards keep it safe: `Esc` aside, every key is ignored while focus is in an `input` / `textarea` / `select` / contenteditable (so typing a topic never triggers a jump); any Ctrl/Cmd/Alt combination is left to the browser; and it is bare-key only, which does not collide with browser shortcuts. View keys route through the existing `onTab` (so `D` snaps to a school day); `[` `]` `.` drive the `base` / `detDate` state the App already owns, and only act in Week and Day.
+- New `HotkeyHelp` overlay lists the keys and notes that shortcuts pause while typing; opened by `?` or the footer link, closed by backdrop, Esc, or its Close button.
+- Verified in preview: all six view keys switch views; `/` and `?` open and `Esc` closes; typing `w` in a focused field does **not** switch view; `[` `]` `.` move the week (Mon 13 Jul → Mon 20 Jul → back → today) and the day (Mon 27 Jul → Tue 28 Jul); the footer link opens the panel; `tests.html` 50/50.
+
+---
+
 ## 2.17.2 — 2026-07-14
 
 ### Implementation
