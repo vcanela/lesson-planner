@@ -6,6 +6,15 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.17.2 — 2026-07-14
+
+### Implementation
+- **Lifted the new-profile default calendar into a top-level `DEFAULT_YEAR_SEED` constant** (it was an anonymous object buried inside `App()`'s seeding effect). A comment block spells out what it is and the four dated fields to refresh each January (terms, holidays, dayZeros, anchor), plus where NZ term dates and public holidays are published. This is the ten-minute January job made obvious instead of hidden.
+- The seeding effect now deep-clones the constant (so later edits can never mutate the shared default) and, when a fresh profile is created in a year later than the seed's, logs a one-line console warning that the built-in dates are stale and need updating. Derived `SEED_YEAR` from the seed so the check stays honest.
+- No behaviour change for existing users or for a 2026 fresh profile. Verified: clearing the config and reloading still lands fully configured (4 terms from 2026-01-27, 8 holidays, 21 Day 0 entries, the anchor, classes left blank), no crash; `tests.html` 50/50.
+
+---
+
 ## 2.17.1 — 2026-07-14
 
 ### Documentation

@@ -600,7 +600,7 @@ const SCHEMA_VERSION=2;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="2.17.1";
+const APP_VERSION="2.17.2";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -2380,6 +2380,56 @@ function SearchOverlay({eng,onGo,onClose}){
 // sideways on a wide screen. A single width keeps the layout perfectly still across tabs.
 // Below this width the wrapper is capped by the viewport, so phones/tablets are unchanged.
 const CONTENT_MAX=1000;
+
+/* ═══ DEFAULT YEAR SEED ═══════════════════════════════════════════════════════
+ * The config a brand-new profile starts with (no saved data yet): Dio's calendar
+ * for the seed year, so a first-time user lands ready to plan without touching Setup.
+ * Only the classes and timetable are left blank (those are personal).
+ *
+ * UPDATE EACH JANUARY for the new school year. Four fields carry dates:
+ *   - terms      : the four term start/end dates
+ *   - holidays   : public holidays that fall in term time
+ *   - dayZeros   : holidays (statutory) + school events that pause the cycle
+ *                  (Orientation, EOTC, Athletics, Teacher Only Days, House Music, ...)
+ *   - anchor     : one known {date, cycle-day} to peg the 7-day rotation. Pick any
+ *                  teaching day and its real cycle day from the school's calendar.
+ * Leave school / cycleDays / theme / exportStyle as they are.
+ *
+ * NZ term dates: Ministry of Education (education.govt.nz, "school terms and holidays").
+ * Public holidays: govt.nz / employment.govt.nz. Auckland Anniversary + Dio's own event
+ * dates come from the school calendar. Bump SEED_YEAR below to match so the staleness
+ * warning stays useful.
+ * ════════════════════════════════════════════════════════════════════════════ */
+const DEFAULT_YEAR_SEED={school:"Dio",cycleDays:7,terms:[
+    {n:1,start:"2026-01-27",end:"2026-04-03"},{n:2,start:"2026-04-20",end:"2026-07-03"},
+    {n:3,start:"2026-07-27",end:"2026-09-25"},{n:4,start:"2026-10-12",end:"2026-12-08"}],
+    holidays:[
+      {date:"2026-01-26",name:"Auckland Anniversary"},{date:"2026-02-06",name:"Waitangi Day"},
+      {date:"2026-04-03",name:"Good Friday"},{date:"2026-04-06",name:"Easter Monday"},
+      {date:"2026-04-27",name:"ANZAC Day"},{date:"2026-06-01",name:"King's Birthday"},
+      {date:"2026-07-10",name:"Matariki"},{date:"2026-10-26",name:"Labour Day"}],
+    dayZeros:[
+      {date:"2026-01-26",label:"Auckland Anniversary",source:"statutory"},
+      {date:"2026-01-27",label:"Orientation",source:"manual"},{date:"2026-01-28",label:"Orientation",source:"manual"},
+      {date:"2026-02-06",label:"Waitangi Day",source:"statutory"},
+      {date:"2026-02-17",label:"Athletics Day",source:"manual"},
+      {date:"2026-02-23",label:"EOTC Week",source:"manual"},{date:"2026-02-24",label:"EOTC Week",source:"manual"},
+      {date:"2026-02-25",label:"EOTC Week",source:"manual"},{date:"2026-02-26",label:"EOTC Week",source:"manual"},
+      {date:"2026-02-27",label:"EOTC Week",source:"manual"},
+      {date:"2026-04-03",label:"Good Friday",source:"statutory"},{date:"2026-04-06",label:"Easter Monday",source:"statutory"},
+      {date:"2026-04-27",label:"ANZAC Day",source:"statutory"},
+      {date:"2026-05-15",label:"Teacher Only Day 1",source:"manual"},
+      {date:"2026-06-01",label:"King's Birthday",source:"statutory"},
+      {date:"2026-07-01",label:"House Music",source:"manual"},
+      {date:"2026-07-10",label:"Matariki",source:"statutory"},
+      {date:"2026-08-31",label:"Teacher Only Day 2",source:"manual"},
+      {date:"2026-10-26",label:"Labour Day",source:"statutory"},
+      {date:"2026-12-07",label:"Final Days",source:"manual"},{date:"2026-12-08",label:"Final Days",source:"manual"}],
+    anchor:{date:"2026-04-02",day:2},timetable:{},classes:[],duties:[],theme:"coffee",exportStyle:"plain",userName:""};
+// The school year the seed above describes. If the app is first opened in a later year with
+// no saved config, the seed is stale (dates from the wrong year); warn in the console then.
+const SEED_YEAR=+DEFAULT_YEAR_SEED.terms[0].start.slice(0,4);
+
 // ErrorBoundary: wraps the active view only (NOT the whole app), so a render crash in one
 // view degrades to a recovery card while the header and tabs keep working. React error
 // boundaries must be class components (getDerivedStateFromError / componentDidCatch). The
@@ -2570,32 +2620,10 @@ function App(){
   const handleImport=useCallback(()=>{const nc=migrateConfig(storageGet("planner-config"));if(nc)setCfg(nc);const freshEng=nc?makeDateEngine(nc):eng;const p={};if(freshEng)freshEng.terms.forEach(term=>{freshEng.getTermWeeks(term).flat().filter(freshEng.isSchoolDay).forEach(d=>{const k=toDateKey(d),v=storageGet(`daymeta:${k}`);if(v)p[k]=normalizeMeta(v)})});mcR.current=p;setMC(p);setGR(r=>r+1);triggerSync()},[eng,triggerSync]);
   const onWE=isWE(today);
 
-  useEffect(()=>{if(!cfg){    const blank={school:"Dio",cycleDays:7,terms:[
-    {n:1,start:"2026-01-27",end:"2026-04-03"},{n:2,start:"2026-04-20",end:"2026-07-03"},
-    {n:3,start:"2026-07-27",end:"2026-09-25"},{n:4,start:"2026-10-12",end:"2026-12-08"}],
-    holidays:[
-      {date:"2026-01-26",name:"Auckland Anniversary"},{date:"2026-02-06",name:"Waitangi Day"},
-      {date:"2026-04-03",name:"Good Friday"},{date:"2026-04-06",name:"Easter Monday"},
-      {date:"2026-04-27",name:"ANZAC Day"},{date:"2026-06-01",name:"King's Birthday"},
-      {date:"2026-07-10",name:"Matariki"},{date:"2026-10-26",name:"Labour Day"}],
-    dayZeros:[
-      {date:"2026-01-26",label:"Auckland Anniversary",source:"statutory"},
-      {date:"2026-01-27",label:"Orientation",source:"manual"},{date:"2026-01-28",label:"Orientation",source:"manual"},
-      {date:"2026-02-06",label:"Waitangi Day",source:"statutory"},
-      {date:"2026-02-17",label:"Athletics Day",source:"manual"},
-      {date:"2026-02-23",label:"EOTC Week",source:"manual"},{date:"2026-02-24",label:"EOTC Week",source:"manual"},
-      {date:"2026-02-25",label:"EOTC Week",source:"manual"},{date:"2026-02-26",label:"EOTC Week",source:"manual"},
-      {date:"2026-02-27",label:"EOTC Week",source:"manual"},
-      {date:"2026-04-03",label:"Good Friday",source:"statutory"},{date:"2026-04-06",label:"Easter Monday",source:"statutory"},
-      {date:"2026-04-27",label:"ANZAC Day",source:"statutory"},
-      {date:"2026-05-15",label:"Teacher Only Day 1",source:"manual"},
-      {date:"2026-06-01",label:"King's Birthday",source:"statutory"},
-      {date:"2026-07-01",label:"House Music",source:"manual"},
-      {date:"2026-07-10",label:"Matariki",source:"statutory"},
-      {date:"2026-08-31",label:"Teacher Only Day 2",source:"manual"},
-      {date:"2026-10-26",label:"Labour Day",source:"statutory"},
-      {date:"2026-12-07",label:"Final Days",source:"manual"},{date:"2026-12-08",label:"Final Days",source:"manual"}],
-    anchor:{date:"2026-04-02",day:2},timetable:{},classes:[],duties:[],theme:"coffee",exportStyle:"plain",school:"Dio",userName:""};storageSet("planner-config",blank);setCfg(blank)}},[cfg]);
+  useEffect(()=>{if(!cfg){
+    if(new Date().getFullYear()>SEED_YEAR)console.warn(`Lesson planner: the built-in default calendar is for ${SEED_YEAR}; seeding this fresh profile with ${SEED_YEAR} dates. Update DEFAULT_YEAR_SEED in index.html for the current year (see its comment).`);
+    // Deep-clone so the shared constant is never mutated by later edits to cfg.
+    const blank=JSON.parse(JSON.stringify(DEFAULT_YEAR_SEED));storageSet("planner-config",blank);setCfg(blank)}},[cfg]);
   if(!cfg||!eng)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>Loading...</div>;
 
   // ── Compact phone nav (v2.13.0): below 800px the view tabs shrink to icons (the active
