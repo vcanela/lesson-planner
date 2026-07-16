@@ -6,6 +6,20 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.18.1 — 2026-07-14
+
+### Fixes
+- **Class View: the "No lesson" button is no longer trapped behind the floating controls.** The Today / back-to-top buttons now hide while a quick-editor is open, so the editor (including the No-lesson button on the last lesson) is fully reachable.
+- **Week View: opening a lesson editor scrolls it into view.** Clicking a period now brings the grid to the top of the window, so the editor panel below it is on screen instead of just off the bottom.
+- **Week and Class View: "No lesson" is now a stay-open toggle.** Marking No-lesson keeps the editor open with the field focused, so a reason can be typed straight away, and the button turns into **Remove no lesson** to undo it in place. Previously the editor closed with no chance to add a reason, and undoing required opening Day View. The old "Replace your topic?" confirm step is gone, since keeping the text and the editor open makes it non-destructive.
+- **Day View: period rows and B-slot rows now share one layout.** Every row reads left to right as start time, slot name (P1, "before 3"), class or event, then description, instead of times and labels sitting on opposite sides for the two row types.
+- **Class View: reordered the lesson metadata** to date, weekday, day number, period, clock time, so the period sits next to its start/stop time.
+
+### Implementation
+- Class floating controls gated on `!qe`. Week editor scroll via a ref on `.wk-grid` and `scrollIntoView({block:"start"})` on open. `toggleNL` (Week + Class) writes the new status via `writeRecord` while preserving the typed value and leaving the editor open; the button label reads the live status. Day row order changed in `PCard` and `BSlotRow`, with `.bs-row-time` losing its `margin-left:auto` and gaining a fixed left column to match the P-row time. Verified in preview across all six views (no crashes), both toggles (mark, revert, editor stays open), the Class FAB hide, the Week scroll (grid rises to the top when the window is short), the two Day row layouts, and the Class label order; `tests.html` 50/50.
+
+---
+
 ## 2.18.0 — 2026-07-14
 
 ### Features
