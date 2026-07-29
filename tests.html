@@ -69,7 +69,8 @@ async function loadCore(ls){
   const factory=new Function("localStorage","createContext","useContext",
     src+"\nreturn {recordTimestamp,isEmptyRecord,pickNewer,mergeData,gcEmpties,importAllData,"+
     "migrateConfig,migrateStorage,makeDateEngine,resolveSlot,asmBellsForDate,"+
-    "NOTE_KEY_RE,META_KEY_RE,GC_HORIZON_MS,toDateKey,storageGet,storageSet,emptyNote,emptyMeta,normalizeMeta,getAllData};");
+    "NOTE_KEY_RE,META_KEY_RE,GC_HORIZON_MS,toDateKey,storageGet,storageSet,emptyNote,emptyMeta,normalizeMeta,getAllData,"+
+    "flagLines,hasFlag,flagCount};");
   return factory(ls,stub,stub);
 }
 // fresh isolated core+storage for tests that write to localStorage
@@ -253,6 +254,23 @@ try{
     eq("auto: no FSA -> standard bells",C.asmBellsForDate(3,d,cfgNo,{bells:"auto"}),false);
     eq("auto: FSA moved onto the day via override -> assembly bells",
        C.asmBellsForDate(3,d,cfgNo,{bells:"auto",overrides:{B1a:fsa}}),true);
+  }
+
+  // ══ FLAGS ══════════════════════════════════════════════════════════════════
+  G("Flags (flagLines / hasFlag / flagCount)");
+  {
+    eq("a line starting with ! is a flag",C.hasFlag("! photocopy the worksheet"),true);
+    eq("the flag text is returned without the marker",C.flagLines("! photocopy the worksheet")[0],"photocopy the worksheet");
+    eq("leading whitespace before ! still flags",C.flagLines("   ! print notes")[0],"print notes");
+    eq("!! also flags",C.flagLines("!! urgent")[0],"urgent");
+    eq("old keyword vocabulary no longer flags",C.hasFlag("check your understanding, print the graph, prepare a table"),false);
+    eq("a bare ! with no text is not a flag",C.hasFlag("!"),false);
+    eq("! mid-line is not a flag",C.hasFlag("great lesson! remember the demo"),false);
+    eq("only the marked lines come back",C.flagLines("Newton's 3rd Law\n! book the trolleys\nrecap first\n! photocopy").join("|"),"book the trolleys|photocopy");
+    eq("empty and null text are safe",C.flagLines("").length+C.flagLines(null).length+C.flagLines(undefined).length,0);
+    eq("flagCount sums subject and notes",C.flagCount({subject:"! rename the file",notes:"! one\n! two"}),3);
+    eq("flagCount of a clean note is 0",C.flagCount({subject:"Newton's 3rd Law",notes:"check understanding"}),0);
+    eq("flagCount of a missing note is 0",C.flagCount(null),0);
   }
 
   render();

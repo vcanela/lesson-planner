@@ -457,7 +457,7 @@ a:hover{text-decoration:underline}
 <p>You can switch between terms using the buttons at the top. <strong>Clicking a day</strong> opens it in Day View. <strong>Clicking a week number</strong> (on the left) jumps to that week in Week View.</p>
 
 <h2>Week View &#128467;&#65039;</h2>
-<p>This is your main workspace. It shows Monday to Friday with your full timetable laid out in a grid. Each column shows the date and the cycle day number (D3, D5, etc.). Each teaching-period cell shows the class code, the topic if entered, a flag icon if your notes contain a flag word, and a green dot if the period has been planned.</p>
+<p>This is your main workspace. It shows Monday to Friday with your full timetable laid out in a grid. Each column shows the date and the cycle day number (D3, D5, etc.). Each teaching-period cell shows the class code, the topic if entered, a flag icon if a line in your notes starts with an exclamation mark, and a green dot if the period has been planned.</p>
 <p>The <em>planned</em> count shown above the grid (e.g. <code>21/30</code>) only counts your teaching periods. Non-contacts are excluded.</p>
 <p><strong>Clicking any cell</strong> opens a quick-edit box at the bottom of the screen where you can type a topic and press Enter.</p>
 <p><strong>Clicking "Full detail"</strong> in the quick-edit box takes you to Day View for that specific period.</p>
@@ -575,21 +575,17 @@ a:hover{text-decoration:underline}
 </div>
 <p>The pick is stable for the day (it won't flicker as you move around), changes from one day to the next, and is identical on every device you use. Nothing about reflections feeds the Lab: there are no points, streaks, or levels attached to them.</p>
 
-<h2>Flag words</h2>
-<p>If you type any of the following words in your topic or notes, the planner will mark that period with a small flag icon so it stands out:</p>
+<h2>Flags</h2>
+<p>A flag marks something you still have to do before the lesson. To raise one, start a line with an exclamation mark:</p>
 <div class="flag-list">
-  <span class="flag-tag">todo</span>
-  <span class="flag-tag">prepare</span>
-  <span class="flag-tag">tbc</span>
-  <span class="flag-tag">tbd</span>
-  <span class="flag-tag">check</span>
-  <span class="flag-tag">remind</span>
-  <span class="flag-tag">follow up</span>
-  <span class="flag-tag">incomplete</span>
-  <span class="flag-tag">print</span>
-  <span class="flag-tag">photocopy</span>
+  <span class="flag-tag">! photocopy the pulley worksheet</span>
 </div>
-<p>Flagged items appear in a summary list at the bottom of Week View. Click the small "flags" label at any time to see the full list.</p>
+<p>The period then shows a small flag icon in Week View and Day View, and the flagged line appears in the summary list at the bottom of Week View, so the list reads as a to-do list rather than a list of periods to go and open. You can flag as many lines as you like in one note; each becomes its own item. Remove the exclamation mark and the flag goes away.</p>
+<p>Only the exclamation mark raises a flag. Ordinary words in your notes never do, so "check your understanding" or "the printing press" stay quiet. Click the small "flags" label in Week View for a reminder of the syntax.</p>
+<div class="callout-info">
+  <span class="callout-label">Changed in v2.19.0</span>
+  <p>Earlier versions flagged a period whenever your notes contained one of ten words (<code>todo</code>, <code>check</code>, <code>print</code>, <code>prepare</code> and so on). Because those words are ordinary lesson vocabulary, periods flagged themselves constantly. Any flags you had from that system are gone; add an exclamation mark to the ones that still matter.</p>
+</div>
 
 <h2>Lesson context</h2>
 <p>When you expand a period in Day View, a small strip tells you the lesson number for that class this term (e.g. "Lesson 12/48 this term"), the date of the previous lesson with that class, and the date of the next lesson. Good for continuity planning.</p>
@@ -950,8 +946,8 @@ a:hover{text-decoration:underline}
     <dd>A school day with no regular timetable. Could be a public holiday, teacher only day, sports day, or special event. The cycle pauses on these days.</dd>
   </div>
   <div class="glossary-item">
-    <dt>Flag words</dt>
-    <dd>Specific words (like <code>todo</code>, <code>tbc</code>, <code>print</code>) that the planner recognises and highlights with a flag icon so they stand out as action items.</dd>
+    <dt>Flag</dt>
+    <dd>A line in a note that starts with an exclamation mark, e.g. <code>! photocopy the worksheet</code>. The planner marks the period with a flag icon and lists the line as an action item in Week View.</dd>
   </div>
   <div class="glossary-item">
     <dt>Gist</dt>

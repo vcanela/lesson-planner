@@ -6,6 +6,23 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.19.0 — 2026-07-29
+
+### Changed
+- **Flags are now raised deliberately, with `!` at the start of a line.** A flag is a line in a topic or note whose first non-blank character is an exclamation mark, for example `! photocopy the pulley worksheet`. Nothing else raises a flag.
+- **The keyword scan is gone.** Up to 2.18.1 a period was flagged whenever its topic or notes contained one of ten words: `todo`, `prepare`, `tbc`, `tbd`, `check`, `remind`, `follow up`, `incomplete`, `print`, `photocopy`. Half of those are ordinary lesson vocabulary, so notes like "check your understanding", "prepare a table" or "the printing press" flagged periods nobody meant to flag, with no way to say otherwise.
+- **Flagged Items in Week View now lists the flagged lines, not the periods.** Each marked line is its own row showing that line's text, so the list reads as a to-do list instead of a set of periods to go and open. One note can carry several flags.
+- **Flag counts count items, not periods.** The Week View summary ("⚑ 3 flagged") and the Class View header count marked lines, matching the length of the Flagged Items list.
+- The "flags" chip in the Week View summary strip now explains the syntax instead of listing keywords, and the Notes and Tasks placeholder mentions it.
+
+### Migration
+- Anything flagged only by a keyword stops showing a flag on upgrade. No data changes: the text is untouched, so add an exclamation mark to the lines that still matter.
+
+### Implementation
+- `FWORDS` / `FRE` / `hasF` replaced by `FLAG_LINE_RE` (`/^[ \t]*!+[ \t]*(\S.*)$/`, matched per line), `flagLines(text)` returning the marked lines with the marker stripped, `hasFlag(text)`, and `flagCount(note)` summing subject and notes. All six call sites updated; `FlagBank` became `FlagHint` (keyboard-operable, expands to the syntax reminder). Week View's `flags` memo emits one entry per marked line (`{date,pid,cls,text}`) and `sum.f` / Class View's `flagged` use `flagCount`. Guide section "Flag words" rewritten as "Flags" with a change note; glossary entry updated. Twelve new assertions in `tests.html` cover the marker, whitespace, `!!`, mid-line `!`, bare `!`, multi-line extraction, null-safety, and the counts; the old vocabulary is asserted **not** to flag. Verified in preview: 62/62 tests, "⚑ 3 flagged" for three marked lines across two periods with a keyword-only note staying unflagged, the flagged list showing each line's text, Day View flag icon on the marked period only, Class View count 3.
+
+---
+
 ## 2.18.1 — 2026-07-14
 
 ### Fixes
