@@ -608,7 +608,7 @@ const SCHEMA_VERSION=2;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="2.20.0";
+const APP_VERSION="2.21.0";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -1492,6 +1492,30 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
   // (which renders just below the grid) comes into view without manual scrolling.
   const gridRef=useRef(null);
   useEffect(()=>{if(qe&&gridRef.current)gridRef.current.scrollIntoView({behavior:"smooth",block:"start"})},[qe]);
+  /* Grid keyboard navigation. The week grid is ONE tab stop (roving tabindex): the cell
+   * at `nav` carries tabIndex 0, every other cell -1, and the arrow keys move `nav`.
+   * Each navigable cell is tagged data-nav="row-col", so moving is a DOM lookup rather
+   * than a ref map: rows are numbered in render order (B-rows and P-rows interleaved,
+   * see navRow below) and columns are Monday..Friday. A missing coordinate means a hole
+   * (a holiday column, or a B-slot row that skips this day), so a move keeps stepping in
+   * the same direction until it finds a cell or runs out of grid. */
+  const[nav,setNav]=useState({r:0,c:0});
+  const cellAt=(r,c)=>gridRef.current?gridRef.current.querySelector(`[data-nav="${r}-${c}"]`):null;
+  const goCell=(r,c)=>{const t=cellAt(r,c);if(!t)return false;t.focus();setNav({r,c});return true};
+  const focusNav=()=>{const t=cellAt(nav.r,nav.c);if(t)t.focus()};
+  const NAV_KEYS={ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]};
+  const navKey=(r,c,act)=>e=>{
+    const d=NAV_KEYS[e.key];
+    if(d){e.preventDefault();for(let n=1;n<=14;n++)if(goCell(r+d[0]*n,c+d[1]*n))return;return}
+    if(e.key==="Home"||e.key==="End"){e.preventDefault();const order=e.key==="Home"?[0,1,2,3,4]:[4,3,2,1,0];for(const c2 of order)if(goCell(r,c2))return;return}
+    kAct(act)(e);
+  };
+  // Self-heal: if `nav` lands on a coordinate that no longer exists (week change, a
+  // B-row appearing or disappearing) no cell would hold tabIndex 0 and Tab could not
+  // enter the grid. Re-point at the first cell whenever that happens.
+  useEffect(()=>{const g=gridRef.current;if(!g||g.querySelector('[data-nav][tabindex="0"]'))return;
+    const first=g.querySelector("[data-nav]");if(!first)return;
+    const[r,c]=first.dataset.nav.split("-").map(Number);setNav({r,c})});
   // B-slot week overlay state. {date, slotCode, anchor:DOMRect} when a B-cell is clicked.
   const[bsEdit,setBsEdit]=useState(null);
   // Escape closes whichever of the two Week overlays is open. Both were dismissable
@@ -1517,7 +1541,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
 
   const gridCells=useMemo(()=>{
     const dd=days.map(d=>({d,k:toDateKey(d),cd:eng.cycleDayFor(d),sch:eng.isSchoolDay(d),isZ:eng.cycleDayFor(d)===0,isT:d.toDateString()===today.toDateString(),meta:metaCache[toDateKey(d)]||emptyMeta()}));
-    const cells=[];const lS={display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:4};const lT={fontSize:"var(--fs-nano)",color:"var(--text-muted)",fontWeight:700};
+    const cells=[];let navRow=0;const lS={display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:4};const lT={fontSize:"var(--fs-nano)",color:"var(--text-muted)",fontWeight:700};
     const bg=x=>x.isT?"var(--today-bg)":x.isZ?"var(--dz-bg)":x.sch?"var(--card)":"var(--surface)";
     const bd=x=>`1px solid ${x.isT?"var(--today-border)":x.isZ?"var(--dz-border)":"var(--border)"}`;
     cells.push(<div key="lh"/>);
@@ -1542,6 +1566,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
     const hasCellNote=(x,code)=>{const n=storageGet(`note:${x.k}:${code}`);return!!(n&&(n.subject||n.notes||n.status==="nl"))};
     const bRowVisible=code=>dd.some(x=>x.sch&&!x.isZ&&(resolveBSlot(x,code)!==null||hasCellNote(x,code)));
     const bSlotRow=code=>{
+      const r=navRow++;
       cells.push(<div key={`l${code}`} className="wk-blabel"><div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",lineHeight:1.05}}>{BSLOT_LABELS[code].split(" ").map((w,wi)=><span key={wi}>{w}</span>)}</div></div>);
       dd.forEach((x,i)=>{
         const ck=`${code}-${i}`;
@@ -1557,7 +1582,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
           const r=e.currentTarget.getBoundingClientRect();
           setBsEdit({date:x.d,dateKey:x.k,cycleDay:x.cd,slotCode:code,anchor:{top:r.top,left:r.left,bottom:r.bottom,right:r.right,width:r.width,height:r.height}});
         };
-        cells.push(<div key={ck} className={`wk-bcell${isEmpty?" empty-hatch":""}${x.isT?" today":""}`} onClick={handleClick} role="button" tabIndex={0} onKeyDown={kAct(handleClick)} aria-haspopup="dialog" aria-label={`${BSLOT_LABELS[code]}, ${fmtS(x.d)}, ${isEmpty?"empty":describeValue(v)}${ov?", override":""}${cl?", clash":""}${isEmpty&&hasNote?", has notes":""}, edit`}>
+        cells.push(<div key={ck} className={`wk-bcell${isEmpty?" empty-hatch":""}${x.isT?" today":""}`} onClick={handleClick} role="button" data-nav={`${r}-${i}`} tabIndex={nav.r===r&&nav.c===i?0:-1} onFocus={()=>setNav({r,c:i})} onKeyDown={navKey(r,i,handleClick)} aria-haspopup="dialog" aria-label={`${BSLOT_LABELS[code]}, ${fmtS(x.d)}, ${isEmpty?"empty":describeValue(v)}${ov?", override":""}${cl?", clash":""}${isEmpty&&hasNote?", has notes":""}, edit`}>
           {v&&<BSlotChip value={v} duties={duties}/>}
           {ov&&<span className="bs-override-dot" title="Override"/>}
           {cl&&<span className="bs-clash" title="Weekly activity is hiding the cycle default for this slot. Open the editor to see what the cycle has scheduled.">{"⚠"}</span>}
@@ -1566,13 +1591,22 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
       });
     };
     const pSlotRow=(pid,pi)=>{
+      const r=navRow++;
       const lastP=pi===eng.PIDS.length-1;
       cells.push(<div key={`l${pid}`} style={lS}><span className="hd" style={lT}>P{pi+1}</span></div>);
       dd.forEach((x,i)=>{const ck=`${pid}-${i}`;if(!x.sch||x.isZ){cells.push(<div key={ck} style={{background:bg(x),border:bd(x),borderRadius:lastP?`0 0 var(--radius-md) var(--radius-md)`:"0"}}/>);return}
         const cls=eng.classAt(x.d,x.cd,pid),isNc=cls==="nc",clr=isNc?null:eng.classMap[cls];const nk=`${x.k}:${pid}`,n=wNotes[nk];const isNl=!isNc&&n&&n.status==="nl";const filled=!isNc&&n&&(n.subject||n.notes||isNl),fl=n&&(hasFlag(n.notes)||hasFlag(n.subject));
         const isOpen=!!(qe&&qe.dk===x.k&&qe.pid===pid);
         const state=isNc?"non-contact":isNl?"no lesson":fl?"flagged":filled?`planned: ${n.subject||"no topic"}`:"empty";
-        cells.push(<div key={ck} style={{background:bg(x),border:bd(x),padding:"0 4px",borderRadius:lastP?`0 0 var(--radius-md) var(--radius-md)`:"0",paddingBottom:lastP?4:0}}><div className={`pb${isNc?" pb-nc":""}${!isNc&&!filled?" pb-e":""}`} style={isNc?{}:{background:clr?clr.bg:"",color:clr?clr.tx:"",...(!filled?{background:"transparent"}:{})}} role="button" tabIndex={0} aria-expanded={isOpen} aria-label={`${pid}, ${isNc?"non-contact":cls}, ${fmtS(x.d)}, ${state}, ${isOpen?"close":"open"} quick editor`} onKeyDown={kAct(e=>{e.stopPropagation();isOpen?setQE(null):oQE(x.k,pid,cls,x.d)})} onMouseDown={()=>{qeAtMouseDownRef.current=qe}} onClick={e=>{e.stopPropagation();const wasOpen=qeAtMouseDownRef.current;qeAtMouseDownRef.current=null;if(wasOpen&&wasOpen.dk===x.k&&wasOpen.pid===pid){setQE(null)}else{oQE(x.k,pid,cls,x.d)}}}><div className="pb-top"><span className="mn" style={{fontSize:"var(--fs-nano)",fontWeight:700}}>{isNc?"NC":cls}</span><span className="pb-marks">{fl&&<span style={{color:isNc?"var(--flag)":clr&&clr.tx,fontSize:"var(--fs-nano)"}}>{"\u2691"}</span>}{filled&&!fl&&!isNl&&<span style={{width:5,height:5,borderRadius:"50%",background:isNc?"var(--success)":clr&&clr.tx,opacity:.6}}/>}{isNl&&<span style={{fontSize:"var(--fs-nano)",fontWeight:700,opacity:.7}}>NL</span>}</span></div><div className="pb-sub" style={{fontSize:"var(--fs-nano)",fontWeight:400,opacity:filled?.8:.65,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",width:"100%"}}>{isNl?(n&&n.subject?`No lesson \u2014 ${n.subject}`:"No lesson"):n&&n.subject||"\u2014"}</div><div className="pb-mark" style={{color:isNc?"var(--nc-text)":filled?((clr&&clr.tx)||"var(--text)"):"var(--text-muted)",fontSize:"var(--fs-nano)",fontWeight:700}}>{isNc?"":isNl?"NL":fl?"\u2691":filled?"\u25cf":"\u2013"}</div></div></div>);
+        // No lesson is its own visual state: the class colour striped rather than solid,
+        // with a dashed edge and the code struck through. Solid = a lesson is happening,
+        // grey dashed = non-contact, red border = unplanned; NL is none of those.
+        // The stripes are a pale scrim laid OVER the class colour, not gaps cut through
+        // it: the fill has to stay solid enough to carry the class text colour, which in
+        // dark mode would otherwise sit on the dark card and disappear.
+        const nlC=clr&&clr.bg||"var(--nc-bg)",nlT=clr&&clr.tx||"var(--nc-text)";
+        const pbStyle=isNc?{}:isNl?{background:`repeating-linear-gradient(-45deg,transparent 0 4px,rgba(255,255,255,.6) 4px 8px),${nlC}`,color:nlT,border:`1px dashed ${nlT}`}:{background:clr?clr.bg:"",color:clr?clr.tx:"",...(!filled?{background:"transparent"}:{})};
+        cells.push(<div key={ck} style={{background:bg(x),border:bd(x),padding:"0 4px",borderRadius:lastP?`0 0 var(--radius-md) var(--radius-md)`:"0",paddingBottom:lastP?4:0}}><div className={`pb${isNc?" pb-nc":""}${!isNc&&!filled?" pb-e":""}`} style={pbStyle} role="button" data-nav={`${r}-${i}`} tabIndex={nav.r===r&&nav.c===i?0:-1} onFocus={()=>setNav({r,c:i})} aria-expanded={isOpen} aria-label={`${pid}, ${isNc?"non-contact":cls}, ${fmtS(x.d)}, ${state}, ${isOpen?"close":"open"} quick editor`} onKeyDown={navKey(r,i,e=>{e.stopPropagation();isOpen?setQE(null):oQE(x.k,pid,cls,x.d)})} onMouseDown={()=>{qeAtMouseDownRef.current=qe}} onClick={e=>{e.stopPropagation();const wasOpen=qeAtMouseDownRef.current;qeAtMouseDownRef.current=null;if(wasOpen&&wasOpen.dk===x.k&&wasOpen.pid===pid){setQE(null)}else{oQE(x.k,pid,cls,x.d)}}}><div className="pb-top"><span className="mn" style={{fontSize:"var(--fs-nano)",fontWeight:700,textDecoration:isNl?"line-through":"none"}}>{isNc?"NC":cls}</span><span className="pb-marks">{fl&&<span style={{color:isNc?"var(--flag)":clr&&clr.tx,fontSize:"var(--fs-nano)"}}>{"\u2691"}</span>}{filled&&!fl&&!isNl&&<span style={{width:5,height:5,borderRadius:"50%",background:isNc?"var(--success)":clr&&clr.tx,opacity:.6}}/>}{isNl&&<span style={{fontSize:"var(--fs-nano)",fontWeight:700,opacity:.7}}>NL</span>}</span></div><div className="pb-sub" style={{fontSize:"var(--fs-nano)",fontWeight:400,opacity:filled?.8:.65,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",width:"100%"}}>{isNl?(n&&n.subject?`No lesson \u2014 ${n.subject}`:"No lesson"):n&&n.subject||"\u2014"}</div><div className="pb-mark" style={{color:isNc?"var(--nc-text)":filled?((clr&&clr.tx)||"var(--text)"):"var(--text-muted)",fontSize:"var(--fs-nano)",fontWeight:700}}>{isNc?"":isNl?"NL":fl?"\u2691":filled?"\u25cf":"\u2013"}</div></div></div>);
       });
     };
     // Interleave B-slot rows with P-rows: B0 above P1; B1a/B1b between P2/P3;
@@ -1593,7 +1627,9 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
   // to re-evaluate (and bRowVisible to re-read localStorage) after an out-of-view note
   // save, e.g. a B-slot note flushed from useAutoSave's unmount cleanup when navigating
   // away from Day View.
-  },[days,today,metaCache,wNotes,eng,duties,gam]);
+  // nav and qe are deps because cells render from them: nav sets which cell holds
+  // tabIndex 0, qe sets aria-expanded and the open/close wording of the label.
+  },[days,today,metaCache,wNotes,eng,duties,gam,nav,qe]);
 
   const flags=useMemo(()=>{const fl=[];days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;const key=toDateKey(d);eng.PIDS.forEach(pid=>{const n=wNotes[`${key}:${pid}`];if(!n)return;const items=[...flagLines(n.subject),...flagLines(n.notes)];if(!items.length)return;const cls=eng.classAt(d,cd,pid);items.forEach(text=>fl.push({date:d,pid,cls,text}))})});return fl},[days,wNotes]);
   const spotHits=useMemo(()=>{if(!spot)return[];const h=[];days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{if(eng.classAt(d,cd,pid)===spot){const per=bldP(asmBellsForDate(cd,d,{timetable:eng.timetableForDate(d),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]})).find(p=>p.id===pid);h.push({d,per,cd})}})});return h},[spot,days]);
@@ -1603,7 +1639,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
     <div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginBottom:10,padding:"6px 10px",background:"var(--surface)",borderRadius:"var(--radius-md)",display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}><span>{wkLabel} {"\u00B7"} <strong className="mn" style={{color:sum.p===sum.t?"var(--success)":"var(--text)"}}>{sum.p}/{sum.t}</strong> planned</span>{sum.f>0&&<span style={{color:"var(--flag)"}}>{"\u2691"} {sum.f} flagged</span>}{sum.ud>0&&<span style={{color:"var(--dz-text)"}}>{"\u26A0"} {sum.ud} unlabelled D0</span>}<span style={{marginLeft:"auto"}}><FlagHint/></span></div>
     {eng.classCodes.length>0&&<div className="np" style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c];const activeThisWeek=eng.classActiveOn(c,days[0])||eng.classActiveOn(c,days[4]);return<span key={c} className="mn" title={activeThisWeek?undefined:"This class is not active this week (semester boundary)"} onClick={()=>setSpot(spot===c?null:c)} role="button" tabIndex={0} aria-pressed={spot===c} aria-label={`${c}, ${activeThisWeek?"":"not active this week, "}${spot===c?"hide":"show"} this week's lessons`} onKeyDown={kAct(()=>setSpot(spot===c?null:c))} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"3px 10px",borderRadius:4,fontSize:"var(--fs-caption)",fontWeight:700,cursor:"pointer",outline:spot===c?"2px solid var(--accent)":"none",opacity:activeThisWeek?1:.35}}>{c}</span>})}</div>}
     <div ref={gridRef} className="wk-grid" style={{marginBottom:10}}>{gridCells}</div>
-    {qe&&<div className="qe"><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}><div style={{display:"flex",alignItems:"center",gap:8}}><CBadge cc={qe.cc} style={{fontSize:"var(--fs-caption)",padding:"2px 6px",minWidth:0}}/><span style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)"}}>{qe.pid.toUpperCase()} {"\u00B7"} {fmtS(qe.date)}</span></div><div style={{display:"flex",gap:6}}><button onMouseDown={e=>{e.preventDefault();onDet(qe.date,qe.pid)}} style={{background:"none",border:"none",color:"var(--accent)",cursor:"pointer",fontSize:"var(--fs-caption)"}}>Full detail {"\u2192"}</button><button onMouseDown={e=>{e.preventDefault();setQE(null)}} style={{background:"none",border:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:"var(--fs-emph)"}}>{"\u2715"}</button></div></div><div style={{display:"flex",gap:6,alignItems:"center"}}><input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null)}} onBlur={sQE} autoFocus={!coarse} placeholder={wNotes[`${qe.dk}:${qe.pid}`]?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/><button onMouseDown={e=>{e.preventDefault();toggleNL()}} style={{background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-sm)",color:"var(--text-secondary)",cursor:"pointer",fontSize:"var(--fs-micro)",padding:"6px 10px",whiteSpace:"nowrap",flexShrink:0}}>{storageGet(`note:${qe.dk}:${qe.pid}`)?.status==="nl"?"Remove no lesson":"No lesson"}</button></div></div>}
+    {qe&&<div className="qe"><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}><div style={{display:"flex",alignItems:"center",gap:8}}><CBadge cc={qe.cc} style={{fontSize:"var(--fs-caption)",padding:"2px 6px",minWidth:0}}/><span style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)"}}>{qe.pid.toUpperCase()} {"\u00B7"} {fmtS(qe.date)}</span></div><div style={{display:"flex",gap:6}}><button onMouseDown={e=>{e.preventDefault();onDet(qe.date,qe.pid)}} style={{background:"none",border:"none",color:"var(--accent)",cursor:"pointer",fontSize:"var(--fs-caption)"}}>Full detail {"\u2192"}</button><button onMouseDown={e=>{e.preventDefault();setQE(null)}} style={{background:"none",border:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:"var(--fs-emph)"}}>{"\u2715"}</button></div></div><div style={{display:"flex",gap:6,alignItems:"center"}}><input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape"){setQE(null);focusNav()}}} onBlur={sQE} autoFocus={!coarse} placeholder={wNotes[`${qe.dk}:${qe.pid}`]?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/><button onMouseDown={e=>{e.preventDefault();toggleNL()}} style={{background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-sm)",color:"var(--text-secondary)",cursor:"pointer",fontSize:"var(--fs-micro)",padding:"6px 10px",whiteSpace:"nowrap",flexShrink:0}}>{storageGet(`note:${qe.dk}:${qe.pid}`)?.status==="nl"?"Remove no lesson":"No lesson"}</button></div></div>}
     {flags.length>0&&<div className="card" style={{padding:"10px 14px",marginBottom:10}}><div className="sl" style={{marginBottom:8}}>{"\u2691"} Flagged Items {"\u00B7"} <span className="mn">{flags.length}</span></div>{flags.map((f,i)=>{const clr=f.cls!=="nc"&&eng.classMap[f.cls];return<div key={i} onClick={()=>onDet(f.date,f.pid)} role="button" tabIndex={0} onKeyDown={kAct(()=>onDet(f.date,f.pid))} aria-label={`Flag: ${f.text}, ${f.cls==="nc"?"non-contact":f.cls} ${fmtS(f.date)} ${f.pid.toUpperCase()}, open Day View`} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:i>0?"1px solid var(--border)":"none",cursor:"pointer"}}><span className="mn" style={{fontSize:"var(--fs-nano)",fontWeight:700,padding:"1px 6px",borderRadius:3,background:clr?clr.bg:"var(--nc-bg)",color:clr?clr.tx:"var(--nc-text)"}}>{f.cls==="nc"?"NC":f.cls}</span><span style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)"}}>{fmtS(f.date)} {f.pid.toUpperCase()}</span><span style={{fontSize:"var(--fs-micro)",color:"var(--text)",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.text}</span><span style={{color:"var(--flag)",fontSize:"var(--fs-micro)"}}>{"\u2691"}</span></div>})}</div>}
     <div className="card np" style={{padding:"10px 14px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6}}><div className="sl">Export week</div><div style={{display:"flex",gap:6}}>
       {(()=>{const refs=days.filter(d=>(metaCache[toDateKey(d)]||emptyMeta()).reflections);const xst=(storageGet("planner-config")||{}).exportStyle||"org";return refs.length>0?<Btn onClick={()=>{doDownload(buildReflTxt(xst,days,wl,metaCache),`reflections-${fmtISO(days[0])}.txt`)}} style={{padding:"3px 10px",fontSize:"var(--fs-micro)"}}>{"\u{1F4DD}"} Reflections ({refs.length})</Btn>:null})()}
@@ -2490,6 +2526,8 @@ function HotkeyHelp({onClose}){
     ["?","Show this list"],
     ["Tab","Move between periods, days, lessons and settings"],
     ["Enter / Space","Open or activate whatever is focused"],
+    ["← ↑ ↓ →","Move around the Week grid (Tab enters it once)"],
+    ["Home / End","Monday / Friday of the current row"],
   ];
   const kbd={display:"inline-block",fontSize:"var(--fs-nano)",fontWeight:700,background:"var(--surface)",border:"1px solid var(--border-strong)",borderRadius:4,padding:"1px 7px",margin:"0 2px 2px 0",color:"var(--text)"};
   return<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.4)",zIndex:100,display:"flex",justifyContent:"center",alignItems:"flex-start",padding:"10vh 16px 16px"}}>

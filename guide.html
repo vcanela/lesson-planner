@@ -458,6 +458,7 @@ a:hover{text-decoration:underline}
 
 <h2>Week View &#128467;&#65039;</h2>
 <p>This is your main workspace. It shows Monday to Friday with your full timetable laid out in a grid. Each column shows the date and the cycle day number (D3, D5, etc.). Each teaching-period cell shows the class code, the topic if entered, a flag icon if a line in your notes starts with an exclamation mark, and a green dot if the period has been planned.</p>
+<p>The fill tells you the state of a period at a glance. A solid class colour means a lesson is planned and going ahead. Diagonal stripes over the class colour, with the code struck through and an <strong>NL</strong> mark, mean the period is set to <em>No lesson</em>: the class is still yours, but nothing is being taught. A red outline with no fill is a teaching period you have not planned yet, and flat grey is a non-contact.</p>
 <p>The <em>planned</em> count shown above the grid (e.g. <code>21/30</code>) only counts your teaching periods. Non-contacts are excluded.</p>
 <p><strong>Clicking any cell</strong> opens a quick-edit box at the bottom of the screen where you can type a topic and press Enter.</p>
 <p><strong>Clicking "Full detail"</strong> in the quick-edit box takes you to Day View for that specific period.</p>
@@ -926,8 +927,11 @@ a:hover{text-decoration:underline}
   <li><strong>?</strong> : show the shortcuts list</li>
   <li><strong>Tab</strong>: move between periods, days, lessons and settings</li>
   <li><strong>Enter</strong> or <strong>Space</strong>: open or activate whatever is focused</li>
+  <li><strong>Arrow keys</strong>: move around the Week grid</li>
+  <li><strong>Home</strong> and <strong>End</strong>: Monday and Friday of the row you are on</li>
 </ul>
-<p>Tab and Enter reach everything you can click. In Week View, tabbing walks the grid and Enter opens the quick editor for the focused period with the cursor already in the field, so you can plan a whole week without touching the mouse: Tab, Enter, type, Enter. The same works on the day cells in Term View, the lesson rows in Class View, and every control in Setup. Whatever has focus carries a coloured ring so you can see where you are.</p>
+<p>Tab and Enter reach everything you can click. The Week grid is a special case: Tab enters it once, landing on the cell you last used, and from there the arrow keys move you around it, including the B-slot rows. Arrows step over holidays rather than stopping on them. Tab again leaves the grid for the next control.</p>
+<p>Enter opens the quick editor for whatever is focused, with the cursor already in the field, and <strong>Esc</strong> closes it and puts you back on the cell you came from. So a whole week can be planned without touching the mouse: arrow, Enter, type, Enter, arrow. The same Enter works on the day cells in Term View, the lesson rows in Class View, and every control in Setup. Whatever has focus carries a coloured ring so you can see where you are.</p>
 <p>Phones and tablets do not use these; the compact top bar covers navigation there.</p>
 
 <h2>Glossary</h2>

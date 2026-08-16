@@ -6,6 +6,21 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.21.0 — 2026-08-17
+
+### Features
+- **Arrow keys move around the Week grid.** The grid is now a single tab stop: Tab enters it once, landing on the cell you last used, and the arrow keys move between cells from there, B-slot rows included. `Home` and `End` jump to Monday and Friday of the current row. Arrows step over holiday columns and rows that skip a day rather than stopping on them, and stop at the edges of the grid.
+- **Escape returns you to the cell you came from.** Enter opens the quick editor with the cursor already in the field, Escape closes it and puts focus back on that cell, so a week can be planned as arrow, Enter, type, Enter, arrow, with no mouse and no tabbing.
+- **"No lesson" periods now look different from planned ones.** An NL period used to render exactly like a taught lesson: solid class colour. It now shows a pale striped scrim over the class colour, a dashed border, and the class code struck through, alongside the existing NL mark. That is distinct from all three other states: solid colour is a lesson going ahead, red outline is unplanned, flat grey is non-contact.
+
+### Fixes
+- **Week cells could announce a stale open/closed state.** The `aria-expanded` and "open / close quick editor" wording added in 2.20.0 were computed inside the grid memo without `qe` as a dependency, so for a config where `cfg.duties` is defined (making the `duties` array reference stable) they would not update when an editor opened. Both `qe` and the new roving index are now dependencies.
+
+### Implementation
+- Roving tabindex: `nav` state holds `{r,c}`, the cell at that coordinate carries `tabIndex 0` and every other `-1`. Each navigable cell is tagged `data-nav="row-col"` (rows numbered in render order by a `navRow` counter shared by `bSlotRow` and `pSlotRow`, columns Monday to Friday), so a move is a `querySelector` inside `gridRef` rather than a map of refs, and a missing coordinate simply means a hole: the move keeps stepping the same direction until it finds a cell or leaves the grid. `onFocus` on each cell keeps the roving index in step with mouse clicks and Tab. A no-dependency effect self-heals the case where `nav` points at a coordinate that stopped existing (week change, a B-row appearing or disappearing), which would otherwise leave the grid with no tab stop. `navKey` handles the arrows, `Home` and `End`, then delegates to `kAct` so Enter and Space keep working. The Week quick editor's Escape branch calls `focusNav()`. The no-lesson fill stripes `rgba(255,255,255,.6)` over the class colour rather than cutting transparent gaps through it: the first attempt used transparent gaps, which looked right in light mode but dropped the dark class text onto the dark card in dark mode, where it disappeared. Verified in preview: 40 navigable cells with exactly one tab stop; arrows, `Home` and `End` all move correctly and stop at the edges; in Labour Day week (Monday a holiday) the grid drops to 36 cells, the roving index self-heals onto Tuesday, and a left arrow from Wednesday stops there; Enter opens the editor, Escape restores focus to the originating cell; the NL cell renders striped, dashed and struck through, checked in both light and dark; no console errors; `tests.html` 62/62.
+
+---
+
 ## 2.20.0 — 2026-08-17
 
 ### Features
