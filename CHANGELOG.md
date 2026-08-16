@@ -6,6 +6,22 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.20.0 — 2026-08-17
+
+### Features
+- **Accessibility pass finished: Week, Term, Class and Setup are now fully keyboard-operable.** Every element you could click but not reach with the keyboard is now a proper control: it takes focus with Tab, activates with Enter or Space, shows the focus ring, and announces what it is and what state it is in.
+  - **Week View**: the 30 period cells (with "open / close quick editor" and the planned, empty, flagged or no-lesson state), the B-slot cells, the day-note shortcut, the class chips that open the spotlight, and the rows in Flagged Items.
+  - **Term View**: every day cell, announced as weekday, date, cycle day and planned count.
+  - **Class View**: the class chips and the lesson rows.
+  - **Setup**: the calendar day cells used by Holidays, Day Zeros and the term dates (locked days are marked and skipped), the date-picker toggle, the colour swatches, and the B-slot cells in the timetable grid. The achievement badges too.
+- **Escape closes the two Week View overlays.** The spotlight popup and the B-slot editor could previously only be dismissed by clicking their backdrop, which a keyboard cannot do. Both are now labelled dialogs, as is the Setup B-slot popup.
+- **Tab and Enter added to the shortcuts cheat-sheet** (`?`) and to the guide, which now describes the Tab, Enter, type, Enter loop for planning a week without the mouse.
+
+### Implementation
+- Applies the template set by the Day View pass in 2.16.0: `role="button"` plus `tabIndex={0}`, an `aria-label` carrying identity and state, `aria-expanded` on anything that opens an editor, `aria-pressed` on the chips and swatches that act as toggles, `aria-haspopup="dialog"` on the two cells that open popups, and the shared `kAct()` Enter/Space handler. `kAct` now forwards the event, so handlers needing `currentTarget` geometry or `stopPropagation` (the Week B-slot cell) can share it; the five existing call sites take no argument and are unaffected. Keyboard activation of the period cells and lesson rows toggles on the live `qe` state rather than the mousedown-captured ref, which only exists for pointer input. One `useEffect` in `WeekView` binds Escape while either overlay is open. `TermView` hoists its Day 0 label lookup so the label and the cell text share it. Deliberately out of scope, and noted for later if they are missed: arrow-key navigation inside the calendar grids and the class-code dropdown, and focus trapping or restoration in the modals. Verified in preview: Enter on a period cell opens the editor with focus in the field and flips `aria-expanded`; Escape closes the editor, the spotlight, the Week B-slot overlay and the Setup popup; Enter on a Term cell opens that day; Enter on a Class row opens its editor; Space selects a calendar date and a colour swatch; 52 focusable controls in Week View with a visible `:focus-visible` ring; no console errors across all six views; `tests.html` 62/62.
+
+---
+
 ## 2.19.0 — 2026-07-29
 
 ### Changed
