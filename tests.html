@@ -70,7 +70,7 @@ async function loadCore(ls){
     src+"\nreturn {recordTimestamp,isEmptyRecord,pickNewer,mergeData,gcEmpties,importAllData,"+
     "migrateConfig,migrateStorage,makeDateEngine,resolveSlot,asmBellsForDate,"+
     "NOTE_KEY_RE,META_KEY_RE,GC_HORIZON_MS,toDateKey,storageGet,storageSet,emptyNote,emptyMeta,normalizeMeta,getAllData,"+
-    "flagLines,hasFlag,flagCount};");
+    "flagLines,hasFlag,flagCount,hexAlpha};");
   return factory(ls,stub,stub);
 }
 // fresh isolated core+storage for tests that write to localStorage
@@ -271,6 +271,16 @@ try{
     eq("flagCount sums subject and notes",C.flagCount({subject:"! rename the file",notes:"! one\n! two"}),3);
     eq("flagCount of a clean note is 0",C.flagCount({subject:"Newton's 3rd Law",notes:"check understanding"}),0);
     eq("flagCount of a missing note is 0",C.flagCount(null),0);
+  }
+
+  // ══ COLOUR ═════════════════════════════════════════════════════════════════
+  G("hexAlpha (class colour tints)");
+  {
+    eq("hex to rgba",C.hexAlpha("#B8CCE0",.3),"rgba(184,204,224,0.3)");
+    eq("works without the leading hash",C.hexAlpha("B8CCE0",1),"rgba(184,204,224,1)");
+    eq("black and white survive the bit maths",C.hexAlpha("#000000",.5)+" "+C.hexAlpha("#FFFFFF",.5),"rgba(0,0,0,0.5) rgba(255,255,255,0.5)");
+    eq("a CSS variable passes through untouched",C.hexAlpha("var(--nc-bg)",.3),"var(--nc-bg)");
+    eq("empty input passes through",C.hexAlpha("",.3),"");
   }
 
   render();

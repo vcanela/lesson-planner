@@ -398,6 +398,10 @@ const CfgCtx=createContext(null);
 function useCfg(){return useContext(CfgCtx)}
 
 const DEFAULT_PALETTE=["#E8C8C0","#EDD9B5","#C5D9C0","#B8CCE0","#D0C0E0","#D4B8A0","#A8C8C0","#E0C0D0","#C0C8A8","#E0D0A8","#B0C0D8","#D8B8B8"];
+// hexAlpha: "#B8CCE0" -> "rgba(184,204,224,.3)". Class colours are stored as plain hex,
+// so this is the only way to tint one without a second stored value. Anything that is
+// not a 6-digit hex (a CSS variable fallback, say) comes back untouched.
+const hexAlpha=(hex,a)=>{const m=/^#?([0-9a-f]{6})$/i.exec(String(hex||""));if(!m)return hex;const n=parseInt(m[1],16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`};
 const TEXT_FOR_BG={"#E8C8C0":"#7A3B30","#EDD9B5":"#7A5A20","#C5D9C0":"#2E5426","#B8CCE0":"#2A4A6B","#D0C0E0":"#4A2E6B","#D4B8A0":"#5C3D20","#A8C8C0":"#1A4A42","#E0C0D0":"#6B2A4A","#C0C8A8":"#3A4420","#E0D0A8":"#5A4A18","#B0C0D8":"#2A3A5A","#D8B8B8":"#5A2E2E"};
 
 // B1_TYPES: chip rendering data for the four B1a (morning structure) values.
@@ -608,7 +612,7 @@ const SCHEMA_VERSION=2;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="2.21.0";
+const APP_VERSION="2.21.1";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -1598,14 +1602,15 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
         const cls=eng.classAt(x.d,x.cd,pid),isNc=cls==="nc",clr=isNc?null:eng.classMap[cls];const nk=`${x.k}:${pid}`,n=wNotes[nk];const isNl=!isNc&&n&&n.status==="nl";const filled=!isNc&&n&&(n.subject||n.notes||isNl),fl=n&&(hasFlag(n.notes)||hasFlag(n.subject));
         const isOpen=!!(qe&&qe.dk===x.k&&qe.pid===pid);
         const state=isNc?"non-contact":isNl?"no lesson":fl?"flagged":filled?`planned: ${n.subject||"no topic"}`:"empty";
-        // No lesson is its own visual state: the class colour striped rather than solid,
-        // with a dashed edge and the code struck through. Solid = a lesson is happening,
-        // grey dashed = non-contact, red border = unplanned; NL is none of those.
-        // The stripes are a pale scrim laid OVER the class colour, not gaps cut through
-        // it: the fill has to stay solid enough to carry the class text colour, which in
-        // dark mode would otherwise sit on the dark card and disappear.
-        const nlC=clr&&clr.bg||"var(--nc-bg)",nlT=clr&&clr.tx||"var(--nc-text)";
-        const pbStyle=isNc?{}:isNl?{background:`repeating-linear-gradient(-45deg,transparent 0 4px,rgba(255,255,255,.6) 4px 8px),${nlC}`,color:nlT,border:`1px dashed ${nlT}`}:{background:clr?clr.bg:"",color:clr?clr.tx:"",...(!filled?{background:"transparent"}:{})};
+        // No lesson is its own visual state, and a quiet one: a faint wash of the class
+        // colour striped with the card behind it, the same recessive hatch the free
+        // B-slots use, plus a dashed edge and the code struck through. Solid colour = a
+        // lesson is happening, red border = unplanned, flat grey = non-contact.
+        // The stripes alternate tint and card rather than tint and white, so the cell
+        // stays legible in dark mode; the text follows the theme for the same reason,
+        // since a faint tint over a dark card cannot carry the dark class text colour.
+        const nlC=clr&&clr.bg||"var(--nc-bg)";
+        const pbStyle=isNc?{}:isNl?{background:`repeating-linear-gradient(-45deg,${hexAlpha(nlC,.3)} 0 5px,transparent 5px 10px)`,color:"var(--text)",border:`1px dashed ${hexAlpha(nlC,.85)}`}:{background:clr?clr.bg:"",color:clr?clr.tx:"",...(!filled?{background:"transparent"}:{})};
         cells.push(<div key={ck} style={{background:bg(x),border:bd(x),padding:"0 4px",borderRadius:lastP?`0 0 var(--radius-md) var(--radius-md)`:"0",paddingBottom:lastP?4:0}}><div className={`pb${isNc?" pb-nc":""}${!isNc&&!filled?" pb-e":""}`} style={pbStyle} role="button" data-nav={`${r}-${i}`} tabIndex={nav.r===r&&nav.c===i?0:-1} onFocus={()=>setNav({r,c:i})} aria-expanded={isOpen} aria-label={`${pid}, ${isNc?"non-contact":cls}, ${fmtS(x.d)}, ${state}, ${isOpen?"close":"open"} quick editor`} onKeyDown={navKey(r,i,e=>{e.stopPropagation();isOpen?setQE(null):oQE(x.k,pid,cls,x.d)})} onMouseDown={()=>{qeAtMouseDownRef.current=qe}} onClick={e=>{e.stopPropagation();const wasOpen=qeAtMouseDownRef.current;qeAtMouseDownRef.current=null;if(wasOpen&&wasOpen.dk===x.k&&wasOpen.pid===pid){setQE(null)}else{oQE(x.k,pid,cls,x.d)}}}><div className="pb-top"><span className="mn" style={{fontSize:"var(--fs-nano)",fontWeight:700,textDecoration:isNl?"line-through":"none"}}>{isNc?"NC":cls}</span><span className="pb-marks">{fl&&<span style={{color:isNc?"var(--flag)":clr&&clr.tx,fontSize:"var(--fs-nano)"}}>{"\u2691"}</span>}{filled&&!fl&&!isNl&&<span style={{width:5,height:5,borderRadius:"50%",background:isNc?"var(--success)":clr&&clr.tx,opacity:.6}}/>}{isNl&&<span style={{fontSize:"var(--fs-nano)",fontWeight:700,opacity:.7}}>NL</span>}</span></div><div className="pb-sub" style={{fontSize:"var(--fs-nano)",fontWeight:400,opacity:filled?.8:.65,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",width:"100%"}}>{isNl?(n&&n.subject?`No lesson \u2014 ${n.subject}`:"No lesson"):n&&n.subject||"\u2014"}</div><div className="pb-mark" style={{color:isNc?"var(--nc-text)":filled?((clr&&clr.tx)||"var(--text)"):"var(--text-muted)",fontSize:"var(--fs-nano)",fontWeight:700}}>{isNc?"":isNl?"NL":fl?"\u2691":filled?"\u25cf":"\u2013"}</div></div></div>);
       });
     };

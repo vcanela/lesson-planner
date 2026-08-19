@@ -6,6 +6,16 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.21.1 — 2026-08-17
+
+### Fixes
+- **No-lesson cells are quieter.** The stripes shipped in 2.21.0 were a pale scrim over a full-strength class colour, which made a cancelled period stand out *more* than a planned one. They are now a faint hatch of the class colour alternating with the card behind it, the same recessive treatment a free B-slot uses, so an NL period recedes while keeping its class identity, its dashed edge and its struck-through code.
+
+### Implementation
+- New pure helper `hexAlpha(hex,a)` turns a stored class colour into an rgba tint (class colours live in the config as plain hex, so there is no second value to reach for); anything that is not a 6-digit hex passes through untouched, which keeps the `var(--nc-bg)` fallback working. The cell fill is now `repeating-linear-gradient(-45deg, hexAlpha(colour,.3) 0 5px, transparent 5px 10px)` with a `hexAlpha(colour,.85)` dashed border. Cell text moved from the class text colour to `var(--text)`: a faint tint cannot carry the dark class text over a dark card, and `var(--text-secondary)` measured too dim against the dark card once the fill was this light. Five assertions for `hexAlpha` in `tests.html` (67 total). Checked in light and dark.
+
+---
+
 ## 2.21.0 — 2026-08-17
 
 ### Features
