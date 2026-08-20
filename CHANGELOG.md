@@ -6,6 +6,17 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.22.0 — 2026-08-21
+
+### Features
+- **Term View shows cancelled lessons.** The P1 to P6 squares on each day tile encoded the timetable only, so a period marked *No lesson* stayed filled in its class colour and read as a lesson you were teaching. A cancelled period is now **empty with a dashed edge in the class colour**: empty because nothing is being taught, which is the fact this bird's-eye grid is scanned for, and dashed in the class colour to separate a one-off cancellation from a period that is structurally free (empty with a solid grey edge). Because the squares sit in three rows with P1 and P6 on their own, a dashed first or last period reads as a late start or an early finish across the whole term.
+- The day tile's screen-reader label now reports cancellations too ("Day 6, 2 of 6 planned, 1 no lesson"), the hover title reads "P1 7SCI2 — no lesson", and the legend under the grid gains "dashed=no lesson".
+
+### Implementation
+- `cov` already read every period's note for every day of the term to build the planned fraction, so it now also collects that day's no-lesson period ids into a `Set`; the dot render checks it. No extra storage reads. The planned fraction is deliberately left alone: a no-lesson period still counts as planned, so a day with a cancellation still reads `4/4`. That arguably overstates the teaching load, but the alternative changes the denominator in Week View's summary and Class View's counts too, and that is a separate decision. Verified in preview with cancellations seeded in P1, P4 and P6 of three consecutive days: all three render empty with a dashed class-coloured edge while their neighbours stay filled, free periods keep their solid grey edge, and the labels and titles carry the state.
+
+---
+
 ## 2.21.1 — 2026-08-17
 
 ### Fixes
