@@ -612,7 +612,7 @@ const SCHEMA_VERSION=2;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="2.22.0";
+const APP_VERSION="2.23.0";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -1374,11 +1374,34 @@ function TermView({onDay,onWk,metaCache,gam,cfg}){
   const term=eng.terms[termIdx];const weeks=useMemo(()=>term?eng.getTermWeeks(term):[],[term]);
   const ts=useMemo(()=>{if(!term)return new Date();const d=new Date(term.start);d.setHours(0,0,0,0);return d},[term]);
   const te=useMemo(()=>{if(!term)return new Date();const d=new Date(term.end);d.setHours(23,59,59,999);return d},[term]);
-  // cov: per-day planning coverage for the dot grid and the p/t fraction. It already
-  // reads every period's note, so collecting the no-lesson period ids costs nothing
-  // extra; the dot grid uses them to draw a cancelled lesson as hollow rather than
-  // filled (see the dot render below).
-  const cov=useMemo(()=>{const c={};weeks.flat().forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;const key=toDateKey(d);let p=0,t=0;const nl=new Set();eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,cd,pid);if(cls==="nc")return;t++;const n=storageGet(`note:${key}:${pid}`);if(n&&(n.subject||n.notes||n.status==="nl"))p++;if(n&&n.status==="nl")nl.add(pid)});c[key]={p,t,nl}});return c},[weeks]);
+  // cov: per-day planning coverage. One pass over every period of every day in the term
+  // feeds three things: the p/t fraction, the no-lesson ids the dot grid draws hollow,
+  // and `rows`, the per-period detail the hover card reads. All from notes this loop was
+  // already fetching, so the card costs no extra storage reads.
+  const cov=useMemo(()=>{const c={};weeks.flat().forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;const key=toDateKey(d);let p=0,t=0;const nl=new Set(),rows=[];
+    eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,cd,pid);const n=cls==="nc"?null:storageGet(`note:${key}:${pid}`);
+      if(cls!=="nc"){t++;if(n&&(n.subject||n.notes||n.status==="nl"))p++;if(n&&n.status==="nl")nl.add(pid)}
+      rows.push({pid,cls,nl:!!(n&&n.status==="nl"),subject:(n&&n.subject)||"",hasNotes:!!(n&&n.notes)})});
+    c[key]={p,t,nl,rows}});return c},[weeks]);
+  /* Hover card ("binoculars"): the whole teaching day, without leaving the term grid.
+   * Replaces the per-square `title` tooltips, which took about a second to appear and
+   * could not be formatted. Opens on hover after a short delay (long enough not to
+   * flicker while sweeping the mouse across the grid, far shorter than the browser's own)
+   * and immediately on keyboard focus, so it follows Tab as well as the pointer. The card
+   * ignores pointer events, so clicking a tile still opens Day View. */
+  const[peek,setPeek]=useState(null);
+  const peekT=useRef(null);
+  const clearPeek=()=>{if(peekT.current)clearTimeout(peekT.current);peekT.current=null;setPeek(null)};
+  const openPeek=(key,date,cd,el,delay)=>{if(peekT.current)clearTimeout(peekT.current);
+    const r=el.getBoundingClientRect();const at={key,date,cd,top:r.top,bottom:r.bottom,left:r.left};
+    if(!delay){peekT.current=null;setPeek(at);return}
+    peekT.current=setTimeout(()=>setPeek(at),90)};
+  // A fixed-position card measured off the tile detaches if the page moves under it, and
+  // Escape should dismiss it like every other transient panel.
+  useEffect(()=>{if(!peek)return;const off=()=>clearPeek();const key=e=>{if(e.key==="Escape")clearPeek()};
+    window.addEventListener("scroll",off,{passive:true});window.addEventListener("resize",off);window.addEventListener("keydown",key);
+    return()=>{window.removeEventListener("scroll",off);window.removeEventListener("resize",off);window.removeEventListener("keydown",key)}},[peek]);
+  const coarse=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(pointer: coarse)").matches;
   if(!term)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>No terms configured. Head to Setup to get started.</div>;
   return<div>{gam.showGam&&<><XpStrip gam={gam}/><Badges achs={gam.achs}/></>}
     <div style={{marginBottom:14,marginTop:10}}><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4}}>{eng.terms.map((t,i)=><button key={i} className="hd" onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:termIdx===i?700:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div><div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}>{term.start.toLocaleDateString("en-NZ",{day:"numeric",month:"short"})} {"\u2013"} {term.end.toLocaleDateString("en-NZ",{day:"numeric",month:"short",year:"numeric"})}</div></div>
@@ -1388,21 +1411,49 @@ function TermView({onDay,onWk,metaCache,gam,cfg}){
         if(!iT||!sch)return<div key={k} style={{background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-sm)",minHeight:50,display:"flex",alignItems:"center",justifyContent:"center",padding:"2px 4px"}}>{iT&&(()=>{const hol=(cfg.holidays||[]).find(h=>(typeof h==="string"?h:h.date)===fmtISO(d));return<span style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",textAlign:"center",lineHeight:1.3}}>{hol&&typeof hol!=="string"?hol.name:"holiday"}</span>})()}</div>;
         const dLbl=d.toLocaleDateString("en-NZ",{weekday:"long",day:"numeric",month:"long"});
         const zLbl=meta.day0label||(()=>{const dz=(cfg.dayZeros||[]).find(z=>(typeof z==="string"?z:z.date)===fmtISO(d));return dz&&typeof dz!=="string"?dz.label:""})();
-        return<div key={k} onClick={()=>onDay(d)} role="button" tabIndex={0} onKeyDown={kAct(()=>onDay(d))} aria-label={`${dLbl}${isT?", today":""}, ${isZ?`Day 0${zLbl?", "+zLbl:""}`:`Day ${cd}${cv&&cv.t>0?`, ${cv.p} of ${cv.t} planned`:""}${cv&&cv.nl&&cv.nl.size?`, ${cv.nl.size} no lesson`:""}`}, open Day View`} style={{background:isT?"var(--today-bg)":isZ?"var(--dz-bg)":"var(--card)",border:`1px solid ${isT?"var(--today-border)":isZ?"var(--dz-border)":"var(--border)"}`,borderRadius:"var(--radius-sm)",padding:"4px 5px",cursor:"pointer",minHeight:50}}>
+        return<div key={k} onClick={()=>onDay(d)} role="button" tabIndex={0} onKeyDown={kAct(()=>onDay(d))}
+          onMouseEnter={coarse||isZ?undefined:e=>openPeek(k,d,cd,e.currentTarget,true)} onMouseLeave={coarse||isZ?undefined:clearPeek}
+          onFocus={isZ?undefined:e=>openPeek(k,d,cd,e.currentTarget,false)} onBlur={isZ?undefined:clearPeek} aria-label={`${dLbl}${isT?", today":""}, ${isZ?`Day 0${zLbl?", "+zLbl:""}`:`Day ${cd}${cv&&cv.t>0?`, ${cv.p} of ${cv.t} planned`:""}${cv&&cv.nl&&cv.nl.size?`, ${cv.nl.size} no lesson`:""}`}, open Day View`} style={{background:isT?"var(--today-bg)":isZ?"var(--dz-bg)":"var(--card)",border:`1px solid ${isT?"var(--today-border)":isZ?"var(--dz-border)":"var(--border)"}`,borderRadius:"var(--radius-sm)",padding:"4px 5px",cursor:"pointer",minHeight:50}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:2}}><span className="hd" style={{fontSize:"var(--fs-body)",fontWeight:700,color:isZ?"var(--dz-text)":isT?"var(--accent)":"var(--text)"}}>{d.getDate()}<span style={{fontSize:"var(--fs-nano)",fontWeight:400,color:"var(--text-muted)",marginLeft:2}}>{d.toLocaleDateString("en-NZ",{month:"short"})}</span></span><span className="mn" style={{fontSize:"var(--fs-nano)",fontWeight:600,color:isZ?"var(--dz-text)":"var(--accent)"}}>{isZ?"D0":`D${cd}`}</span></div>
           {isZ?<div style={{fontSize:"var(--fs-nano)",color:"var(--dz-text)",fontStyle:"italic",lineHeight:1.3,overflow:"hidden",maxHeight:26}}>{zLbl||"Day 0"}</div>
           :<>{eng.PIDS&&<div style={{display:"flex",flexDirection:"column",gap:2,marginBottom:2}}>{[["P1"],["P2","P3","P4","P5"],["P6"]].map((row,ri)=><div key={ri} style={{display:"flex",gap:2}}>{row.map(pid=>{const cls=eng.classAt(d,cd,pid);const clr=cls!=="nc"&&eng.classMap[cls];
           // Three states in 8 pixels. Filled = teaching. Hollow = not teaching, which is
           // the fact this bird's-eye grid is scanned for, so a cancelled lesson is hollow
           // like a free period rather than filled like a taught one. The edge carries the
-          // second fact: dashed in the class colour = a lesson was scheduled here and
-          // cancelled, solid grey = structurally non-contact. P1 and P6 sit on their own
-          // rows, so a cancelled first or last period reads as a late start / early finish.
+          // second fact: dashed = a lesson was scheduled here and cancelled, solid grey =
+          // structurally non-contact. The dash is var(--text), near-black on light and
+          // near-white on dark: at this size a class-coloured edge was invisible, so the
+          // hue is spent rather than kept (the hover card names the class anyway). P1 and
+          // P6 sit on their own rows, so a cancelled first or last period reads as a late
+          // start or an early finish.
           const isNlDot=!!(clr&&cv&&cv.nl&&cv.nl.has(pid));
           const box={width:8,height:8,borderRadius:2,boxSizing:"border-box"};
-          return<div key={pid} title={isNlDot?`${pid} ${cls} — no lesson`:clr?`${pid} ${cls}`:`${pid} free`} style={isNlDot?{...box,background:"transparent",border:`1px dashed ${clr.tx}`}:clr?{...box,background:clr.bg}:{...box,background:"transparent",border:"1px solid var(--text-secondary)"}}/>})}</div>)}</div>}<div style={{display:"flex",justifyContent:"flex-end",alignItems:"center"}}>{cv&&cv.t>0&&<span className="mn" style={{fontSize:"var(--fs-nano)",color:cv.p===cv.t?"var(--success)":"var(--text-muted)",fontWeight:700}}>{cv.p}/{cv.t}</span>}</div></>}
+          return<div key={pid} style={isNlDot?{...box,background:"transparent",border:"1px dashed var(--text)"}:clr?{...box,background:clr.bg}:{...box,background:"transparent",border:"1px solid var(--text-secondary)"}}/>})}</div>)}</div>}<div style={{display:"flex",justifyContent:"flex-end",alignItems:"center"}}>{cv&&cv.t>0&&<span className="mn" style={{fontSize:"var(--fs-nano)",color:cv.p===cv.t?"var(--success)":"var(--text-muted)",fontWeight:700}}>{cv.p}/{cv.t}</span>}</div></>}
         </div>})}</div>)}
-    <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:14,alignItems:"center"}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c];return<span key={c} className="mn" style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"2px 7px",borderRadius:3,fontSize:"var(--fs-nano)",fontWeight:700}}>{c}</span>})}<span style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",marginLeft:4}}>filled=class, dashed=no lesson, outline=free (P1 top {"\u2192"} P6 bottom) {"\u00B7"} fraction=planned/teaching</span></div></div>;
+    <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:14,alignItems:"center"}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c];return<span key={c} className="mn" style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"2px 7px",borderRadius:3,fontSize:"var(--fs-nano)",fontWeight:700}}>{c}</span>})}<span style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",marginLeft:4}}>filled=class, dashed=no lesson, outline=free (P1 top {"\u2192"} P6 bottom) {"\u00B7"} fraction=planned/teaching {"\u00B7"} hover a day for detail</span></div>
+    {peek&&(()=>{
+      const cv=cov[peek.key];if(!cv)return null;
+      // 26px per period row plus the header, enough to decide whether the card fits below
+      // the tile or has to sit above it; the width is fixed so the flip is exact.
+      const W=250,H=44+cv.rows.length*17;
+      let left=peek.left,top=peek.bottom+6;
+      if(left+W>window.innerWidth-8)left=window.innerWidth-W-8;
+      if(left<8)left=8;
+      if(top+H>window.innerHeight-8)top=Math.max(8,peek.top-H-6);
+      return<div style={{position:"fixed",top,left,width:W,zIndex:200,pointerEvents:"none",background:"var(--card)",border:"1px solid var(--border-strong)",borderRadius:"var(--radius-md)",boxShadow:"0 6px 20px rgba(0,0,0,.18)",padding:"8px 10px"}}>
+        <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8,marginBottom:6,paddingBottom:5,borderBottom:"1px solid var(--border)"}}>
+          <span className="hd" style={{fontSize:"var(--fs-caption)",fontWeight:700,color:"var(--text)"}}>{fmtS(peek.date)}</span>
+          <span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",fontWeight:700}}>D{peek.cd} {"\u00B7"} {cv.p}/{cv.t}</span>
+        </div>
+        {cv.rows.map(r=>{const cl=r.cls!=="nc"&&eng.classMap[r.cls];
+          return<div key={r.pid} style={{display:"flex",alignItems:"center",gap:6,padding:"1px 0"}}>
+            <span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",fontWeight:700,width:16,flexShrink:0}}>{r.pid}</span>
+            {cl?<span className="mn" style={{fontSize:"var(--fs-nano)",fontWeight:700,background:cl.bg,color:cl.tx,padding:"0 5px",borderRadius:3,flexShrink:0,textDecoration:r.nl?"line-through":"none"}}>{r.cls}</span>
+               :<span style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",fontStyle:"italic",flexShrink:0}}>free</span>}
+            <span style={{fontSize:"var(--fs-nano)",color:r.nl?"var(--text-muted)":"var(--text-secondary)",fontStyle:r.nl||!r.subject?"italic":"normal",flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.cls==="nc"?(r.subject||r.hasNotes?r.subject||"notes":""):r.nl?(r.subject?`No lesson \u2014 ${r.subject}`:"No lesson"):r.subject||(r.hasNotes?"notes only":"\u2014")}</span>
+          </div>})}
+      </div>;
+    })()}</div>;
 }
 
 /* ═══ EXPORT HELPERS ════════════════════════════════════════════════════

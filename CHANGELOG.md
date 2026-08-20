@@ -6,6 +6,19 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.23.0 — 2026-08-21
+
+### Features
+- **Hovering a day in Term View shows the whole day.** A small card gives the date, cycle day and planned fraction, then one line per period: the class chip and its topic, or "No lesson" with its reason, or "free". It replaces the per-square `title` tooltips, which took about a second of hovering to appear and could not be formatted or line-broken. The card appears near-instantly, follows keyboard focus as well as the pointer so it works while tabbing the grid, flips above the tile when there is no room below, closes on mouse-out, `Esc`, scroll or resize, and ignores pointer events so clicking a day still opens Day View. Suppressed on touch pointers, where there is no hover and a tap should just open the day.
+
+### Changed
+- **The dashed no-lesson square is now high contrast.** It was dashed in the class colour, which at 8px was invisible: the hue cost contrast and bought nothing. The dash is now `var(--text)`, near-black on light themes and near-white on dark. The square no longer says which class was cancelled, which the hover card now does properly; it keeps the two facts that matter at that size, that no teaching happens then and that it is not a non-contact.
+
+### Implementation
+- `cov` grows a `rows` entry per day (period id, class, no-lesson flag, subject, whether it has notes) built in the pass it was already making over every period's note, so the card costs no extra storage reads. Hover opens after 90ms, short enough to feel instant and long enough not to strobe while sweeping the pointer across the grid; keyboard focus opens with no delay. Position is computed from the tile's rect with a fixed 250px width and a height estimate of `44+rows*17` (measured 147 against an estimate of 146), flipping above the tile when the card would fall past the viewport bottom. Verified in preview: hover shows the card and switches between days; the card renders topics, no-lesson reasons and free periods; a tile 109px from the viewport bottom flips its card above and stays fully on screen; `Esc` dismisses; `pointer-events` computes to `none`; the old dot titles are gone; checked in light and dark. A note on testing: the pane reported `pointer: coarse` at a 760px viewport because that width triggers mobile emulation, which correctly disabled the hover path, so the hover checks were re-run at 1000px.
+
+---
+
 ## 2.22.0 — 2026-08-21
 
 ### Features
