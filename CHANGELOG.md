@@ -6,6 +6,20 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 2.23.1 — 2026-10-08
+
+### Tests
+- **Smoke tests.** `tests.html` gains a second suite that boots the whole app in a hidden, offscreen frame and drives it the way a person would: the view hotkeys, Enter and Esc, typing into search, clicking the Data and Sync button. It fails on any crash card and on anything the app throws or logs. Until now nothing below the test-core marker, so no component and no view, ran under any test; every UI change was checked by hand.
+- **52 smoke checks across three boots.** A synthetic fixture (four made-up classes, a planned lesson, a no-lesson with a reason, two flagged lines, a B-slot override, a Day 0) is visited across all six views, with content checks the fixture makes exact: Week reads `4/17` planned and `2 flagged`, the Term tile for the frozen day reads "2 of 5 planned, 1 no lesson", search finds the fixture topic. The editors and panels are opened and closed: the Week quick editor (including Esc returning focus to the cell), arrow navigation in the grid, the Week B-slot editor, Day View expand and collapse, the Term hover card, shortcuts, search and Data and Sync. Then an empty profile (the first run a new colleague sees) and the fixture in dark theme. 119 assertions in all with the 67 unit tests.
+- **Isolation, proved rather than assumed.** The test page and the app share an origin, so they share localStorage; a naive suite run on the live site would overwrite real planning data. A prelude injected ahead of the app's own scripts swaps in an in-memory store, makes the frame's own Storage write methods throw, stubs service-worker registration, blocks cross-origin fetch, and freezes the clock on Wed 19 Aug 2026 so a run in the January holidays behaves like a run in term. The last check compares this browser's real storage before and after, key by key.
+
+### Implementation
+- Validated against deliberate breakage before trusting it. Re-creating the v2.17.0 rename bug (`days.map(dk)`) and planting an undefined reference in Class View turned 27 checks red, naming "dk is not defined" and "undefinedThing is not defined" against the right views, while all 67 unit tests stayed green: the exact gap the suite exists to close. With the storage swap deliberately removed, the app in the frame did reach real storage, tried to write twice and was refused both times, and the real data came out unchanged; the suite flags such a run as invalid on its first check. Seven green runs on the source copy, with the tab both visible (2.5 to 6 seconds) and hidden (about 11, as background tabs throttle timers), plus a green run against the precompiled `dist/` build that Pages serves.
+- Two harness bugs found and fixed along the way. A cold first boot can paint before the app's effects (the keyboard listener among them) have run, so a key pressed immediately was lost; boot now waits for the frame's load event plus a short settle. That settle was first written with `requestAnimationFrame`, which browsers pause entirely in a background tab, so a run stalled if you switched tabs; it is now a timer. Content checks read the React root's `textContent` rather than `innerText`, which applies CSS and turned an uppercase-styled heading into text that never matched.
+- No change to the app itself; `APP_VERSION` moves so the deployed `tests.html` and cache name advance with it.
+
+---
+
 ## 2.23.0 — 2026-08-21
 
 ### Features

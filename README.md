@@ -27,3 +27,12 @@ All planning data stays in your browser's localStorage. Nothing is sent to any s
 The source is a single self-contained file, `index.html`: open it directly and it just works, because React 18 loads from a CDN and the file transpiles its own JSX in the browser. That is the only file to edit, and there is no build step to run to work on it.
 
 The **deployed** copy at the link above is precompiled for speed: a GitHub Action runs `build.mjs` on every push to `main`, transpiling the JSX ahead of time into `dist/index.html` and dropping the in-browser Babel transformer, so visitors load an already-compiled app instead of paying the transpile on every visit. The source file is left untouched and still runs on its own.
+
+## Tests
+
+Open `tests.html` (locally next to `index.html`, or at [/tests.html](https://vcanela.github.io/lesson-planner/tests.html) on the live site, where it tests the deployed build). It runs two suites, with no framework and nothing to install:
+
+- **Unit tests** slice the pure logic out of `index.html` (the date engine, sync merge, import, flags) and check its answers.
+- **Smoke tests** boot the whole app in a hidden frame, visit all six views, open the editors and panels, and fail on any crash or error. They run against an in-memory copy of a synthetic fixture with the clock frozen on a school day, so results do not depend on today's date, and they never touch the real planner data in that browser: the last check compares it before and after.
+
+Run it before and after any change. A full run takes a few seconds.

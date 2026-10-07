@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Lesson Planner — pure-core tests</title>
+<title>Lesson Planner — tests</title>
 <style>
   body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin:0;padding:24px;background:#12141a;color:#e6e6e6;line-height:1.5}
   h1{font-size:1.1rem;font-weight:600;margin:0 0 4px}
@@ -22,10 +22,14 @@
 </style>
 </head>
 <body>
-<h1>Lesson Planner — pure-core test harness</h1>
-<div class="sub">No framework, no build. Fetches <code>index.html</code>, slices the block between
-<code>//__TEST_CORE_START__</code> and <code>//__TEST_CORE_END__</code>, and evals it with a fake
-in-memory localStorage. Reload to re-run.</div>
+<h1>Lesson Planner — test harness</h1>
+<div class="sub">No framework, no build. Two suites. <b>Unit tests</b> slice the pure core out of
+<code>index.html</code> (between <code>//__TEST_CORE_START__</code> and <code>//__TEST_CORE_END__</code>)
+and check its answers. <b>Smoke tests</b> boot the whole app in a hidden frame, visit every view,
+open the editors and panels, and fail on any crash or error. Both run against in-memory storage
+and a frozen clock; the app under test never sees your real planner data, nothing is written to it,
+and the last check proves it.
+Reload to re-run.</div>
 <div id="summary">Running…</div>
 <div id="out"></div>
 
@@ -283,6 +287,11 @@ try{
     eq("empty input passes through",C.hexAlpha("",.3),"");
   }
 
+  // ══ SMOKE ══════════════════════════════════════════════════════════════════
+  // Boots the real app three times in a hidden frame and drives it. See runSmoke().
+  document.getElementById("summary").textContent="Unit tests done. Running smoke tests (boots the app three times)…";
+  await runSmoke();
+
   render();
 }catch(err){
   document.getElementById("summary").className="bad";
@@ -290,6 +299,248 @@ try{
   const pre=document.createElement("pre");pre.style.color="#ff6b6b";pre.textContent=err&&err.stack||String(err);
   document.getElementById("out").appendChild(pre);
 }
+}
+
+/* ═══ SMOKE TESTS ════════════════════════════════════════════════════════════
+ * The unit tests above exercise the pure core only; nothing below the
+ * //__TEST_CORE_END__ marker (every component, every view) ever runs in them.
+ * The smoke tests close that gap: they load the REAL index.html into a hidden,
+ * offscreen iframe, drive it with the same keys a user would press, and fail on
+ * any crash card or any error the app throws or logs. They do not check that
+ * behaviour is right in detail (that is the unit tests' job) or that it looks
+ * right (that is a person's job); they check that every part of the app runs.
+ *
+ * Isolation. The test page and the app share an origin, so they share
+ * localStorage: a naive version run on the live site would overwrite real data.
+ * smokePrelude() is injected at the very top of the app's <head>, before any of
+ * its scripts, and inside the frame it:
+ *   - swaps window.localStorage for an in-memory store seeded with a fixture;
+ *   - makes the frame's own Storage.prototype write methods throw, so even a
+ *     path that somehow reached the real storage could not write to it;
+ *   - stubs service-worker registration and blocks cross-origin fetch;
+ *   - freezes the clock at a fixed school day, so results do not drift with the
+ *     calendar (a run in January must not fail because "today" is a holiday).
+ * The isolation group at the end proves it: the real storage is compared
+ * before and after, key by key.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+// Runs INSIDE the frame, before the app. It is injected via toString(), so it must
+// not close over anything in this page: it sees only the frame's globals plus
+// window.parent.__SMOKE, the per-boot state object.
+function smokePrelude(){
+  var S=window.parent.__SMOKE;
+  window.addEventListener("error",function(e){S.errors.push("error: "+(e.message||e.type)+(e.filename?" ("+e.filename.split("/").pop()+":"+e.lineno+")":""))});
+  window.addEventListener("unhandledrejection",function(e){var r=e.reason;S.errors.push("unhandled rejection: "+(r&&r.message||r))});
+  var ce=console.error;console.error=function(){S.errors.push("console.error: "+[].map.call(arguments,function(a){return a&&a.message?a.message:String(a)}).join(" "));return ce.apply(console,arguments)};
+  // In-memory storage with the same surface the app uses: get/set/remove/clear,
+  // key(i) and length, and data keys as own enumerable props so Object.keys works.
+  var st={};
+  function def(k,v){Object.defineProperty(st,k,{value:v,enumerable:false})}
+  def("getItem",function(k){return Object.prototype.hasOwnProperty.call(st,k)?st[k]:null});
+  def("setItem",function(k,v){st[k]=String(v)});
+  def("removeItem",function(k){delete st[k]});
+  def("clear",function(){Object.keys(st).forEach(function(k){delete st[k]})});
+  def("key",function(i){var ks=Object.keys(st);return i<ks.length?ks[i]:null});
+  Object.defineProperty(st,"length",{get:function(){return Object.keys(st).length},enumerable:false});
+  Object.keys(S.store).forEach(function(k){st[k]=String(S.store[k])});
+  try{Object.defineProperty(window,"localStorage",{value:st,configurable:true})}catch(e){}
+  S.shadowed=(window.localStorage===st);
+  ["setItem","removeItem","clear"].forEach(function(m){Storage.prototype[m]=function(){throw new Error("smoke: write to real storage blocked")}});
+  try{Object.defineProperty(navigator,"serviceWorker",{value:{register:function(){S.swRegister++;return Promise.resolve({})}},configurable:true})}catch(e){}
+  var rf=window.fetch;
+  window.fetch=function(u){var url=String(u&&u.url||u);if(/^https?:/i.test(url)&&url.indexOf(S.origin)!==0){S.blocked.push(url);return Promise.reject(new Error("smoke: network blocked"))}return rf.apply(this,arguments)};
+  // Frozen clock: new Date() and Date.now() report S.now; every other form of the
+  // constructor behaves normally. FD shares Date's prototype so instanceof holds.
+  var RD=Date,NOW=S.now;
+  function FD(){if(!(this instanceof FD))return new RD(NOW).toString();if(arguments.length===0)return new RD(NOW);return new(Function.prototype.bind.apply(RD,[null].concat([].slice.call(arguments))))()}
+  FD.prototype=RD.prototype;FD.now=function(){return NOW};FD.parse=RD.parse;FD.UTC=RD.UTC;
+  window.Date=FD;
+}
+
+// Wednesday 19 August 2026, 10:00 local: Term 3, week 4, a full teaching day.
+const SMOKE_NOW=new Date(2026,7,19,10,0,0).getTime();
+
+/* The fixture. Synthetic classes and timetable, not anyone's real one. The anchor
+ * makes Mon 17 Aug Day 1, so the frozen week is D1 D2 D3 D4 and a Day 0 on Friday.
+ * Teaching periods that week: Mon 4, Tue 4, Wed 5, Thu 4 = 17. Planned: Mon P4
+ * (notes only), Tue P1, Wed P1 and Wed P2 (no lesson counts as planned) = 4. Wed P1
+ * carries two flagged lines. Those numbers are what the content checks expect. */
+function smokeFixture(extra){
+  const ts=new Date(SMOKE_NOW-864e5).toISOString();
+  const tt={
+    1:{P1:"9SCI1",P2:"10SCI2",P3:"nc",P4:"12PHY1",P5:"13CHM1",P6:"nc",B1a:{t:"b1",c:"tutor"}},
+    2:{P1:"10SCI2",P2:"9SCI1",P3:"12PHY1",P4:"nc",P5:"nc",P6:"13CHM1",B1a:{t:"b1",c:"chapel"}},
+    3:{P1:"9SCI1",P2:"10SCI2",P3:"nc",P4:"12PHY1",P5:"13CHM1",P6:"9SCI1",B1a:{t:"b1",c:"tutor"}},
+    4:{P1:"12PHY1",P2:"13CHM1",P3:"9SCI1",P4:"10SCI2",P5:"nc",P6:"nc",B1a:{t:"b1",c:"fsa"}},
+    5:{P1:"13CHM1",P2:"nc",P3:"10SCI2",P4:"9SCI1",P5:"12PHY1",P6:"nc",B1a:{t:"b1",c:"tutor"}},
+    6:{P1:"nc",P2:"12PHY1",P3:"13CHM1",P4:"10SCI2",P5:"9SCI1",P6:"12PHY1",B1a:{t:"b1",c:"tutor"}},
+    7:{P1:"10SCI2",P2:"9SCI1",P3:"nc",P4:"13CHM1",P5:"12PHY1",P6:"nc",B1a:{t:"b1",c:"da"}}};
+  const cfg={school:"Smoke School",cycleDays:7,
+    terms:[{n:1,start:"2026-01-27",end:"2026-04-03"},{n:2,start:"2026-04-20",end:"2026-07-03"},
+           {n:3,start:"2026-07-27",end:"2026-09-25"},{n:4,start:"2026-10-12",end:"2026-12-08"}],
+    holidays:[{date:"2026-10-26",name:"Labour Day"}],
+    dayZeros:[{date:"2026-08-21",label:"Sports Day",source:"manual"}],
+    anchor:{date:"2026-08-17",day:1},timetable:tt,
+    classes:[{code:"9SCI1",description:"Year 9 Science",colour:"#C5D9C0"},{code:"10SCI2",description:"Year 10 Science",colour:"#B8CCE0"},
+             {code:"12PHY1",description:"Year 12 Physics",colour:"#D0C0E0"},{code:"13CHM1",description:"Year 13 Chemistry",colour:"#EDD9B5"}],
+    duties:[],weeklyEvents:[{weekday:3,slot:"B2a",text:"Science club"}],
+    theme:"physics",exportStyle:"plain",userName:"Smoke",showGam:true,updatedAt:ts};
+  const note=v=>JSON.stringify({subject:"",notes:"",resources:"",status:"",...v,updatedAt:ts});
+  const meta=v=>JSON.stringify({dayNotes:"",day0label:"",reflections:"",overrides:{},...v,updatedAt:ts});
+  return{"planner-config":JSON.stringify(cfg),"planner-theme":"light-hc",
+    "note:2026-7-19:P1":note({subject:"Forces recap",notes:"! print the worksheet\nrecap first\n! book the trolleys"}),
+    "note:2026-7-19:P2":note({subject:"Assembly",status:"nl"}),
+    "note:2026-7-18:P1":note({subject:"Waves intro"}),
+    "note:2026-7-17:P4":note({notes:"lab prep"}),
+    "daymeta:2026-7-19":meta({dayNotes:"Staff meeting 3:30",reflections:"Grab: lead with the question",overrides:{B1a:{t:"b1",c:"chapel"}}}),
+    "daymeta:2026-7-21":meta({day0label:"Sports Day"}),
+    ...(extra||{})};
+}
+
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+// Poll until fn() is truthy or the time runs out. React renders asynchronously after
+// an event, so every check waits for its condition rather than reading once.
+async function waitFor(fn,ms){const t0=performance.now();for(;;){let v=null;try{v=fn()}catch(e){}if(v)return v;if(performance.now()-t0>(ms||4000))return null;await sleep(25)}}
+
+// Boot the app in a fresh frame with the given storage contents.
+async function bootApp(store){
+  const html=await(await fetch("index.html?cb="+Date.now())).text();
+  const S={store,now:SMOKE_NOW,origin:location.origin,errors:[],blocked:[],swRegister:0,shadowed:false};
+  window.__SMOKE=S;
+  const pre=`<base href="${new URL(".",location.href).href}"><script>(${smokePrelude.toString()})();<\/script>`;
+  const m=html.match(/<head[^>]*>/i);
+  const src=m?html.replace(m[0],()=>m[0]+pre):pre+html;
+  const old=document.getElementById("smoke-frame");if(old)old.remove();
+  const fr=document.createElement("iframe");fr.id="smoke-frame";fr.title="smoke test frame";
+  // Offscreen rather than hidden: the app gets real layout (the Term hover card measures
+  // tiles), and 1100px keeps it on the desktop layout rather than the phone one.
+  fr.style.cssText="position:fixed;left:-12000px;top:0;width:1100px;height:850px;border:0";
+  document.body.appendChild(fr);
+  fr.srcdoc=src;
+  // Generous: the source copy transpiles itself with Babel on load, slow on a phone.
+  // "Booted" means painted AND settled: on a cold first load the app can paint before
+  // its effects (the keyboard listener among them) have run, and a key pressed into that
+  // gap is lost. So wait for the frame's load event, then a short settle, before driving
+  // it. The settle is a timer, not requestAnimationFrame: browsers pause animation frames
+  // completely in a background tab, and the suite must not stall if you switch tabs.
+  let booted=await waitFor(()=>{const d=fr.contentDocument,r=d&&d.getElementById("root");return d.readyState==="complete"&&r&&r.children.length&&/v\d+\.\d+\.\d+/.test(r.textContent)},20000);
+  if(booted)await sleep(120);
+  const ver=(html.match(/APP_VERSION\s*=\s*"([\d.]+)"/)||[])[1]||"";
+  const win=fr.contentWindow,doc=fr.contentDocument;
+  const D={fr,S,win,doc,ver,booted:!!booted,
+    // textContent of the React root, not innerText: innerText applies CSS, so a heading
+    // styled uppercase reads "COVERAGE BY CLASS" and never matches. And the root, not
+    // the body: in the source copy the body also holds the app's own script text.
+    text:()=>doc.getElementById("root").textContent,
+    q:s=>doc.querySelector(s),qa:s=>[...doc.querySelectorAll(s)],
+    view:()=>{const t=doc.querySelector(".vtab.on");return t?t.title:""},
+    crashed:()=>{const r=doc.getElementById("root");return!r.children.length||r.textContent.includes("Something went wrong displaying this view")},
+    key:(k,el)=>(el||win).dispatchEvent(new win.KeyboardEvent("keydown",{key:k,bubbles:true,cancelable:true})),
+    focus:el=>{el.focus();el.dispatchEvent(new win.FocusEvent("focusin",{bubbles:true}))},
+    type:(el,v)=>{Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype,"value").set.call(el,v);el.dispatchEvent(new win.Event("input",{bubbles:true}))}};
+  return D;
+}
+
+// One assertion per step: do something, wait for a condition, and fail if the
+// condition never holds, the crash card appears, or anything was thrown or logged.
+async function step(D,name,act,check,ms){
+  const n=D.S.errors.length;let ok=false,why="";
+  try{if(act)await act();ok=!!(await waitFor(check,ms));if(!ok)why="condition not met within the time limit"}
+  catch(e){why="threw: "+(e&&e.message||e)}
+  if(D.crashed()){ok=false;why=(why?why+"; ":"")+"crash card shown"}
+  const errs=D.S.errors.slice(n);
+  assert(name,ok&&!errs.length,[why,...errs].filter(Boolean).join("\n"));
+  return ok&&!errs.length;
+}
+
+// The six views, the key that opens each, and what proves it rendered with content.
+const SMOKE_VIEWS=[
+  ["t","Term",D=>D.text().includes("fraction=planned/teaching")],
+  ["w","Week",D=>D.q(".wk-grid .pb")],
+  ["d","Day",D=>D.q(".pr")],
+  ["c","Class",D=>D.q(".cv")],
+  ["l","Lab",D=>D.text().includes("Coverage by class")],
+  ["s","Setup",D=>D.text().includes("School Setup")&&D.q(".b-cell")]];
+async function visitViews(D,label,strict){
+  for(const[k,name,has]of SMOKE_VIEWS)
+    await step(D,`${label}: ${name} View renders`,()=>D.key(k),()=>D.view()===name&&(!strict||has(D)));
+}
+
+async function runSmoke(){
+  const snap=()=>JSON.stringify(Object.keys(localStorage).sort().map(k=>[k,localStorage.getItem(k)]));
+  const before=snap();
+
+  // ── Run 1: the fixture, light theme. Views, content, editors and panels. ───────
+  G("Smoke: boot");
+  let D=await bootApp(smokeFixture());
+  assert("app boots and renders",D.booted&&!D.crashed(),D.S.errors.join("\n"));
+  assert("storage inside the frame is the in-memory fixture",D.S.shadowed,"this browser would not let the test replace localStorage; the remaining smoke tests are not meaningful here");
+  if(D.booted&&D.S.shadowed){
+    assert(`footer shows the version in the file (v${D.ver})`,!!D.ver&&D.text().includes("v"+D.ver));
+    assert("no errors during boot",!D.S.errors.length,D.S.errors.join("\n"));
+
+    G("Smoke: every view");
+    await visitViews(D,"fixture",true);
+
+    G("Smoke: Week View");
+    await step(D,"Week View opens on the fixture week",()=>D.key("w"),()=>D.view()==="Week"&&D.text().includes("17 Aug"));
+    await step(D,"summary counts 4/17 planned and 2 flagged",null,()=>/4\s*\/\s*17/.test(D.text())&&D.text().includes("2 flagged"));
+    await step(D,"Flagged Items lists both flagged lines",null,()=>D.text().includes("print the worksheet")&&D.text().includes("book the trolleys"));
+    await step(D,"the no-lesson period is labelled as such",null,()=>D.q('.pb[aria-label^="P2, 10SCI2, Wed, 19 Aug, no lesson"]'));
+    const cell=()=>D.q('.pb[aria-label^="P1, 9SCI1, Wed, 19 Aug"]');
+    await step(D,"Enter on a period opens the quick editor with its topic",()=>{D.focus(cell());D.key("Enter",cell())},()=>{const i=D.q(".qe input");return i&&i.value==="Forces recap"});
+    await step(D,"Esc closes the editor and returns focus to the cell",()=>D.key("Escape",D.q(".qe input")),()=>!D.q(".qe")&&D.doc.activeElement===cell());
+    await step(D,"arrow keys move within the grid",()=>{const c=D.q('[data-nav="0-0"]');D.focus(c);D.key("ArrowRight",c)},()=>D.doc.activeElement&&D.doc.activeElement.dataset.nav==="0-1");
+    await step(D,"Enter on a B-slot opens its editor",()=>{const b=D.q(".wk-bcell[role=button]");D.focus(b);D.key("Enter",b)},()=>D.q('.wk-overlay[role="dialog"]'));
+    await step(D,"Esc closes the B-slot editor",()=>D.key("Escape"),()=>!D.q(".wk-overlay"));
+
+    G("Smoke: Day View");
+    await step(D,"Day View opens on the frozen today",()=>D.key("d"),()=>D.view()==="Day"&&D.text().includes("19 August"));
+    await step(D,"shows the planned topic and the no-lesson reason",null,()=>D.text().includes("Forces recap")&&D.text().includes("No lesson")&&D.text().includes("Assembly"));
+    await step(D,"Enter expands a period",()=>{const p=D.q(".pr[role=button]");D.key("Enter",p)},()=>D.q(".pr.exp"));
+    await step(D,"Enter again collapses it",()=>D.key("Enter",D.q(".pr.exp")),()=>!D.q(".pr.exp"));
+
+    G("Smoke: Term View");
+    const tile=()=>D.qa("[role=button]").find(e=>/^Wednesday, 19 August/.test(e.getAttribute("aria-label")||""));
+    await step(D,"the day tile reports 2 of 5 planned and 1 no lesson",()=>D.key("t"),()=>{const t=tile();return t&&/2 of 5 planned, 1 no lesson/.test(t.getAttribute("aria-label"))});
+    await step(D,"focusing a day opens the hover card for that day",()=>D.focus(tile()),()=>D.qa("div").find(d=>d.style.position==="fixed"&&d.style.pointerEvents==="none"&&d.textContent.includes("Wed, 19 Aug")&&d.textContent.includes("No lesson")));
+    await step(D,"Esc closes the hover card",()=>D.key("Escape"),()=>!D.qa("div").some(d=>d.style.position==="fixed"&&d.style.pointerEvents==="none"));
+
+    G("Smoke: Class View");
+    await step(D,"choosing a class lists its lessons",()=>{D.key("c");return waitFor(()=>D.q('[role=button][aria-label^="9SCI1"]')).then(ch=>D.key("Enter",ch))},()=>D.qa(".cv").some(r=>r.textContent.includes("Forces recap")));
+
+    G("Smoke: panels");
+    await step(D,"? opens the shortcuts list",()=>D.key("?"),()=>D.text().includes("Keyboard shortcuts"));
+    await step(D,"Esc closes it",()=>D.key("Escape"),()=>!D.text().includes("Keyboard shortcuts"));
+    await step(D,"/ opens search",()=>D.key("/"),()=>D.q('input[placeholder^="Search"]'));
+    await step(D,"search finds a fixture topic",()=>D.type(D.q('input[placeholder^="Search"]'),"Forces"),()=>D.text().includes("Forces recap"));
+    await step(D,"Esc closes search",()=>D.key("Escape"),()=>!D.q('input[placeholder^="Search"]'));
+    await step(D,"the Data and Sync panel opens",()=>D.q('button[title="Data & Sync"]').click(),()=>D.qa(".overlay").some(o=>o.textContent.includes("Data & Sync")));
+    await step(D,"and closes",()=>D.qa(".overlay button").find(b=>b.textContent.trim()==="✕").click(),()=>!D.qa(".overlay").some(o=>o.textContent.includes("Data & Sync")));
+    assert("no requests to other sites during the run",!D.S.blocked.length,D.S.blocked.join("\n"));
+  }
+
+  // ── Run 2: an empty profile, the first-run path a new colleague hits. ─────────
+  G("Smoke: empty profile (first run)");
+  D=await bootApp({});
+  assert("app boots with no saved data",D.booted&&!D.crashed(),D.S.errors.join("\n"));
+  if(D.booted&&D.S.shadowed){
+    assert("seeds a calendar and shows the welcome card",D.text().includes("Welcome")&&!!D.win.localStorage.getItem("planner-config"));
+    await visitViews(D,"empty",false);
+  }
+
+  // ── Run 3: the fixture in dark theme. ────────────────────────────────────────
+  G("Smoke: dark theme");
+  D=await bootApp(smokeFixture({"planner-theme":"dark"}));
+  assert("app boots in dark theme",D.booted&&!D.crashed()&&D.doc.documentElement.getAttribute("data-theme")==="dark",D.S.errors.join("\n"));
+  if(D.booted&&D.S.shadowed)await visitViews(D,"dark",true);
+
+  // ── Isolation: prove the runs never touched this browser's real data. ────────
+  G("Smoke: isolation");
+  let blocked=false;try{D.win.Storage.prototype.setItem.call(D.win.sessionStorage,"smoke","x")}catch(e){blocked=true}
+  assert("inside the frame, writes to real storage are blocked",blocked);
+  D.fr.remove();delete window.__SMOKE;
+  assert("this browser's real planner data is byte-identical before and after",snap()===before,"real localStorage changed during the smoke run");
 }
 
 function render(){
