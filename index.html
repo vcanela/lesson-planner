@@ -199,6 +199,14 @@ textarea,input,button,select{font-family:var(--font-sans)}
 .pb-marks{display:flex;align-items:center;gap:4px;flex-shrink:0}
 .pb-mark{display:none;align-items:center;justify-content:center;line-height:1}
 .wk-daynote-m{display:none;align-items:center;justify-content:center;width:100%;cursor:pointer;font-size:var(--fs-nano)}
+/* Lesson reflections (3.7.0) */
+.went{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.went-q{font-size:var(--fs-caption);color:var(--text-secondary)}
+.went-opts{display:inline-flex;gap:4px;flex-wrap:wrap}
+.went-next{flex-basis:100%}
+.went-strip{padding:0 14px 9px 122px}
+@media(max-width:520px){.went-strip{padding-left:14px}}
+.went-tag{font-size:var(--fs-nano);color:var(--text-muted);white-space:nowrap;flex-shrink:0}
 .qe{background:var(--card);border:1.5px solid var(--accent);border-radius:var(--radius-lg);padding:14px 16px;margin-top:12px;display:flex;flex-direction:column;gap:10px}
 .cv{display:flex;gap:12px;padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
 .cv:hover{background:var(--row-open)}
@@ -773,7 +781,7 @@ const SCHEMA_VERSION=3;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="3.6.1";
+const APP_VERSION="3.7.0";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -841,7 +849,7 @@ function recordTimestamp(r){const t=r&&r.updatedAt?Date.parse(r.updatedAt):NaN;r
 // record is a valid tombstone (a cleared note), so it is only GC'd once also old.
 function isEmptyRecord(key,r){
   if(!r||typeof r!=="object")return true;
-  if(key.slice(0,5)==="note:")return !(r.subject||r.notes||r.resources)&&r.status!=="nl";
+  if(key.slice(0,5)==="note:")return !(r.subject||r.notes||r.resources||r.went||r.nextTime)&&r.status!=="nl";
   if(key.slice(0,8)==="daymeta:")return !(r.dayNotes||r.reflections||r.day0label)&&!(r.overrides&&Object.keys(r.overrides).length);
   return false;
 }
@@ -1198,6 +1206,23 @@ function makeDateEngine(cfg){
 const emptyNote=()=>({subject:"",notes:"",resources:"",status:""});
 const emptyMeta=()=>({dayNotes:"",day0label:"",reflections:"",overrides:{}});
 const normalizeMeta=v=>({...emptyMeta(),...(v||{})});
+/* ── Lesson reflections (3.7.0; REFLECTION_DESIGN.md) ─────────────────────────
+ * A lesson's note record gains `went` ("good" | "mixed" | "rough") and `nextTime`, a line
+ * for future you. A lesson asks "How did it go?" once its end bell has rung, if it has no
+ * answer yet, and only for lessons that ended this week (Monday onwards), so a Friday
+ * catch-up covers the week and older lessons stop asking. Any past lesson can still be
+ * answered; it just doesn't ask. A rating is not planning: coverage and XP ignore it. */
+const WENT=[["good","Went well"],["mixed","Mixed"],["rough","Rough"]];
+const wentLabel=v=>(WENT.find(w=>w[0]===v)||[])[1]||"";
+// lessonEnd: when a period's end bell rings on a date, on that day's bells (standard or
+// assembly). dm is the day's daymeta when the caller has it; otherwise it is read.
+function lessonEnd(eng,date,cd,pid,dm){
+  const T=asmBellsForDate(cd,date,{timetable:eng.timetableForDate(date),weeklyEvents:[]},dm)?ASM_T:STD_T;
+  const p=T[String(pid).toLowerCase()];if(!p)return null;
+  const[h,m]=p.e.split(":").map(Number);const d=new Date(date);d.setHours(h,m,0,0);return d}
+const askFrom=now=>{const d=new Date(now);d.setHours(0,0,0,0);d.setDate(d.getDate()-(d.getDay()+6)%7);return d};
+const canReflect=(cc,note,end,now)=>!!(cc&&cc!=="nc"&&end&&end<=now&&!(note&&note.status==="nl"));
+const lessonAsks=(cc,note,end,now)=>canReflect(cc,note,end,now)&&!(note&&note.went)&&end>=askFrom(now);
 //__TEST_CORE_END__  (end of the pure core sliced by tests.html; components/JSX begin below)
 
 /* ═══ UNIVERSAL GAMIFICATION ENGINE ══════════════════════════════════════
@@ -1493,6 +1518,11 @@ function ReflectionsPanel({meta,updateField,handleFocus,handleBlur,saveStatus,da
  * Reads/writes via useAutoSave on key `note:<dateKey>:<periodId>`.
  * ═══════════════════════════════════════════════════════════════════════
  */
+/* WentRow (3.7.0): "How did it go?" with three one-tap answers; tapping the chosen one
+ * again clears it. children (the Next time line) show once there is an answer. The buttons
+ * keep focus where it was (mousedown), so a quick editor's input doesn't blur and close. */
+function WentRow({went,onWent,children,strip}){
+  return<div className={strip?"went went-strip":"went"}><span className="went-q">How did it go?</span><span role="group" aria-label="How did it go?" className="went-opts">{WENT.map(([v,l])=><button key={v} className="tog tog-sm" aria-pressed={went===v} onMouseDown={e=>e.preventDefault()} onClick={e=>{e.stopPropagation();onWent(went===v?"":v)}}>{l}</button>)}</span>{went&&children}</div>}
 function PCard({period,dateKey,cDay,date,initOpen}){
   const eng=useCfg();const cc=cDay?eng.classAt(date,cDay,period.id):null;const isNc=cc==="nc";
   const[open,setOpen]=useState(initOpen||false);const[mode,setMode]=useState(initOpen?"detailed":"quick");
@@ -1505,10 +1535,16 @@ function PCard({period,dateKey,cDay,date,initOpen}){
   const clearNL=()=>{updateField("status","");setTimeout(save,0)};
   const askNL=()=>{if(data&&data.subject)setNlConfirm(true);else markNL()};
   const ctx=useMemo(()=>eng.lessonContext(cc,dateKey,period.id),[cc,dateKey,period.id]);
+  // The period already carries this day's bell times, so its end is exact here.
+  const end=useMemo(()=>{if(!period.end||!date)return null;const[h,m]=period.end.split(":").map(Number);const d=new Date(date);d.setHours(h,m,0,0);return d},[period.end,dateKey]);
+  const now=new Date(),canR=canReflect(cc,data,end,now),asks=lessonAsks(cc,data,end,now);
+  const setWent=v=>{updateField("went",v);setTimeout(save,0)};
   if(period.brk)return<div className="brk"><span>{period.label}</span><span className="mn" style={{fontSize:"var(--fs-micro)"}}>{period.start}{"\u2013"}{period.end}</span></div>;
-  return<div style={{borderBottom:"1px solid var(--border)"}}><div className={`pr${open?" exp":""}`} onClick={()=>cDay&&setOpen(o=>!o)} role={cDay?"button":undefined} tabIndex={cDay?0:undefined} aria-expanded={cDay?open:undefined} aria-label={cDay?`${period.label}, ${isNc?"non-contact":cc}, ${isNl?"no lesson":has?"planned":"empty"}, ${open?"collapse":"expand"}`:undefined} onKeyDown={cDay?kAct(()=>setOpen(o=>!o)):undefined} style={cDay?{}:{cursor:"default"}}><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",minWidth:64,flexShrink:0}}>{period.start}</span><span className="mn" style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",minWidth:24,flexShrink:0}}>{period.label}</span><CBadge cc={cc}/><span style={{fontSize:"var(--fs-body)",color:isNl?"var(--text-muted)":"var(--text-secondary)",fontStyle:isNl?"italic":"normal",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isNl?(data.subject?"No lesson \u2014 "+data.subject:"No lesson"):data&&data.subject||""}</span>{fl&&<span style={{color:"var(--flag)",fontSize:"var(--fs-micro)",flexShrink:0}}>{"\u2691"}</span>}{has&&!fl&&<span style={{width:5,height:5,borderRadius:"50%",background:"var(--success)",flexShrink:0}}/>}{cDay&&<span style={{color:"var(--text-muted)",fontSize:"var(--fs-caption)"}}>{open?"\u25B2":"\u25BC"}</span>}</div>
+  return<div style={{borderBottom:"1px solid var(--border)"}}><div className={`pr${open?" exp":""}`} onClick={()=>cDay&&setOpen(o=>!o)} role={cDay?"button":undefined} tabIndex={cDay?0:undefined} aria-expanded={cDay?open:undefined} aria-label={cDay?`${period.label}, ${isNc?"non-contact":cc}, ${isNl?"no lesson":has?"planned":"empty"}${data&&data.went?", "+wentLabel(data.went).toLowerCase():""}, ${open?"collapse":"expand"}`:undefined} onKeyDown={cDay?kAct(()=>setOpen(o=>!o)):undefined} style={cDay?{}:{cursor:"default"}}><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",minWidth:64,flexShrink:0}}>{period.start}</span><span className="mn" style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",minWidth:24,flexShrink:0}}>{period.label}</span><CBadge cc={cc}/><span style={{fontSize:"var(--fs-body)",color:isNl?"var(--text-muted)":"var(--text-secondary)",fontStyle:isNl?"italic":"normal",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isNl?(data.subject?"No lesson \u2014 "+data.subject:"No lesson"):data&&data.subject||""}</span>{data&&data.went&&<span className="went-tag">{wentLabel(data.went)}</span>}{fl&&<span style={{color:"var(--flag)",fontSize:"var(--fs-micro)",flexShrink:0}}>{"\u2691"}</span>}{has&&!fl&&<span style={{width:5,height:5,borderRadius:"50%",background:"var(--success)",flexShrink:0}}/>}{cDay&&<span style={{color:"var(--text-muted)",fontSize:"var(--fs-caption)"}}>{open?"\u25B2":"\u25BC"}</span>}</div>
+    {asks&&!open&&<WentRow strip went="" onWent={setWent}/>}
     {open&&data&&<div className="prd" onFocus={handleFocus} onBlur={handleBlur}><div style={{display:"grid",gap:9}}>{ctx&&<div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",background:"var(--surface)",padding:"4px 8px",borderRadius:"var(--radius-xs)",lineHeight:1.5}}>Lesson <span className="mn" style={{fontWeight:700}}>{ctx.num}/{ctx.total}</span> this term{ctx.prev&&<span> {"\u00B7"} prev: {fmtS(ctx.prev.date)}</span>}{ctx.next&&<span> {"\u00B7"} next: {fmtS(ctx.next.date)}</span>}</div>}{!isNc&&<div style={{display:"flex",gap:4}}>{["quick","detailed"].map(m=><button className="tog tog-sm" aria-pressed={mode===m} key={m} onClick={()=>setMode(m)}>{m==="quick"?"Quick":"Detailed"}</button>)}</div>}
-      {(mode==="quick"||isNc)?<div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}><label className="fl" style={{marginBottom:0}}>{isNc?"Notes":isNl?"Reason (optional)":"Topic / Quick note"} <SvH saveStatus={saveStatus}/></label>{!isNc&&(nlConfirm?<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:"var(--fs-nano)",color:"var(--flag)"}}>Replace topic with No Lesson?<button className="btn-a btn-sm" onMouseDown={e=>{e.preventDefault();markNL()}}>Yes</button><button className="btn-ghost" onMouseDown={e=>{e.preventDefault();setNlConfirm(false)}}>Cancel</button></span>:<button className={`btn-ghost${isNl?" btn-danger":""}`} onMouseDown={e=>{e.preventDefault();isNl?clearNL():askNL()}}>{isNl?"\u2715 Remove no lesson":"No lesson"}</button>)}</div><AInp data={data} field={isNc?"notes":"subject"} updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph={isNc?"Meeting, marking, prep":isNl?"e.g. Class has an assembly":"e.g. Newton's 3rd Law"}/></div>:<><div><label className="fl">Topic / Subject <SvH saveStatus={saveStatus}/></label><AInp data={data} field="subject" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="e.g. Newton's 3rd Law"/></div><div><label className="flb">Notes & Tasks</label><AInp data={data} field="notes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Lesson plan, tasks. Start a line with ! to flag it" multi rows={3}/></div><div><label className="flb">Resources & Links</label><AInp data={data} field="resources" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="URLs, file names"/></div></>}</div></div>}</div>;
+      {(mode==="quick"||isNc)?<div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}><label className="fl" style={{marginBottom:0}}>{isNc?"Notes":isNl?"Reason (optional)":"Topic / Quick note"} <SvH saveStatus={saveStatus}/></label>{!isNc&&(nlConfirm?<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:"var(--fs-nano)",color:"var(--flag)"}}>Replace topic with No Lesson?<button className="btn-a btn-sm" onMouseDown={e=>{e.preventDefault();markNL()}}>Yes</button><button className="btn-ghost" onMouseDown={e=>{e.preventDefault();setNlConfirm(false)}}>Cancel</button></span>:<button className={`btn-ghost${isNl?" btn-danger":""}`} onMouseDown={e=>{e.preventDefault();isNl?clearNL():askNL()}}>{isNl?"\u2715 Remove no lesson":"No lesson"}</button>)}</div><AInp data={data} field={isNc?"notes":"subject"} updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph={isNc?"Meeting, marking, prep":isNl?"e.g. Class has an assembly":"e.g. Newton's 3rd Law"}/></div>:<><div><label className="fl">Topic / Subject <SvH saveStatus={saveStatus}/></label><AInp data={data} field="subject" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="e.g. Newton's 3rd Law"/></div><div><label className="flb">Notes & Tasks</label><AInp data={data} field="notes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Lesson plan, tasks. Start a line with ! to flag it" multi rows={3}/></div><div><label className="flb">Resources & Links</label><AInp data={data} field="resources" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="URLs, file names"/></div></>}
+      {canR&&<WentRow went={data.went||""} onWent={setWent}><div className="went-next"><label className="flb">Next time (optional)</label><AInp data={data} field="nextTime" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Advice for the next time you teach this"/></div></WentRow>}</div></div>}</div>;
 }
 
 /* ═══ DAY VIEW ═══════════════════════════════════════════════════════════
@@ -1773,7 +1809,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
   // coarse = touch/stylus pointer; skip autoFocus when opening a cell so a glance
   // doesn't pop the on-screen keyboard and resize the screen (matches Class View).
   const coarse=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(pointer: coarse)").matches;
-  const[spot,setSpot]=useState(null);const[qe,setQE]=useState(null);const[qv,setQV]=useState("");const[nr,setNR]=useState(0);
+  const[spot,setSpot]=useState(null);const[qe,setQE]=useState(null);const[qv,setQV]=useState("");const[qn,setQN]=useState("");const[nr,setNR]=useState(0);
   // On opening a quick-editor, bring the grid to the top of the viewport so the editor panel
   // (which renders just below the grid) comes into view without manual scrolling.
   const gridRef=useRef(null);
@@ -1814,10 +1850,15 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
   const qeAtMouseDownRef=useRef(null);
   const wNotes=useMemo(()=>{const m={};days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;const key=toDateKey(d);eng.PIDS.forEach(pid=>{const n=storageGet(`note:${key}:${pid}`);m[`${key}:${pid}`]={...emptyNote(),...(n||{})}})});return m},[days.map(toDateKey).join(","),nr]);
   const sum=useMemo(()=>{let p=0,t=0,f=0;days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,cd,pid);if(cls==="nc")return;t++;const n=wNotes[`${toDateKey(d)}:${pid}`];if(n&&(n.subject||n.notes||n.status==="nl"))p++;f+=flagCount(n)})});let ud=0;days.forEach(d=>{if(eng.cycleDayFor(d)===0){const m=metaCache[toDateKey(d)];if(!m||!m.day0label)ud++}});return{p,t,f,ud}},[days,wNotes,metaCache]);
-  const oQE=(key,pid,cls,date)=>{const n=wNotes[`${key}:${pid}`];setQV(n&&n.subject||"");setQE({dk:key,pid,cc:cls,date})};
+  const oQE=(key,pid,cls,date)=>{const n=wNotes[`${key}:${pid}`];setQV(n&&n.subject||"");setQN(n&&n.nextTime||"");setQE({dk:key,pid,cc:cls,date})};
   // sQE saves the typed input. It preserves the existing status (so editing the
   // reason of a no-lesson period does not silently downgrade it back to a topic).
-  const sQE=()=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=storageGet(k)||emptyNote();writeRecord(k,{...ex,subject:qv,status:ex.status||""});setQE(null);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
+  // qeWrite saves the editor's topic and Next time line plus any patch, without closing it.
+  // The editor closes when focus leaves it altogether (qeBlur), not when it moves between
+  // its own fields, so the Next time line can be reached from the topic.
+  const qeWrite=(patch={})=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=storageGet(k)||emptyNote();writeRecord(k,{...ex,subject:qv,status:ex.status||"",...(qn||ex.nextTime?{nextTime:qn}:{}),...patch});setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
+  const sQE=()=>{if(!qe)return;qeWrite();setQE(null)};
+  const qeBlur=e=>{const box=e.currentTarget.closest(".qe");if(box&&e.relatedTarget&&box.contains(e.relatedTarget))qeWrite();else sQE()};
   // sNL writes the no-lesson state with an explicit subject (so the confirm-flow can pass "" rather than reusing whatever was typed as a topic).
   // toggleNL: flip this slot between a normal lesson and No-lesson WITHOUT closing the editor,
   // so a reason can be typed straight after. The typed value (qv) is preserved as subject/reason;
@@ -1926,7 +1967,8 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
     <div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginBottom:10,padding:"6px 10px",background:"var(--surface)",borderRadius:"var(--radius-md)",display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}><span><strong className="mn" style={{color:sum.p===sum.t?"var(--success)":"var(--text)"}}>{sum.p}/{sum.t}</strong> planned</span>{sum.f>0&&<span style={{color:"var(--flag)"}}>{"\u2691"} {sum.f} flagged</span>}{sum.ud>0&&<span style={{color:"var(--dz-text)"}}>{"\u26A0"} {sum.ud} unlabelled D0</span>}<span style={{marginLeft:"auto"}}><FlagHint/></span></div>
     {eng.classCodes.length>0&&<div className="np" style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c];const activeThisWeek=eng.classActiveOn(c,days[0])||eng.classActiveOn(c,days[4]);return<span key={c} className="mn" title={activeThisWeek?undefined:"This class is not active this week (semester boundary)"} onClick={()=>setSpot(spot===c?null:c)} role="button" tabIndex={0} aria-pressed={spot===c} aria-label={`${c}, ${activeThisWeek?"":"not active this week, "}${spot===c?"hide":"show"} this week's lessons`} onKeyDown={kAct(()=>setSpot(spot===c?null:c))} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"3px 10px",borderRadius:"var(--radius-xs)",fontSize:"var(--fs-caption)",fontWeight:700,cursor:"pointer",outline:spot===c?"2px solid var(--accent)":"none",opacity:activeThisWeek?1:.35}}>{c}</span>})}</div>}
     <div ref={gridRef} className="wk-grid" style={{marginBottom:10}}>{gridCells}</div>
-    {qe&&<div className="qe"><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}><div style={{display:"flex",alignItems:"center",gap:8}}><CBadge cc={qe.cc} style={{fontSize:"var(--fs-caption)",padding:"2px 6px",minWidth:0}}/><span style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)"}}>{qe.pid.toUpperCase()} {"\u00B7"} {fmtS(qe.date)}</span></div><div style={{display:"flex",gap:6}}><button className="btn-link" onMouseDown={e=>{e.preventDefault();onDet(qe.date,qe.pid)}} style={{fontSize:"var(--fs-caption)"}}>Full detail {"\u2192"}</button><button className="btn-x" onMouseDown={e=>{e.preventDefault();setQE(null)}}>{"\u2715"}</button></div></div><div style={{display:"flex",gap:6,alignItems:"center"}}><input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape"){setQE(null);focusNav()}}} onBlur={sQE} autoFocus={!coarse} placeholder={wNotes[`${qe.dk}:${qe.pid}`]?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/><button className="btn btn-sm" onMouseDown={e=>{e.preventDefault();toggleNL()}} style={{padding:"6px 10px",flexShrink:0}}>{storageGet(`note:${qe.dk}:${qe.pid}`)?.status==="nl"?"Remove no lesson":"No lesson"}</button></div></div>}
+    {qe&&<div className="qe"><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}><div style={{display:"flex",alignItems:"center",gap:8}}><CBadge cc={qe.cc} style={{fontSize:"var(--fs-caption)",padding:"2px 6px",minWidth:0}}/><span style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)"}}>{qe.pid.toUpperCase()} {"\u00B7"} {fmtS(qe.date)}</span></div><div style={{display:"flex",gap:6}}><button className="btn-link" onMouseDown={e=>{e.preventDefault();onDet(qe.date,qe.pid)}} style={{fontSize:"var(--fs-caption)"}}>Full detail {"\u2192"}</button><button className="btn-x" onMouseDown={e=>{e.preventDefault();setQE(null)}}>{"\u2715"}</button></div></div><div style={{display:"flex",gap:6,alignItems:"center"}}><input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape"){setQE(null);focusNav()}}} onBlur={qeBlur} autoFocus={!coarse} placeholder={wNotes[`${qe.dk}:${qe.pid}`]?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/><button className="btn btn-sm" onMouseDown={e=>{e.preventDefault();toggleNL()}} style={{padding:"6px 10px",flexShrink:0}}>{storageGet(`note:${qe.dk}:${qe.pid}`)?.status==="nl"?"Remove no lesson":"No lesson"}</button></div>{(()=>{const n=wNotes[`${qe.dk}:${qe.pid}`],cd=eng.cycleDayFor(qe.date),end=cd?lessonEnd(eng,qe.date,cd,qe.pid):null;
+      return canReflect(qe.cc,n,end,new Date())&&<WentRow went={n&&n.went||""} onWent={v=>qeWrite({went:v})}><input className="inp went-next" value={qn} onChange={e=>setQN(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape"){setQE(null);focusNav()}}} onBlur={qeBlur} placeholder="Next time (optional): advice for future you"/></WentRow>})()}</div>}
     {flags.length>0&&<div className="card" style={{padding:"10px 14px",marginBottom:10}}><div className="sl" style={{marginBottom:8}}>{"\u2691"} Flagged Items {"\u00B7"} <span className="mn">{flags.length}</span></div>{flags.map((f,i)=>{const clr=f.cls!=="nc"&&eng.classMap[f.cls];return<div key={i} onClick={()=>onDet(f.date,f.pid)} role="button" tabIndex={0} onKeyDown={kAct(()=>onDet(f.date,f.pid))} aria-label={`Flag: ${f.text}, ${f.cls==="nc"?"non-contact":f.cls} ${fmtS(f.date)} ${f.pid.toUpperCase()}, open Day View`} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:i>0?"1px solid var(--border)":"none",cursor:"pointer"}}><span className="mn" style={{fontSize:"var(--fs-nano)",fontWeight:700,padding:"1px 6px",borderRadius:"var(--radius-xs)",background:clr?clr.bg:"var(--nc-bg)",color:clr?clr.tx:"var(--nc-text)"}}>{f.cls==="nc"?"NC":f.cls}</span><span style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)"}}>{fmtS(f.date)} {f.pid.toUpperCase()}</span><span style={{fontSize:"var(--fs-micro)",color:"var(--text)",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.text}</span><span style={{color:"var(--flag)",fontSize:"var(--fs-micro)"}}>{"\u2691"}</span></div>})}</div>}
     <div className="card np" style={{padding:"10px 14px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6}}><div className="sl">Export week</div><div style={{display:"flex",gap:6}}>
       {(()=>{const refs=days.filter(d=>(metaCache[toDateKey(d)]||emptyMeta()).reflections);const xst=(storageGet("planner-config")||{}).exportStyle||"org";return refs.length>0?<Btn onClick={()=>{doDownload(buildReflTxt(xst,days,wl,metaCache),`reflections-${fmtISO(days[0])}.txt`)}} style={{padding:"3px 10px",fontSize:"var(--fs-micro)"}}><Icon n="note"/> Reflections ({refs.length})</Btn>:null})()}
@@ -2010,7 +2052,7 @@ function DetailedNoteEditor({dateKey,pid,onSave}){
 function ClassView({onDet,gam,years,year,onYear}){
   const eng=useCfg();const today=useToday();const[sel,setSel]=useState(eng.classCodes[0]||"");
   const[termIdx,setTermIdx]=useState(()=>{if(!eng||!eng.terms)return 0;const now=new Date();now.setHours(0,0,0,0);let ati=0;for(let i=0;i<eng.terms.length;i++){if(now<=eng.terms[i].end){ati=i;break}else ati=i}return ati});
-  const[qe,setQE]=useState(null);const[qv,setQV]=useState("");const[nr,setNR]=useState(0);
+  const[qe,setQE]=useState(null);const[qv,setQV]=useState("");const[qn,setQN]=useState("");const[nr,setNR]=useState(0);
   // Captures `qe` at mousedown time, before the input's blur handler clears it.
   // Used by the lesson row's onClick to make the same-row toggle robust.
   const qeAtMouseDownRef=useRef(null);
@@ -2031,10 +2073,13 @@ function ClassView({onDet,gam,years,year,onYear}){
   const[showFab,setShowFab]=useState(false);
   useEffect(()=>{const on=()=>setShowFab(window.scrollY>150);window.addEventListener("scroll",on,{passive:true});on();return()=>window.removeEventListener("scroll",on)},[]);
   const goToday=()=>{if(todayRef.current)todayRef.current.scrollIntoView({behavior:"smooth",block:"center"});else window.scrollTo({top:document.body.scrollHeight,behavior:"smooth"})};
-  const oQE=(i,l)=>{setQV(l.notes.subject||"");setQE({i,dk:l.dk,pid:l.pid,date:l.date});setQeMode("quick")};
+  const oQE=(i,l)=>{setQV(l.notes.subject||"");setQN(l.notes.nextTime||"");setQE({i,dk:l.dk,pid:l.pid,date:l.date});setQeMode("quick")};
   // sQE saves the typed input. It preserves the existing status (so editing the
   // reason of a no-lesson period does not silently downgrade it back to a topic).
-  const sQE=()=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=storageGet(k)||emptyNote();writeRecord(k,{...ex,subject:qv,status:ex.status||""});setQE(null);setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
+  // qeWrite / qeBlur: as in Week View, the editor closes only when focus leaves it.
+  const qeWrite=(patch={})=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=storageGet(k)||emptyNote();writeRecord(k,{...ex,subject:qv,status:ex.status||"",...(qn||ex.nextTime?{nextTime:qn}:{}),...patch});setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
+  const sQE=()=>{if(!qe)return;qeWrite();setQE(null)};
+  const qeBlur=e=>{const box=e.currentTarget.closest(".cv-ed");if(box&&e.relatedTarget&&box.contains(e.relatedTarget))qeWrite();else sQE()};
   // sNL takes an explicit subject (so the confirm-flow passes "" to mean "no reason yet").
   // toggleNL: flip between a normal lesson and No-lesson without closing the editor (same as
   // Week View), keeping the typed value as subject/reason so a reason can be typed straight after.
@@ -2092,8 +2137,8 @@ function ClassView({onDet,gam,years,year,onYear}){
         <div ref={i===nxtI?todayRef:undefined} className={`cv${empty?" empty":""}`} role="button" tabIndex={0} aria-expanded={!!isEd} aria-label={`Lesson ${i+1}, ${fmtS(l.date)}${isT?", today":""}, Day ${l.cd} ${per?per.label:l.pid}, ${isNl?"no lesson":fl?"flagged":empty?"empty":`planned: ${l.notes.subject||"no topic"}`}, ${isEd?"close":"open"} quick editor`} onKeyDown={kAct(()=>{isEd?setQE(null):oQE(i,l)})} onMouseDown={()=>{qeAtMouseDownRef.current=qe}} onClick={()=>{const wasOpen=qeAtMouseDownRef.current;qeAtMouseDownRef.current=null;if(wasOpen&&wasOpen.i===i){setQE(null)}else{oQE(i,l)}}} style={{background:isT?"var(--today-bg)":isN?"var(--surface-open)":"transparent",borderLeft:isT?"3px solid var(--today-border)":isN?"3px solid var(--accent)":"3px solid transparent"}}>
           <div style={{minWidth:40,textAlign:"center",flexShrink:0}}><div style={{fontSize:"var(--fs-emph)",fontWeight:700,color:isPast&&!isT?"var(--text-muted)":"var(--text)"}}>{l.date.getDate()}</div><div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}>{l.date.toLocaleDateString("en-NZ",{month:"short"})}</div></div>
           <div style={{flex:1,minWidth:0}}><div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-secondary)",fontWeight:600}}>{l.date.toLocaleDateString("en-NZ",{weekday:"short"})} {"\u00B7"} D{l.cd} {"\u00B7"} {per&&per.label}</span><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}>{per&&(per.start+"\u2013"+per.end)}</span>{isT&&<span style={{fontSize:"var(--fs-nano)",background:"var(--today-border)",color:"var(--on-accent)",padding:"1px 5px",borderRadius:"var(--radius-xs)",fontWeight:700}}>TODAY</span>}{isN&&<span style={{fontSize:"var(--fs-nano)",background:"var(--accent)",color:"var(--on-accent)",padding:"1px 5px",borderRadius:"var(--radius-xs)",fontWeight:700}}>NEXT</span>}</div>{empty?<div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)",fontStyle:"italic"}}>{isPast?"No notes":"Click to plan"}</div>:isNl?<div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)",fontStyle:"italic"}}>{l.notes.subject?"No lesson \u2014 "+l.notes.subject:"No lesson"}</div>:<div><div style={{fontSize:"var(--fs-body)",color:"var(--text)",fontWeight:600}}>{l.notes.subject||"(no topic)"}</div>{l.notes.notes&&<div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginTop:1}}>{notesPreview(l.notes.notes)}</div>}</div>}</div>
-          <div style={{flexShrink:0,display:"flex",alignItems:"center",gap:4}}>{fl&&<span style={{color:"var(--flag)",fontSize:"var(--fs-caption)"}}>{"\u2691"}</span>}<span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}>#{i+1}</span></div></div>
-        {isEd&&<div style={{padding:"8px 12px",background:"var(--surface-open)",borderBottom:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:6}}>
+          <div style={{flexShrink:0,display:"flex",alignItems:"center",gap:4}}>{l.notes.went&&<span className="went-tag">{wentLabel(l.notes.went)}</span>}{fl&&<span style={{color:"var(--flag)",fontSize:"var(--fs-caption)"}}>{"\u2691"}</span>}<span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}>#{i+1}</span></div></div>
+        {isEd&&<div className="cv-ed" style={{padding:"8px 12px",background:"var(--surface-open)",borderBottom:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:6}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)"}}>{per&&per.label} {"\u00B7"} {fmtS(l.date)} {"\u00B7"} #{i+1}</span>
             <div style={{display:"flex",gap:4,alignItems:"center"}}>
@@ -2121,9 +2166,10 @@ function ClassView({onDet,gam,years,year,onYear}){
             </div>
           </div>:<>
             <div style={{display:"flex",gap:6,alignItems:"center"}}>
-              <input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null)}} onBlur={sQE} autoFocus={!coarse} placeholder={lessons[qe.i]?.notes?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/>
+              <input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null)}} onBlur={qeBlur} autoFocus={!coarse} placeholder={lessons[qe.i]?.notes?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/>
               <button className="btn btn-sm" onMouseDown={e=>{e.preventDefault();toggleNL()}} style={{padding:"6px 10px",flexShrink:0}}>{lessons[qe.i]?.notes?.status==="nl"?"Remove no lesson":"No lesson"}</button>
             </div>
+            {(()=>{const end=lessonEnd(eng,l.date,l.cd,l.pid);return canReflect(sel,l.notes,end,new Date())&&<WentRow went={l.notes.went||""} onWent={v=>qeWrite({went:v})}><input className="inp went-next" value={qn} onChange={e=>setQN(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null)}} onBlur={qeBlur} placeholder="Next time (optional): advice for future you"/></WentRow>})()}
             {(l.notes.subject||l.notes.notes||l.notes.resources)&&l.notes.status!=="nl"&&<button className="btn-link" onMouseDown={e=>{e.preventDefault();const k=`note:${qe.dk}:${qe.pid}`,ex=storageGet(k)||emptyNote();if(qv!==(ex.subject||""))writeRecord(k,{...ex,subject:qv,status:ex.status||""});setShiftReason("");setShiftConfirm(true)}} style={{fontSize:"var(--fs-micro)",padding:"2px 0"}}>{"\u2913"} Lesson bumped? Push the rest forward</button>}
           </>):<DetailedNoteEditor dateKey={l.dk} pid={l.pid} onSave={()=>{setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()}}/>}
         </div>}
@@ -2718,7 +2764,7 @@ function SearchOverlay({engOf,onGo,onClose}){
       if(k.slice(0,5)==="note:"){
         const rest=k.slice(5),ci=rest.lastIndexOf(":");if(ci<0)continue;
         const dkey=rest.slice(0,ci),pid=rest.slice(ci+1),n=storageGet(k);if(!n)continue;
-        const hit=[["subject",n.subject],["notes",n.notes],["resources",n.resources]].find(f=>f[1]&&f[1].toLowerCase().includes(term));
+        const hit=[["subject",n.subject],["notes",n.notes],["resources",n.resources],["nextTime",n.nextTime]].find(f=>f[1]&&f[1].toLowerCase().includes(term));
         if(!hit)continue;
         // Each lesson is labelled through the engine for its own year: a 2026 lesson keeps its
         // 2026 class while you work in 2027. A year that is not configured gives no label.

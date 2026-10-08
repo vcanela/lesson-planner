@@ -6,6 +6,26 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.7.0 — 2026-10-09
+
+### How did it go? (lesson reflections, part 1)
+- **Lessons ask after the bell.** Once a lesson has ended, the planner asks "How did it go?" with three one-tap answers: *Went well*, *Mixed*, *Rough*. One tap is a complete reflection. After answering, an optional **Next time** line appears for a sentence of advice to future you. Tap the chosen answer again to clear it.
+- **Day View asks right under the lesson**, so an end-of-day pass is a few taps without opening anything. Answered lessons show their answer quietly in the row; opening a lesson shows the answer and the Next time line.
+- **Week View and Class View quick editors** have the same row for any lesson that has ended. The editors now stay open while you move between the topic and the Next time line, and close when you leave them.
+- **Class View shows each answer beside the lesson.**
+- **Carrot, not stick.** Lessons ask only during the week they were taught (from Monday), so a Friday catch-up covers the week and older lessons stop asking; any past lesson can still be answered. Nothing counts unanswered lessons. No lesson and non-contact periods never ask. Answering is not planning: coverage, streaks and XP are unchanged. Week View cells are unchanged.
+- End times follow the day's bells, so on an assembly day a lesson asks at its shifted end time.
+- Search also finds Next time lines.
+- Guide: a new "How did it go?" section under Planning Your Lessons.
+
+### Implementation
+- A lesson's `note:` record gains `went` ("good" | "mixed" | "rough") and `nextTime`, so sync, merge, backups and import handle them unchanged; older versions ignore them. `isEmptyRecord` counts them as content, so a lesson that was rated but never planned is not treated as a deleted note. `BACKUP_SCHEMA.md` documents both.
+- Core: `WENT`, `wentLabel`, `lessonEnd` (from that day's standard or assembly bells), `askFrom` (Monday of the current week), `canReflect` and `lessonAsks`. UI: `WentRow`, shared by Day View, Week View and Class View.
+- Design: `REFLECTION_DESIGN.md`. Part 2 (3.8.0) shows what you wrote when you next plan that class, and from 2027 what you wrote last year.
+- Tests: a unit group for the ask rule (bells, No lesson, non-contact, the week boundary, empty-record handling) and a smoke group (asks only after the bell, one tap saves without touching the plan, the Next time line saves, the Week editor asks and stays open, an answer is not planning, future lessons don't ask, Class View shows answers), plus legibility in light and dark. 289 assertions.
+
+---
+
 ## 3.6.1 — 2026-10-08
 
 ### Wording

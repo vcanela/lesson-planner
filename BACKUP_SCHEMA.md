@@ -187,6 +187,7 @@ Optional. One entry per saved lesson or B-slot note.
 
 - Slot key is `P1`-`P6` for periods or `B0/B1a/B1b/B2a/B2b/B3` for B-slots.
 - `status: "nl"` marks the slot as **No lesson** (e.g. teacher absent, class on excursion). All other status values are blank.
+- Optional, from 3.7.0: `went` (`"good"`, `"mixed"` or `"rough"`) is the answer to "How did it go?" after the lesson, and `nextTime` is the optional line written for the next time the lesson is taught. Both are absent on records written before 3.7.0 and are ignored by older versions. A record with only these fields is still a real record (not an empty tombstone), and neither field counts the lesson as planned.
 - Date format is **unpadded** (`2026-3-15`, not `2026-03-15`).
 
 ### `daymeta:<date>` entries

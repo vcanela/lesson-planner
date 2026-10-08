@@ -76,7 +76,7 @@ async function loadCore(ls){
     "NOTE_KEY_RE,META_KEY_RE,GC_HORIZON_MS,toDateKey,storageGet,storageSet,emptyNote,emptyMeta,normalizeMeta,getAllData,"+
     "flagLines,hasFlag,flagCount,hexAlpha,"+
     "SCHEMA_VERSION,yearsOf,flattenYear,pickYear,putYear,upgradeConfig,mergeConfig,writeConfig,sharedPart,stepSchoolDay,"+
-    "buildYearDraft,yearHasNotes};");
+    "buildYearDraft,yearHasNotes,WENT,wentLabel,lessonEnd,askFrom,canReflect,lessonAsks};");
   return factory(ls,stub,stub);
 }
 // fresh isolated core+storage for tests that write to localStorage
@@ -261,6 +261,34 @@ try{
     eq("auto: no FSA -> standard bells",C.asmBellsForDate(3,d,cfgNo,{bells:"auto"}),false);
     eq("auto: FSA moved onto the day via override -> assembly bells",
        C.asmBellsForDate(3,d,cfgNo,{bells:"auto",overrides:{B1a:fsa}}),true);
+  }
+
+  // ══ LESSON REFLECTIONS (3.7.0; REFLECTION_DESIGN.md) ═══════════════════════
+  G("Lesson reflections (lessonEnd / ask rule)");
+  {
+    // Mon 17 Aug 2026 is Day 1 with a Full School Assembly (assembly bells: P1 ends 09:20);
+    // Tue 18 is Day 2 on standard bells (P1 ends 09:25). The clock is Wed 19 Aug, 10:00.
+    const eng=C.makeDateEngine({cycleDays:7,anchor:{date:"2026-08-17",day:1},
+      terms:[{n:3,start:"2026-07-27",end:"2026-09-25"}],holidays:[],dayZeros:[],
+      timetable:{1:{P1:"9SCI1",B1a:{t:"b1",c:"fsa"}},2:{P1:"9SCI1"}},classes:[{code:"9SCI1",colour:"#C5D9C0"}]});
+    const at=(d,h,m)=>{const x=new Date(2026,7,d);x.setHours(h,m,0,0);return x};
+    const hm=d=>d&&`${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;
+    eq("a lesson ends on that day's bells: assembly day",hm(C.lessonEnd(eng,new Date(2026,7,17),1,"P1",{})),"9:20");
+    eq("…and a standard day",hm(C.lessonEnd(eng,new Date(2026,7,18),2,"P1",{})),"9:25");
+    const now=at(19,10,0);
+    eq("an ended, unanswered lesson this week asks",C.lessonAsks("9SCI1",{},at(19,9,25),now),true);
+    eq("a lesson that hasn't ended doesn't",C.lessonAsks("9SCI1",{},at(19,10,20),now),false);
+    eq("an answered lesson doesn't ask",C.lessonAsks("9SCI1",{went:"good"},at(19,9,25),now),false);
+    eq("…but can still be changed",C.canReflect("9SCI1",{went:"good"},at(19,9,25),now),true);
+    eq("No lesson never asks",C.canReflect("9SCI1",{status:"nl"},at(19,9,25),now),false);
+    eq("non-contact never asks",C.canReflect("nc",{},at(19,9,25),now),false);
+    eq("last week's lessons stop asking",C.lessonAsks("9SCI1",{},at(14,9,25),now),false);
+    eq("…but can still be answered",C.canReflect("9SCI1",{},at(14,9,25),now),true);
+    eq("on Saturday the whole week still asks",C.lessonAsks("9SCI1",{},at(17,9,20),at(22,11,0)),true);
+    eq("on Monday last Friday doesn't",C.lessonAsks("9SCI1",{},at(21,15,30),at(24,8,0)),false);
+    eq("a rating alone is content, not an empty note",C.isEmptyRecord("note:2026-7-19:P1",{subject:"",notes:"",resources:"",status:"",went:"mixed"}),false);
+    eq("…and so is a Next time line",C.isEmptyRecord("note:2026-7-19:P1",{nextTime:"Demo first"}),false);
+    eq("answers read as words",C.WENT.map(w=>C.wentLabel(w[0])).join(", "),"Went well, Mixed, Rough");
   }
 
   // ══ FLAGS ══════════════════════════════════════════════════════════════════
@@ -765,6 +793,32 @@ async function runSmoke(){
     G("Smoke: Class View");
     await step(D,"choosing a class lists its lessons",()=>{D.key("c");return waitFor(()=>D.q('[role=button][aria-label^="9SCI1"]')).then(ch=>D.key("Enter",ch))},()=>D.qa(".cv").some(r=>r.textContent.includes("Forces recap")));
 
+    // 3.7.0: lesson reflections. The clock is Wed 19 Aug 10:00, so today's P1 (9SCI1,
+    // ended 09:25) asks and P2 (No lesson) doesn't.
+    G("Smoke: lesson reflections");
+    await step(D,"Day View asks about the lesson that has ended, and only that one",()=>D.key("d"),()=>D.view()==="Day"&&D.qa(".went-strip").length===1);
+    {const bad=contrastFailures(D);assert("the question is legible",!bad.length,bad.slice(0,6).join("\n"))}
+    await step(D,"one tap answers it",()=>D.qa(".went-strip button").find(b=>b.textContent==="Went well").click(),
+      ()=>!D.q(".went-strip")&&D.qa(".went-tag").some(t=>t.textContent==="Went well"));
+    await step(D,"the answer is saved with the lesson, its plan untouched",null,
+      ()=>{const n=JSON.parse(D.win.localStorage.getItem("note:2026-7-19:P1")||"{}");return n.went==="good"&&n.subject==="Forces recap"});
+    await step(D,"opening the lesson shows the answer and a Next time line",()=>{const p=D.q(".pr[role=button]");D.key("Enter",p)},
+      ()=>D.q('.prd .went button[aria-pressed="true"]')&&D.q('.prd .went-next input'));
+    await step(D,"the Next time line saves",()=>{const i=D.q(".prd .went-next input");D.focus(i);D.type(i,"Demo the trolleys first");i.dispatchEvent(new D.win.FocusEvent("focusout",{bubbles:true}))},
+      ()=>(JSON.parse(D.win.localStorage.getItem("note:2026-7-19:P1")||"{}").nextTime||"")==="Demo the trolleys first");
+    D.key("Enter",D.q(".pr.exp"));
+    const wcell=lbl=>D.q(`.pb[aria-label^="${lbl}"]`);
+    await step(D,"Week View's editor asks about an ended lesson",()=>{D.key("w");return waitFor(()=>D.view()==="Week").then(()=>{const c=wcell("P1, 9SCI1, Mon, 17 Aug");D.focus(c);D.key("Enter",c)})},
+      ()=>D.q(".qe .went"));
+    await step(D,"answering an unplanned lesson there doesn't count as planning it",()=>D.qa(".qe .went button").find(b=>b.textContent==="Mixed").click(),
+      ()=>JSON.parse(D.win.localStorage.getItem("note:2026-7-17:P1")||"{}").went==="mixed"&&/4\s*\/\s*17/.test(D.text()));
+    await step(D,"the editor stays open while moving to the Next time line",()=>{const t=D.q(".qe input"),n=D.q(".qe .went-next");D.focus(t);D.focus(n)},()=>D.q(".qe")&&D.q(".qe .went-next"));
+    await step(D,"Esc closes it",()=>D.key("Escape",D.q(".qe .went-next")),()=>!D.q(".qe"));
+    await step(D,"a lesson that hasn't happened yet doesn't ask",()=>{const c=wcell("P1, 12PHY1, Thu, 20 Aug");D.focus(c);D.key("Enter",c)},()=>D.q(".qe")&&!D.q(".qe .went"));
+    D.key("Escape",D.q(".qe input"));
+    await step(D,"Class View shows the answer beside the lesson",()=>{D.key("c");return waitFor(()=>D.q('[role=button][aria-label^="9SCI1"]')).then(ch=>D.key("Enter",ch))},
+      ()=>D.qa(".cv").some(r=>r.textContent.includes("Forces recap")&&r.textContent.includes("Went well")));
+
     G("Smoke: panels");
     await step(D,"? opens the shortcuts list",()=>D.key("?"),()=>D.text().includes("Keyboard shortcuts"));
     await step(D,"Esc closes it",()=>D.key("Escape"),()=>!D.text().includes("Keyboard shortcuts"));
@@ -810,7 +864,9 @@ async function runSmoke(){
     const rgb=c=>(c.match(/\d+(\.\d+)?/g)||[]).slice(0,3).map(Number),L=([r,g,b])=>{const f=v=>(v/=255)<=.04045?v/12.92:((v+.055)/1.055)**2.4;return .2126*f(r)+.7152*f(g)+.0722*f(b)};
     const filled=D.qa(".pb").filter(p=>p.style.background&&p.style.background.startsWith("rgb"));
     assert("dark mode: planned cells are deep, with light text",filled.length>0&&filled.every(p=>{const cs=D.win.getComputedStyle(p);return L(rgb(cs.backgroundColor))<.1&&L(rgb(cs.color))>.35}),
-      filled.map(p=>D.win.getComputedStyle(p).backgroundColor+" / "+D.win.getComputedStyle(p).color).slice(0,4).join("\n")||"no planned cells found")}
+      filled.map(p=>D.win.getComputedStyle(p).backgroundColor+" / "+D.win.getComputedStyle(p).color).slice(0,4).join("\n")||"no planned cells found")
+    D.key("d");await waitFor(()=>D.view()==="Day");await sleep(120);
+    {const bad=contrastFailures(D);assert("dark mode: Day View's \"How did it go?\" is legible",!!D.q(".went-strip")&&!bad.length,bad.slice(0,6).join("\n")||"no question shown")}}
 
   // ── Run 4: two years (schema v3), frozen in Term 4 2026, driven across New Year. ─
   G("Smoke: two years");

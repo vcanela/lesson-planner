@@ -1,6 +1,6 @@
 # Lesson reflections: design
 
-Status: decisions resolved 2026-10-09 (section 9). Nothing built yet; 3.7.0 is next.
+Status: decisions resolved 2026-10-09 (section 9). Feature A built in 3.7.0; feature B (3.8.0) is next.
 
 Two features that work as a pair:
 
