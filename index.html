@@ -206,6 +206,9 @@ textarea,input,button,select{font-family:var(--font-sans)}
 .went-next{flex-basis:100%}
 .went-strip{padding:0 14px 9px 122px}
 @media(max-width:520px){.went-strip{padding-left:14px}}
+.pay{font-size:var(--fs-micro);color:var(--text-secondary);background:var(--surface);padding:5px 8px;border-radius:var(--radius-xs);line-height:1.5;display:grid;gap:2px}
+.pay-h{font-weight:600;color:var(--text)}
+.pay q{font-style:italic}
 .went-tag{font-size:var(--fs-nano);color:var(--text-muted);white-space:nowrap;flex-shrink:0}
 .qe{background:var(--card);border:1.5px solid var(--accent);border-radius:var(--radius-lg);padding:14px 16px;margin-top:12px;display:flex;flex-direction:column;gap:10px}
 .cv{display:flex;gap:12px;padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
@@ -781,7 +784,7 @@ const SCHEMA_VERSION=3;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="3.7.0";
+const APP_VERSION="3.8.0";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -1078,7 +1081,7 @@ function makeDateEngine(cfg){
   const timetableS2=cfg.timetableS2||null;
   const semesterBoundary=cfg.semesterBoundary?parseISO(cfg.semesterBoundary):null;
   const classes=(cfg.classes||[]);
-  const classMap={};classes.forEach(c=>{classMap[c.code]={bg:c.colour,tx:TEXT_FOR_BG[c.colour]||"#000",colour:c.colour,desc:c.description||"",semester:c.semester||"full",course:c.course||""}});
+  const classMap={};classes.forEach(c=>{classMap[c.code]={bg:c.colour,tx:TEXT_FOR_BG[c.colour]||"#000",colour:c.colour,desc:c.description||"",semester:c.semester||"full",course:c.course||String(c.code||"").replace(/\d+$/,"")}});
   const classCodes=classes.map(c=>c.code);
   // Pick the timetable grid that applies on `date`. If no semester boundary is set or
   // no S2 grid exists, the regular timetable is used for every date.
@@ -1198,7 +1201,15 @@ function makeDateEngine(cfg){
   // classLessons routes through classAt, so semester-bounded classes and S2 timetable
   // variants are honoured: a date that no longer carries the class produces no entry.
   function classLessons(cc,ti=0){const term=terms[ti];if(!term)return[];const ls=[];getTermWeeks(term).flat().forEach(d=>{const cd=cycleDayFor(d);if(!cd||cd===0)return;PIDS.forEach(pid=>{if(classAt(d,cd,pid)===cc)ls.push({date:new Date(d),dk:toDateKey(d),pid,cd})})});return ls}
-  function lessonContext(cc,dateKey,pid,ti=0){if(!cc||cc==="nc")return null;const ls=classLessons(cc,ti);const idx=ls.findIndex(l=>l.dk===dateKey&&l.pid===pid);if(idx===-1)return null;return{num:idx+1,total:ls.length,prev:ls[idx-1]||null,next:ls[idx+1]||null}}
+  // lessonContext: where a lesson sits in its class's term. Searches every term (until 3.8.0
+  // it only looked in the first, so the Day View line vanished from Term 2 on). tn is the
+  // term's number; earlier lists this term's previous lessons and then the previous term's,
+  // most recent first, for "Last lesson".
+  function lessonContext(cc,dateKey,pid,ti){if(!cc||cc==="nc")return null;
+    for(const t of ti==null?terms.map((_,i)=>i):[ti]){const ls=classLessons(cc,t);const idx=ls.findIndex(l=>l.dk===dateKey&&l.pid===pid);if(idx===-1)continue;
+      const earlier=ls.slice(0,idx).reverse().concat(t>0?classLessons(cc,t-1).reverse():[]);
+      return{num:idx+1,total:ls.length,ti:t,tn:terms[t].n,prev:ls[idx-1]||null,next:ls[idx+1]||null,earlier}}
+    return null}
   return{isPH,isDZ,inT,isSchoolDay,isTeachingDay,wkN,termWkN,nearestSchoolDay,cycleDayFor,getTermWeeks,classLessons,lessonContext,terms,timetable,timetableForDate,classAt,classActiveOn,semesterBoundary,classMap,classCodes,PIDS,nCycle,school:cfg.school||"My School"};
 }
 
@@ -1223,6 +1234,27 @@ function lessonEnd(eng,date,cd,pid,dm){
 const askFrom=now=>{const d=new Date(now);d.setHours(0,0,0,0);d.setDate(d.getDate()-(d.getDay()+6)%7);return d};
 const canReflect=(cc,note,end,now)=>!!(cc&&cc!=="nc"&&end&&end<=now&&!(note&&note.status==="nl"));
 const lessonAsks=(cc,note,end,now)=>canReflect(cc,note,end,now)&&!(note&&note.went)&&end>=askFrom(now);
+/* Showing the payoff (3.8.0): what you wrote comes back when you next plan. read(key) returns
+ * a stored record (storageGet in the app, a plain lookup in tests). */
+// lastTimeNote: the answer and Next time line from the last lesson with this class that was
+// actually taught (No lesson ones are skipped), or null if that lesson has neither.
+function lastTimeNote(ctx,read){if(!ctx)return null;
+  for(const l of ctx.earlier){const n=read(`note:${l.dk}:${l.pid}`);if(n&&n.status==="nl")continue;
+    return n&&(n.went||n.nextTime)?{date:l.date,went:n.went||"",nextTime:n.nextTime||""}:null}
+  return null}
+// lastYearNote: the same course's lesson a year earlier, matched by term number and lesson
+// number within the term (approximate when a term is a day longer or shorter, hence "lesson
+// 12" rather than a date). Several classes in the course: one with an answer or Next time
+// line wins, then one with a topic, then the lowest class code.
+function lastYearNote(eng,prevEng,cc,ctx,read){
+  const course=eng&&eng.classMap[cc]&&eng.classMap[cc].course;if(!prevEng||!course||!ctx)return null;
+  const ti=prevEng.terms.findIndex(t=>t.n===ctx.tn);if(ti<0)return null;
+  let best=null;
+  for(const c of prevEng.classCodes.filter(c=>prevEng.classMap[c]&&prevEng.classMap[c].course===course).sort()){
+    const l=prevEng.classLessons(c,ti)[ctx.num-1];if(!l)continue;const n=read(`note:${l.dk}:${l.pid}`)||{};const nl=n.status==="nl";
+    const hit={cls:c,tn:ctx.tn,num:ctx.num,date:l.date,subject:nl?"":(n.subject||""),went:n.went||"",nextTime:n.nextTime||"",nl};
+    const score=(hit.went||hit.nextTime?2:0)+(hit.subject?1:0);if(!best||score>best.score)best={...hit,score}}
+  return best&&best.score>0?best:null}
 //__TEST_CORE_END__  (end of the pure core sliced by tests.html; components/JSX begin below)
 
 /* ═══ UNIVERSAL GAMIFICATION ENGINE ══════════════════════════════════════
@@ -1518,6 +1550,22 @@ function ReflectionsPanel({meta,updateField,handleFocus,handleBlur,saveStatus,da
  * Reads/writes via useAutoSave on key `note:<dateKey>:<periodId>`.
  * ═══════════════════════════════════════════════════════════════════════
  */
+/* Payoff (3.8.0): "Last lesson" and, from a class's second year, "Last year", shown where you
+ * plan a lesson. Renders nothing when there is nothing to show. engFor comes from App. */
+const EngForCtx=createContext(null);
+function Payoff({cc,dk,pid,ctx:ctx0}){
+  const eng=useCfg(),engFor=useContext(EngForCtx);
+  const ctx=ctx0!==undefined?ctx0:(eng&&eng.lessonContext(cc,dk,pid));
+  const lt=lastTimeNote(ctx,storageGet);
+  const y=+String(dk).split("-")[0],ly=engFor?lastYearNote(eng,engFor(y-1),cc,ctx,storageGet):null;
+  if(!lt&&!ly)return null;
+  // Only what was written is shown, joined by middle dots; nothing is labelled as missing.
+  const parts=(...xs)=>xs.filter(Boolean).reduce((o,x,i)=>i?[...o," \u00B7 ",x]:[x],[]);
+  const nt=t=>t&&<React.Fragment key="nt">Next time: <q>{t}</q></React.Fragment>;
+  return<div className="pay">
+    {lt&&<div><span className="pay-h">Last lesson, {fmtS(lt.date)}:</span> {parts(wentLabel(lt.went),nt(lt.nextTime))}</div>}
+    {ly&&<div><span className="pay-h">Last year, {ly.cls}, Term {ly.tn} lesson {ly.num}:</span> {parts(ly.subject||(ly.nl&&"No lesson"),wentLabel(ly.went),nt(ly.nextTime))}</div>}
+  </div>}
 /* WentRow (3.7.0): "How did it go?" with three one-tap answers; tapping the chosen one
  * again clears it. children (the Next time line) show once there is an answer. The buttons
  * keep focus where it was (mousedown), so a quick editor's input doesn't blur and close. */
@@ -1542,7 +1590,7 @@ function PCard({period,dateKey,cDay,date,initOpen}){
   if(period.brk)return<div className="brk"><span>{period.label}</span><span className="mn" style={{fontSize:"var(--fs-micro)"}}>{period.start}{"\u2013"}{period.end}</span></div>;
   return<div style={{borderBottom:"1px solid var(--border)"}}><div className={`pr${open?" exp":""}`} onClick={()=>cDay&&setOpen(o=>!o)} role={cDay?"button":undefined} tabIndex={cDay?0:undefined} aria-expanded={cDay?open:undefined} aria-label={cDay?`${period.label}, ${isNc?"non-contact":cc}, ${isNl?"no lesson":has?"planned":"empty"}${data&&data.went?", "+wentLabel(data.went).toLowerCase():""}, ${open?"collapse":"expand"}`:undefined} onKeyDown={cDay?kAct(()=>setOpen(o=>!o)):undefined} style={cDay?{}:{cursor:"default"}}><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",minWidth:64,flexShrink:0}}>{period.start}</span><span className="mn" style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",minWidth:24,flexShrink:0}}>{period.label}</span><CBadge cc={cc}/><span style={{fontSize:"var(--fs-body)",color:isNl?"var(--text-muted)":"var(--text-secondary)",fontStyle:isNl?"italic":"normal",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isNl?(data.subject?"No lesson \u2014 "+data.subject:"No lesson"):data&&data.subject||""}</span>{data&&data.went&&<span className="went-tag">{wentLabel(data.went)}</span>}{fl&&<span style={{color:"var(--flag)",fontSize:"var(--fs-micro)",flexShrink:0}}>{"\u2691"}</span>}{has&&!fl&&<span style={{width:5,height:5,borderRadius:"50%",background:"var(--success)",flexShrink:0}}/>}{cDay&&<span style={{color:"var(--text-muted)",fontSize:"var(--fs-caption)"}}>{open?"\u25B2":"\u25BC"}</span>}</div>
     {asks&&!open&&<WentRow strip went="" onWent={setWent}/>}
-    {open&&data&&<div className="prd" onFocus={handleFocus} onBlur={handleBlur}><div style={{display:"grid",gap:9}}>{ctx&&<div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",background:"var(--surface)",padding:"4px 8px",borderRadius:"var(--radius-xs)",lineHeight:1.5}}>Lesson <span className="mn" style={{fontWeight:700}}>{ctx.num}/{ctx.total}</span> this term{ctx.prev&&<span> {"\u00B7"} prev: {fmtS(ctx.prev.date)}</span>}{ctx.next&&<span> {"\u00B7"} next: {fmtS(ctx.next.date)}</span>}</div>}{!isNc&&<div style={{display:"flex",gap:4}}>{["quick","detailed"].map(m=><button className="tog tog-sm" aria-pressed={mode===m} key={m} onClick={()=>setMode(m)}>{m==="quick"?"Quick":"Detailed"}</button>)}</div>}
+    {open&&data&&<div className="prd" onFocus={handleFocus} onBlur={handleBlur}><div style={{display:"grid",gap:9}}>{ctx&&<div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",background:"var(--surface)",padding:"4px 8px",borderRadius:"var(--radius-xs)",lineHeight:1.5}}>Lesson <span className="mn" style={{fontWeight:700}}>{ctx.num}/{ctx.total}</span> this term{ctx.prev&&<span> {"\u00B7"} prev: {fmtS(ctx.prev.date)}</span>}{ctx.next&&<span> {"\u00B7"} next: {fmtS(ctx.next.date)}</span>}</div>}{!isNc&&<Payoff cc={cc} dk={dateKey} pid={period.id} ctx={ctx}/>}{!isNc&&<div style={{display:"flex",gap:4}}>{["quick","detailed"].map(m=><button className="tog tog-sm" aria-pressed={mode===m} key={m} onClick={()=>setMode(m)}>{m==="quick"?"Quick":"Detailed"}</button>)}</div>}
       {(mode==="quick"||isNc)?<div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}><label className="fl" style={{marginBottom:0}}>{isNc?"Notes":isNl?"Reason (optional)":"Topic / Quick note"} <SvH saveStatus={saveStatus}/></label>{!isNc&&(nlConfirm?<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:"var(--fs-nano)",color:"var(--flag)"}}>Replace topic with No Lesson?<button className="btn-a btn-sm" onMouseDown={e=>{e.preventDefault();markNL()}}>Yes</button><button className="btn-ghost" onMouseDown={e=>{e.preventDefault();setNlConfirm(false)}}>Cancel</button></span>:<button className={`btn-ghost${isNl?" btn-danger":""}`} onMouseDown={e=>{e.preventDefault();isNl?clearNL():askNL()}}>{isNl?"\u2715 Remove no lesson":"No lesson"}</button>)}</div><AInp data={data} field={isNc?"notes":"subject"} updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph={isNc?"Meeting, marking, prep":isNl?"e.g. Class has an assembly":"e.g. Newton's 3rd Law"}/></div>:<><div><label className="fl">Topic / Subject <SvH saveStatus={saveStatus}/></label><AInp data={data} field="subject" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="e.g. Newton's 3rd Law"/></div><div><label className="flb">Notes & Tasks</label><AInp data={data} field="notes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Lesson plan, tasks. Start a line with ! to flag it" multi rows={3}/></div><div><label className="flb">Resources & Links</label><AInp data={data} field="resources" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="URLs, file names"/></div></>}
       {canR&&<WentRow went={data.went||""} onWent={setWent}><div className="went-next"><label className="flb">Next time (optional)</label><AInp data={data} field="nextTime" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Advice for the next time you teach this"/></div></WentRow>}</div></div>}</div>;
 }
@@ -1967,7 +2015,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
     <div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginBottom:10,padding:"6px 10px",background:"var(--surface)",borderRadius:"var(--radius-md)",display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}><span><strong className="mn" style={{color:sum.p===sum.t?"var(--success)":"var(--text)"}}>{sum.p}/{sum.t}</strong> planned</span>{sum.f>0&&<span style={{color:"var(--flag)"}}>{"\u2691"} {sum.f} flagged</span>}{sum.ud>0&&<span style={{color:"var(--dz-text)"}}>{"\u26A0"} {sum.ud} unlabelled D0</span>}<span style={{marginLeft:"auto"}}><FlagHint/></span></div>
     {eng.classCodes.length>0&&<div className="np" style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c];const activeThisWeek=eng.classActiveOn(c,days[0])||eng.classActiveOn(c,days[4]);return<span key={c} className="mn" title={activeThisWeek?undefined:"This class is not active this week (semester boundary)"} onClick={()=>setSpot(spot===c?null:c)} role="button" tabIndex={0} aria-pressed={spot===c} aria-label={`${c}, ${activeThisWeek?"":"not active this week, "}${spot===c?"hide":"show"} this week's lessons`} onKeyDown={kAct(()=>setSpot(spot===c?null:c))} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"3px 10px",borderRadius:"var(--radius-xs)",fontSize:"var(--fs-caption)",fontWeight:700,cursor:"pointer",outline:spot===c?"2px solid var(--accent)":"none",opacity:activeThisWeek?1:.35}}>{c}</span>})}</div>}
     <div ref={gridRef} className="wk-grid" style={{marginBottom:10}}>{gridCells}</div>
-    {qe&&<div className="qe"><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}><div style={{display:"flex",alignItems:"center",gap:8}}><CBadge cc={qe.cc} style={{fontSize:"var(--fs-caption)",padding:"2px 6px",minWidth:0}}/><span style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)"}}>{qe.pid.toUpperCase()} {"\u00B7"} {fmtS(qe.date)}</span></div><div style={{display:"flex",gap:6}}><button className="btn-link" onMouseDown={e=>{e.preventDefault();onDet(qe.date,qe.pid)}} style={{fontSize:"var(--fs-caption)"}}>Full detail {"\u2192"}</button><button className="btn-x" onMouseDown={e=>{e.preventDefault();setQE(null)}}>{"\u2715"}</button></div></div><div style={{display:"flex",gap:6,alignItems:"center"}}><input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape"){setQE(null);focusNav()}}} onBlur={qeBlur} autoFocus={!coarse} placeholder={wNotes[`${qe.dk}:${qe.pid}`]?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/><button className="btn btn-sm" onMouseDown={e=>{e.preventDefault();toggleNL()}} style={{padding:"6px 10px",flexShrink:0}}>{storageGet(`note:${qe.dk}:${qe.pid}`)?.status==="nl"?"Remove no lesson":"No lesson"}</button></div>{(()=>{const n=wNotes[`${qe.dk}:${qe.pid}`],cd=eng.cycleDayFor(qe.date),end=cd?lessonEnd(eng,qe.date,cd,qe.pid):null;
+    {qe&&<div className="qe"><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}><div style={{display:"flex",alignItems:"center",gap:8}}><CBadge cc={qe.cc} style={{fontSize:"var(--fs-caption)",padding:"2px 6px",minWidth:0}}/><span style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)"}}>{qe.pid.toUpperCase()} {"\u00B7"} {fmtS(qe.date)}</span></div><div style={{display:"flex",gap:6}}><button className="btn-link" onMouseDown={e=>{e.preventDefault();onDet(qe.date,qe.pid)}} style={{fontSize:"var(--fs-caption)"}}>Full detail {"\u2192"}</button><button className="btn-x" onMouseDown={e=>{e.preventDefault();setQE(null)}}>{"\u2715"}</button></div></div><div style={{display:"flex",gap:6,alignItems:"center"}}><input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape"){setQE(null);focusNav()}}} onBlur={qeBlur} autoFocus={!coarse} placeholder={wNotes[`${qe.dk}:${qe.pid}`]?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/><button className="btn btn-sm" onMouseDown={e=>{e.preventDefault();toggleNL()}} style={{padding:"6px 10px",flexShrink:0}}>{storageGet(`note:${qe.dk}:${qe.pid}`)?.status==="nl"?"Remove no lesson":"No lesson"}</button></div><Payoff cc={qe.cc} dk={qe.dk} pid={qe.pid}/>{(()=>{const n=wNotes[`${qe.dk}:${qe.pid}`],cd=eng.cycleDayFor(qe.date),end=cd?lessonEnd(eng,qe.date,cd,qe.pid):null;
       return canReflect(qe.cc,n,end,new Date())&&<WentRow went={n&&n.went||""} onWent={v=>qeWrite({went:v})}><input className="inp went-next" value={qn} onChange={e=>setQN(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape"){setQE(null);focusNav()}}} onBlur={qeBlur} placeholder="Next time (optional): advice for future you"/></WentRow>})()}</div>}
     {flags.length>0&&<div className="card" style={{padding:"10px 14px",marginBottom:10}}><div className="sl" style={{marginBottom:8}}>{"\u2691"} Flagged Items {"\u00B7"} <span className="mn">{flags.length}</span></div>{flags.map((f,i)=>{const clr=f.cls!=="nc"&&eng.classMap[f.cls];return<div key={i} onClick={()=>onDet(f.date,f.pid)} role="button" tabIndex={0} onKeyDown={kAct(()=>onDet(f.date,f.pid))} aria-label={`Flag: ${f.text}, ${f.cls==="nc"?"non-contact":f.cls} ${fmtS(f.date)} ${f.pid.toUpperCase()}, open Day View`} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:i>0?"1px solid var(--border)":"none",cursor:"pointer"}}><span className="mn" style={{fontSize:"var(--fs-nano)",fontWeight:700,padding:"1px 6px",borderRadius:"var(--radius-xs)",background:clr?clr.bg:"var(--nc-bg)",color:clr?clr.tx:"var(--nc-text)"}}>{f.cls==="nc"?"NC":f.cls}</span><span style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)"}}>{fmtS(f.date)} {f.pid.toUpperCase()}</span><span style={{fontSize:"var(--fs-micro)",color:"var(--text)",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.text}</span><span style={{color:"var(--flag)",fontSize:"var(--fs-micro)"}}>{"\u2691"}</span></div>})}</div>}
     <div className="card np" style={{padding:"10px 14px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6}}><div className="sl">Export week</div><div style={{display:"flex",gap:6}}>
@@ -2169,6 +2217,7 @@ function ClassView({onDet,gam,years,year,onYear}){
               <input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null)}} onBlur={qeBlur} autoFocus={!coarse} placeholder={lessons[qe.i]?.notes?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/>
               <button className="btn btn-sm" onMouseDown={e=>{e.preventDefault();toggleNL()}} style={{padding:"6px 10px",flexShrink:0}}>{lessons[qe.i]?.notes?.status==="nl"?"Remove no lesson":"No lesson"}</button>
             </div>
+            <Payoff cc={sel} dk={l.dk} pid={l.pid}/>
             {(()=>{const end=lessonEnd(eng,l.date,l.cd,l.pid);return canReflect(sel,l.notes,end,new Date())&&<WentRow went={l.notes.went||""} onWent={v=>qeWrite({went:v})}><input className="inp went-next" value={qn} onChange={e=>setQN(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null)}} onBlur={qeBlur} placeholder="Next time (optional): advice for future you"/></WentRow>})()}
             {(l.notes.subject||l.notes.notes||l.notes.resources)&&l.notes.status!=="nl"&&<button className="btn-link" onMouseDown={e=>{e.preventDefault();const k=`note:${qe.dk}:${qe.pid}`,ex=storageGet(k)||emptyNote();if(qv!==(ex.subject||""))writeRecord(k,{...ex,subject:qv,status:ex.status||""});setShiftReason("");setShiftConfirm(true)}} style={{fontSize:"var(--fs-micro)",padding:"2px 0"}}>{"\u2913"} Lesson bumped? Push the rest forward</button>}
           </>):<DetailedNoteEditor dateKey={l.dk} pid={l.pid} onSave={()=>{setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()}}/>}
@@ -3176,7 +3225,7 @@ function App(){
     }
   };
 
-  return<CfgCtx.Provider value={eng}><div style={{minHeight:"100vh",padding:16}}><div style={{maxWidth:CONTENT_MAX,margin:"0 auto"}}>
+  return<CfgCtx.Provider value={eng}><EngForCtx.Provider value={engFor}><div style={{minHeight:"100vh",padding:16}}><div style={{maxWidth:CONTENT_MAX,margin:"0 auto"}}>
     <div className="np" style={{marginBottom:compact?10:16,borderBottom:"1px solid var(--border)",paddingBottom:compact?8:14}}>
       <div style={{marginBottom:compact?6:10}}>
         <div className="hd" style={{fontSize:"var(--fs-display)",fontWeight:400,color:"var(--accent)",letterSpacing:"-.3px"}}><Icon n="term" size=".9em" style={{verticalAlign:"-.08em"}}/> {eng.school} Planner</div>
@@ -3231,7 +3280,7 @@ function App(){
     {view==="lab"&&<LabView gam={gam}/>}
     {view==="setup"&&<SettingsView key={showDraft&&yearDraft?"draft":"y"+workYear} year={workYear} years={yearList} draft={showDraft?yearDraft:null} draftYear={yearDraft&&yearDraft.year} onDraft={setYearDraft} onCreate={createYear} onDiscard={discardDraft} onPickYear={y=>{setShowDraft(false);setSelYear(y)}} onShowDraft={()=>setShowDraft(true)} onStartYear={startYear} onSave={newCfg=>{setCfg(newCfg);setGR(r=>r+1)}} displayMode={dispMode} setDisplayMode={setDispMode}/>}
     </ErrorBoundary>
-  </div></div></CfgCtx.Provider>;
+  </div></div></EngForCtx.Provider></CfgCtx.Provider>;
 }
 
 // Run schema migrations once before React mounts. migrateConfig is also called inside

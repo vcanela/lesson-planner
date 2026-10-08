@@ -76,7 +76,7 @@ async function loadCore(ls){
     "NOTE_KEY_RE,META_KEY_RE,GC_HORIZON_MS,toDateKey,storageGet,storageSet,emptyNote,emptyMeta,normalizeMeta,getAllData,"+
     "flagLines,hasFlag,flagCount,hexAlpha,"+
     "SCHEMA_VERSION,yearsOf,flattenYear,pickYear,putYear,upgradeConfig,mergeConfig,writeConfig,sharedPart,stepSchoolDay,"+
-    "buildYearDraft,yearHasNotes,WENT,wentLabel,lessonEnd,askFrom,canReflect,lessonAsks};");
+    "buildYearDraft,yearHasNotes,WENT,wentLabel,lessonEnd,askFrom,canReflect,lessonAsks,lastTimeNote,lastYearNote};");
   return factory(ls,stub,stub);
 }
 // fresh isolated core+storage for tests that write to localStorage
@@ -289,6 +289,32 @@ try{
     eq("a rating alone is content, not an empty note",C.isEmptyRecord("note:2026-7-19:P1",{subject:"",notes:"",resources:"",status:"",went:"mixed"}),false);
     eq("…and so is a Next time line",C.isEmptyRecord("note:2026-7-19:P1",{nextTime:"Demo first"}),false);
     eq("answers read as words",C.WENT.map(w=>C.wentLabel(w[0])).join(", "),"Went well, Mixed, Rough");
+  }
+
+  G("Showing the payoff (lessonContext / lastTimeNote / lastYearNote)");
+  {
+    // One 9SCI1 lesson every school day (a one-day cycle): Term 3 is Mon 21 to Fri 25 Sep
+    // 2026, Term 4 Mon 12 to Fri 16 Oct. Last year (2025) has two 9SCI classes in Term 4.
+    const e26=C.makeDateEngine({cycleDays:1,anchor:{date:"2026-09-21",day:1},holidays:[],dayZeros:[],
+      terms:[{n:3,start:"2026-09-21",end:"2026-09-25"},{n:4,start:"2026-10-12",end:"2026-10-16"}],
+      timetable:{1:{P1:"9SCI1"}},classes:[{code:"9SCI1",colour:"#C5D9C0"}]});
+    const ctx=e26.lessonContext("9SCI1","2026-9-13","P1");
+    eq("a Term 4 lesson is found (until 3.8.0 only Term 1 was searched)",ctx&&[ctx.num,ctx.total,ctx.tn].join("/"),"2/5/4");
+    eq("earlier lessons run back across the holidays",ctx&&ctx.earlier.map(l=>l.dk).join(","),"2026-9-12,2026-8-25,2026-8-24,2026-8-23,2026-8-22,2026-8-21");
+    const R=o=>k=>o[k]||null;
+    const lt=C.lastTimeNote(ctx,R({"note:2026-9-12:P1":{status:"nl"},"note:2026-8-25:P1":{subject:"Circuits",went:"rough",nextTime:"Shorter intro"}}));
+    eq("Last lesson skips a No lesson and finds the last taught one",lt&&[lt.date.getDate(),lt.went,lt.nextTime].join("|"),"25|rough|Shorter intro");
+    eq("…and shows nothing when that lesson has no answer or Next time line",C.lastTimeNote(ctx,R({"note:2026-9-12:P1":{subject:"Ohm's law"},"note:2026-8-25:P1":{went:"good"}})),null);
+    eq("the course label is derived from the code when a class has none",e26.classMap["9SCI1"].course,"9SCI");
+    const e25=C.makeDateEngine({cycleDays:1,anchor:{date:"2025-10-13",day:1},holidays:[],dayZeros:[],
+      terms:[{n:4,start:"2025-10-13",end:"2025-10-17"}],timetable:{1:{P1:"9SCI4",P2:"9SCI2"}},
+      classes:[{code:"9SCI4",colour:"#C5D9C0",course:"9SCI"},{code:"9SCI2",colour:"#B8CCE0",course:"9SCI"}]});
+    const ly=C.lastYearNote(e26,e25,"9SCI1",ctx,R({"note:2025-9-14:P1":{subject:"Circuits"},"note:2025-9-14:P2":{subject:"Circuits",went:"good",nextTime:"Use the kits"}}));
+    eq("Last year matches course, term and lesson number, preferring the class with an answer",ly&&[ly.cls,ly.tn,ly.num,ly.subject,ly.went,ly.nextTime].join("|"),"9SCI2|4|2|Circuits|good|Use the kits");
+    const ly2=C.lastYearNote(e26,e25,"9SCI1",ctx,R({"note:2025-9-14:P1":{subject:"Circuits"},"note:2025-9-14:P2":{subject:"Circuits"}}));
+    eq("…then the lowest class code",ly2&&ly2.cls,"9SCI2");
+    eq("…and nothing when last year left no trace",C.lastYearNote(e26,e25,"9SCI1",ctx,R({})),null);
+    eq("…or when there is no last year",C.lastYearNote(e26,null,"9SCI1",ctx,R({})),null);
   }
 
   // ══ FLAGS ══════════════════════════════════════════════════════════════════
@@ -807,6 +833,11 @@ async function runSmoke(){
     await step(D,"the Next time line saves",()=>{const i=D.q(".prd .went-next input");D.focus(i);D.type(i,"Demo the trolleys first");i.dispatchEvent(new D.win.FocusEvent("focusout",{bubbles:true}))},
       ()=>(JSON.parse(D.win.localStorage.getItem("note:2026-7-19:P1")||"{}").nextTime||"")==="Demo the trolleys first");
     D.key("Enter",D.q(".pr.exp"));
+    // 3.8.0: 9SCI1 is taught again in P6 today, so planning it shows what P1 left behind.
+    await step(D,"planning the class's next lesson shows Last lesson",()=>{const p=D.q('.pr[aria-label^="P6, 9SCI1"]');D.key("Enter",p)},
+      ()=>{const pay=D.q(".prd .pay");return pay&&/Last lesson, Wed,? 19 Aug/.test(pay.textContent)&&pay.textContent.includes("Went well")&&pay.textContent.includes("Demo the trolleys first")});
+    assert("the lesson's place in the term shows in Term 3 too",/Lesson \d+\/\d+ this term/.test(D.q(".prd").textContent));
+    D.key("Enter",D.q(".pr.exp"));
     const wcell=lbl=>D.q(`.pb[aria-label^="${lbl}"]`);
     await step(D,"Week View's editor asks about an ended lesson",()=>{D.key("w");return waitFor(()=>D.view()==="Week").then(()=>{const c=wcell("P1, 9SCI1, Mon, 17 Aug");D.focus(c);D.key("Enter",c)})},
       ()=>D.q(".qe .went"));
@@ -814,6 +845,8 @@ async function runSmoke(){
       ()=>JSON.parse(D.win.localStorage.getItem("note:2026-7-17:P1")||"{}").went==="mixed"&&/4\s*\/\s*17/.test(D.text()));
     await step(D,"the editor stays open while moving to the Next time line",()=>{const t=D.q(".qe input"),n=D.q(".qe .went-next");D.focus(t);D.focus(n)},()=>D.q(".qe")&&D.q(".qe .went-next"));
     await step(D,"Esc closes it",()=>D.key("Escape",D.q(".qe .went-next")),()=>!D.q(".qe"));
+    await step(D,"Week View's editor shows Last lesson too",()=>{const c=wcell("P6, 9SCI1, Wed, 19 Aug");D.focus(c);D.key("Enter",c)},()=>D.q(".qe .pay")&&D.q(".qe .pay").textContent.includes("Demo the trolleys first"));
+    D.key("Escape",D.q(".qe input"));
     await step(D,"a lesson that hasn't happened yet doesn't ask",()=>{const c=wcell("P1, 12PHY1, Thu, 20 Aug");D.focus(c);D.key("Enter",c)},()=>D.q(".qe")&&!D.q(".qe .went"));
     D.key("Escape",D.q(".qe input"));
     await step(D,"Class View shows the answer beside the lesson",()=>{D.key("c");return waitFor(()=>D.q('[role=button][aria-label^="9SCI1"]')).then(ch=>D.key("Enter",ch))},
@@ -922,6 +955,14 @@ async function runSmoke(){
     const before=anchorSel()&&anchorSel().value;
     await step(D,"changing the anchor of a year with lessons asks first",()=>{const s=anchorSel();Object.getOwnPropertyDescriptor(D.win.HTMLSelectElement.prototype,"value").set.call(s,before==="5"?"6":"5");s.dispatchEvent(new D.win.Event("change",{bubbles:true}))},()=>asked.length===1&&/already has lessons planned/.test(asked[0]));
     await step(D,"…and declining leaves the anchor as it was",null,()=>anchorSel().value===before);
+    // 3.8.0: 9SCI5 (2027) and 9SCI1 (2026) share the course 9SCI, so planning 9SCI5's first
+    // Term 1 lesson shows what was written after 9SCI1's first Term 1 lesson in 2026.
+    {const SC=await loadCore(makeLS()),two=JSON.parse(smokeTwoYears()["planner-config"]);
+      const e26=SC.makeDateEngine(SC.flattenYear(two,2026)),e27=SC.makeDateEngine(SC.flattenYear(two,2027));
+      const a=e26.classLessons("9SCI1",0)[0],b=e27.classLessons("9SCI5",0)[0];
+      D.win.localStorage.setItem(`note:${a.dk}:${a.pid}`,JSON.stringify({subject:"Lab safety",notes:"",resources:"",status:"",went:"good",nextTime:"Start with the fire blanket demo",updatedAt:new Date(2026,1,1).toISOString()}));
+      await step(D,"planning a 2027 lesson shows the same course's lesson last year",()=>{D.key("w");return waitFor(()=>D.view()==="Week").then(()=>{const c=D.qa(".pb[aria-label]").find(e=>e.getAttribute("aria-label").startsWith(`${b.pid}, 9SCI5, `)&&e.getAttribute("aria-label").includes(` ${b.date.getDate()} Feb`));D.focus(c);D.key("Enter",c)})},
+        ()=>{const p=D.q(".qe .pay");return p&&/Last year, 9SCI1, Term 1 lesson 1/.test(p.textContent)&&p.textContent.includes("Lab safety")&&p.textContent.includes("Start with the fire blanket demo")})}
     assert("no requests to other sites during the run",!D.S.blocked.length,D.S.blocked.join("\n"));
   }
 

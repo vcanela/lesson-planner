@@ -6,6 +6,23 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.8.0 — 2026-10-09
+
+### What you wrote comes back (lesson reflections, part 2)
+- **Last lesson.** When you plan a class's next lesson (Day View, or the Week or Class quick editor), a line shows what you wrote after the last lesson you taught them: "Last lesson, Wed 14 Oct: Mixed · Next time: *Do the worked example before the practice set*". Lessons marked No lesson are skipped, and it reaches back across the holidays to the end of the previous term. Nothing shows when that lesson has no answer or Next time line.
+- **Last year.** From a class's second year, a second line shows the same lesson a year earlier: the same course (9SCI1 and 9SCI5 are both 9SCI), the same term number and the same lesson number within the term, with its topic, answer and Next time line. If several of last year's classes share the course, one with an answer or Next time line wins, then one with a topic, then the lowest class code. On your data this first appears in January, once 2027 exists; it is tested now with a two-year fixture.
+- Only what was written is shown; nothing is labelled as missing.
+- **Fixed: Day View's "Lesson 12/41 this term" line disappeared from Term 2 onwards.** It only looked in the year's first term. It now finds the lesson in whichever term it falls.
+- Guide: the "How did it go?" and "Lesson context" sections describe both lines.
+
+### Implementation
+- `lessonContext` searches every term and also returns the term number (`tn`) and `earlier`: this term's previous lessons, then the previous term's, most recent first.
+- Core: `lastTimeNote(ctx, read)` and `lastYearNote(eng, prevEng, cc, ctx, read)`, both pure (`read` is `storageGet` in the app, a lookup in tests). The engine's class table derives a missing course label from the code, as the year model does.
+- UI: `Payoff`, shared by Day View and both quick editors; `EngForCtx` gives it the previous year's engine.
+- Tests: a unit group (a Term 4 lesson is found; earlier lessons cross the holidays; No lesson skipped; course, term and lesson-number matching with two candidate classes; nothing without last year) and smoke checks (Last lesson in Day View and the Week editor, the context line in Term 3, Last year when working in 2027 with a 2026 note). 302 assertions.
+
+---
+
 ## 3.7.0 — 2026-10-09
 
 ### How did it go? (lesson reflections, part 1)
