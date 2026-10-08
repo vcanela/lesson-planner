@@ -6,6 +6,20 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.4.0 — 2026-10-08
+
+### Visual audit, part 3a: typography
+- **One type family, IBM Plex, in three roles.** The app mixed Lora, Inter and JetBrains Mono, and the serif turned up on buttons, weekday headers and period labels as well as on titles. Now each face has one job: **Plex Serif** for titles and headings (the app name, the Day View date, the week label, Setup and Lab titles, panel titles); **Plex Sans** for everything you read or click; **Plex Mono** for data (class codes, bell times, period labels, cycle days, counts).
+- Period labels (P1 to P6) in Day, Week and the Setup timetable, and the class title in Class View, are now mono like the codes beside them. Weekday headers, Term View dates and buttons, the Day View Quick/Detailed toggle and the year switch are now sans.
+- **Term View fits a phone.** Plex Sans is a little wider than Inter, which pushed the Term grid 5px past a 375px screen (Inter was already 1px over) and made week rows misalign. The five day columns now always share the width equally, and on phones the cycle day sits under the date in every tile instead of wrapping in some and not others.
+- The Guide uses the same three faces.
+
+### Implementation
+- Fonts are three CSS tokens, `--font-sans`, `--font-serif` and `--font-mono`; no family is named anywhere else. The service worker precaches the new Google Fonts stylesheet (the old one is dropped with the old cache on update).
+- Tests: two source checks (no old family names; the service worker's font URL matches the page's). 257 assertions.
+
+---
+
 ## 3.3.0 — 2026-10-08
 
 ### Visual audit, part 2: hierarchy

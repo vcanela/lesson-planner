@@ -301,6 +301,13 @@ try{
     if(at<0)assert("no \\u escape sequences in JSX text (checked on the source copy; this is the precompiled build)",true);
     else{const bad=[...src.slice(at).matchAll(/>([^<>{}"'`\n]*)\\u[0-9a-fA-F]{4}/g)].map(m=>m[0].slice(0,40));
       assert("no \\u escape sequences in JSX text (they print literally)",!bad.length,bad.join("\n"))}
+    // 3.4.0: every font goes through --font-sans, --font-serif or --font-mono, and the
+    // service worker precaches the exact stylesheet the page asks for.
+    const old=(src.match(/'(Inter|Lora|JetBrains Mono)'/g)||[]);
+    assert("no font family is named outside the three IBM Plex tokens",!old.length,old.join(", "));
+    const link=(src.match(/https:\/\/fonts\.googleapis\.com\/css2\?[^"']+/)||[""])[0];
+    const sw=await(await fetch("sw.js?cb="+Date.now())).text();
+    assert("the service worker precaches the page's font stylesheet",!!link&&sw.includes(link));
   }
 
   // ══ YEAR MODEL (schema v3) ═════════════════════════════════════════════════
