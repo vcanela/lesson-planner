@@ -6,6 +6,31 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.2.1 — 2026-10-08
+
+### Visual audit, part 1: legibility
+A contrast scanner (every visible piece of text, measured against the background it actually sits on, with every translucent layer and faded ancestor composited in) found about 3,800 pieces of text under the WCAG AA line (4.5:1, or 3:1 for large text) across the six views in the four display modes. After this release: **none**, across all five themes as well (120 screens). The fixes are mostly in the colour tokens rather than in individual screens.
+- **Unplanned Week cells in dark mode are readable.** Their class code used the class's dark text colour, meant for pastel backgrounds, on the dark card: 1.5 to 2.6:1. Codes now use the class's dark tone on light themes and its pastel on dark ones.
+- **Class View's empty lessons are readable.** They were faded to half opacity, which took every word in them to about 2.4:1 (some 480 failures on its own). The italic "Click to plan" now marks them instead.
+- **The soft Light and Dark modes' secondary and muted greys** were too faint everywhere (XP figures, D-numbers, fractions, times: 2.1 to 2.8:1). Retuned within the same warm hue so each passes on every surface it sits on, today's tint included. The Bold modes already passed and barely change.
+- **Flag, error and success colours** retuned per mode (the flag orange was 3.1 to 3.4:1 as text).
+- **Theme accents in light modes.** Coffee, Cooking and Ocean use the colour-blind-safe Okabe-Ito colours, ideal for telling apart but too light for white button text in Bold light (Cooking's buttons were 3.1:1). They move to deeper shades of the same colour, as do Physics, NZ Birds and Coffee in Light, which sat at 4.4 to 4.5:1 on today's tint.
+- **Class colours as marks.** All twelve class pastels are 1.4 to 1.9:1 against white: right behind text, too faint as a small mark. Term View's dots and Lab's coverage bars are now solid in the class's dark tone on light themes and its pastel on dark ones (dots now 6.3 to 10.2:1, bars 4.1 to 8.8:1). A first version outlined the dots instead, but that made a pale class's teaching dot look almost like a free one, so solid it is: solid is teaching, hollow is free.
+- **Locked badges and achievements** faded their whole element, including the tooltip and description you need to read to unlock them. Only the icon fades now.
+- Week cells' topic and dash lines and the NL badge lost their own opacity fades (3.7 and 2.8:1).
+
+### Fixes from the audit
+- Week View showed "Term 4, Week 1" twice, 40px apart. The summary strip now starts with the planned count.
+- On a phone, Week View's day headers collided ("MonD3"): the cycle day now wraps under the date. Weekly activities in narrow cells wrap instead of clipping ("📌 Scien").
+- Class View's notes preview showed the raw flag syntax ("…F = ma ! book the trolleys…") and ran lines together: flagged lines now show the flag, lines are separated by dots.
+- Weight 800 was used for today's header but never loaded, so the browser faked it; now 700.
+
+### Tests
+- **A legibility check is now part of the smoke tests**: every view in every display mode, plus both light modes for every theme, must have no text under AA. Validated by putting one old grey back, which failed exactly the soft-Light checks. 253 assertions.
+- The test frame now switches CSS transitions off: a hidden tab does not advance transitions, so colours measured after a mode switch were frozen at their starting values, which made an early version of the check flaky.
+
+---
+
 ## 3.2.0 — 2026-10-08
 
 ### Features (year model, phase 2b: setting up a year)
