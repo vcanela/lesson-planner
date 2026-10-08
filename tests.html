@@ -734,6 +734,9 @@ async function runSmoke(){
           if(b.matches(".tog,.opt")&&!/^(true|false)$/.test(b.getAttribute("aria-pressed")||""))mute.push(name+": "+b.textContent.trim().slice(0,30))}}
       assert("every button belongs to the button system",!stray.length,stray.slice(0,12).join("\n"));
       assert("every toggle reports whether it is chosen (aria-pressed)",!mute.length,mute.slice(0,12).join("\n"))}
+    // 3.6.0: the tabs and header buttons carry drawn icons, not emoji.
+    {const pic=/\p{Extended_Pictographic}/u,bad=D.qa(".vtab,.btn-icon,.navmenu-item").filter(b=>pic.test(b.textContent)||!b.querySelector("svg.ico")).map(b=>b.title||b.textContent.trim());
+      assert("tabs and header buttons use drawn icons, not emoji",!bad.length,bad.join(", "))}
 
     G("Smoke: Week View");
     await step(D,"Week View opens on the fixture week",()=>D.key("w"),()=>D.view()==="Week"&&D.text().includes("17 Aug"));
@@ -800,7 +803,14 @@ async function runSmoke(){
   G("Smoke: dark theme");
   D=await bootApp(smokeFixture({"planner-theme":"dark"}));
   assert("app boots in dark theme",D.booted&&!D.crashed()&&D.doc.documentElement.getAttribute("data-theme")==="dark",D.S.errors.join("\n"));
-  if(D.booted&&D.S.shadowed)await visitViews(D,"dark",true);
+  if(D.booted&&D.S.shadowed){await visitViews(D,"dark",true);
+    // 3.6.0: in dark modes a planned cell is a deep version of its class colour with the
+    // pastel as text, not a pastel block on a black page.
+    D.key("w");await waitFor(()=>D.view()==="Week");await sleep(60);
+    const rgb=c=>(c.match(/\d+(\.\d+)?/g)||[]).slice(0,3).map(Number),L=([r,g,b])=>{const f=v=>(v/=255)<=.04045?v/12.92:((v+.055)/1.055)**2.4;return .2126*f(r)+.7152*f(g)+.0722*f(b)};
+    const filled=D.qa(".pb").filter(p=>p.style.background&&p.style.background.startsWith("rgb"));
+    assert("dark mode: planned cells are deep, with light text",filled.length>0&&filled.every(p=>{const cs=D.win.getComputedStyle(p);return L(rgb(cs.backgroundColor))<.1&&L(rgb(cs.color))>.35}),
+      filled.map(p=>D.win.getComputedStyle(p).backgroundColor+" / "+D.win.getComputedStyle(p).color).slice(0,4).join("\n")||"no planned cells found")}
 
   // ── Run 4: two years (schema v3), frozen in Term 4 2026, driven across New Year. ─
   G("Smoke: two years");

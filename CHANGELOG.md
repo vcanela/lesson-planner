@@ -6,6 +6,24 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.6.0 — 2026-10-08
+
+### Visual audit, part 3c: dark-mode class colours and drawn icons
+- **Class colours go deep in dark modes.** Planned lessons were light pastel blocks with dark text, the brightest things on a dark page. In Dark and Bold dark each class now keeps its hue as a deep background with its pastel as the text: 12PHY1 deep violet with lilac text, 9SCI1 deep green with pale green, and so on. Text contrast on the deep colours is 5.1 to 8.6:1. Bold dark goes a step deeper. Light modes are unchanged.
+- The striped "no lesson" cells, Term View's dots, the coverage bars and the colour picker in Setup keep the true pastel in every mode.
+- **Drawn icons replace emoji on the interface.** The six tabs, search, light/dark and Data & Sync (header and ⋯ menu), Print, Download, Copy, Reflections, the day-notes row, the "has notes" marks, locked dates, the Data panel's Connect, Download Backup, Choose File and Reload, the Setup and Data panel titles, the display-mode buttons and the calendar before the app name are now simple line icons drawn in the page. They take the text colour, so they follow the theme, the accent and dark mode, and look the same on every device. The Lab tab is a flask in every theme; the theme's own emoji stays on the Lab page title.
+- Emoji stay where they are content: themes, achievements, the morning-meeting icons, and the pin and shield that mark activities and duties.
+- The two Bold display-mode buttons now say which is which to a screen reader ("Bold light", "Bold dark").
+- Setup's timetable help says "Click a break cell" instead of "Click a B-slot cell".
+
+### Implementation
+- `darkClasses(eng, mode)` swaps each class's pair in dark modes (`bg` deep, `tx` pastel) when `engFor` builds a year's engine, so every badge, cell and chip follows. Depth comes from lightness at the class's own hue (`deepOf`), because mixing a pastel into the dark card turns it grey. Each class entry also carries `colour`, the true pastel, for the places that keep it.
+- With `--cls-tx` now the right text colour in every mode, the three dark-mode overrides that read `--cls-bg` instead are gone, along with the `--cls-bg` properties that fed them.
+- `Icon` draws from `ICONS`, eighteen 24 by 24 line drawings, with `currentColor` strokes.
+- Tests: two smoke checks (tabs and header buttons carry drawn icons, not emoji; in dark mode planned cells are deep with light text). 261 assertions.
+
+---
+
 ## 3.5.0 — 2026-10-08
 
 ### Visual audit, part 3b: buttons, corners and shadows
