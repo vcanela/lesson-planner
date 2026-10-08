@@ -602,17 +602,83 @@ function writeRecord(k,v){
     return storageSet(k,{...v,updatedAt:new Date().toISOString()});
   return storageSet(k,v);
 }
-// writeConfig: persist the config from a USER edit, stamping updatedAt so the
-// merge can converge settings across devices (newer real timestamp wins).
-function writeConfig(cfg){return storageSet("planner-config",{...cfg,updatedAt:new Date().toISOString()})}
+/* ═══ YEAR MODEL (schema v3) ═════════════════════════════════════════════
+ * See YEAR_MODEL_DESIGN.md. The stored config holds one entry per school year:
+ *
+ *   { schema:3, school, theme, userName, exportStyle, showGam, updatedAt,
+ *     years:[ { year:2026, updatedAt, cycleDays, anchor, terms, holidays, dayZeros,
+ *               timetable, timetableS2, semesterBoundary, classes, weeklyEvents,
+ *               duties }, ... ] }
+ *
+ * Every screen shows dates from one year, so nothing downstream had to learn about
+ * years: flattenYear() turns (config, year) back into the single-year shape the
+ * engine and the views have always read, and writeConfig() puts an edited
+ * single-year config back into its slot. yearsOf() also accepts an old v2 config,
+ * so a config arriving from an old backup or an out-of-date device can be read
+ * before migrateConfig has upgraded it.
+ * ═══════════════════════════════════════════════════════════════════════ */
+// The fields that describe one school year. Everything else in the config is shared.
+const YEAR_FIELDS=["cycleDays","anchor","terms","holidays","dayZeros","timetable","timetableS2","semesterBoundary","classes","weeklyEvents","duties"];
+const pickFields=(o,ks)=>{const r={};ks.forEach(k=>{if(o&&o[k]!==undefined)r[k]=o[k]});return r};
+// sharedPart: the config minus its year fields and its bookkeeping (schema, stamps).
+const sharedPart=c=>{const r={};Object.keys(c||{}).forEach(k=>{if(!YEAR_FIELDS.includes(k)&&!["years","year","schema","updatedAt"].includes(k))r[k]=c[k]});return r};
+const hasYearFields=c=>!!c&&YEAR_FIELDS.some(k=>c[k]!==undefined);
+// yearOfFields: which year a v2 (single-year) config describes. Its first term decides;
+// failing that its anchor; failing both, the current year.
+function yearOfFields(c){const t=((c&&c.terms)||[]).find(t=>t&&t.start);if(t)return parseISO(t.start).getFullYear();if(c&&c.anchor&&c.anchor.date)return parseISO(c.anchor.date).getFullYear();return new Date().getFullYear()}
+// yearsOf: the year entries of any config, v3 or v2. A v2 config reads as one year,
+// carrying the config's own updatedAt (it is the time of the last real edit).
+function yearsOf(c){if(!c)return[];if(Array.isArray(c.years))return c.years;return hasYearFields(c)?[{year:yearOfFields(c),...pickFields(c,YEAR_FIELDS),updatedAt:c.updatedAt}]:[]}
+// flattenYear: one year as the single-year config shape the engine and views read.
+// Includes `year`, so writeConfig knows where an edited copy belongs. null if absent.
+function flattenYear(c,year){const y=yearsOf(c).find(e=>e.year===year);if(!y)return null;const{updatedAt,...yf}=y;return{...sharedPart(c),...yf,year}}
+// pickYear: the configured year to work in when the date on screen is in year y. That
+// year itself if configured, else the latest configured year before it, else the
+// earliest. (Phase 1 of the design: browsing into an unconfigured year falls back
+// to a neighbour, which renders exactly as the single-year planner always did.)
+function pickYear(c,y){const ys=yearsOf(c).map(e=>e.year).sort((a,b)=>a-b);if(!ys.length)return null;if(ys.includes(y))return y;const le=ys.filter(v=>v<=y);return le.length?le[le.length-1]:ys[0]}
+// putYear: write an edited single-year config into its slot in a v3 config. Each part
+// is stamped only if it actually changed, so the per-year merge sees real edit times.
+function putYear(raw,flat,now){
+  const year=flat.year!=null?flat.year:yearOfFields(flat);
+  const yp=pickFields(flat,YEAR_FIELDS),sp=sharedPart(flat);
+  const old=yearsOf(raw).find(e=>e.year===year);
+  const yChanged=!old||JSON.stringify(pickFields(old,YEAR_FIELDS))!==JSON.stringify(yp);
+  const sChanged=JSON.stringify(sharedPart(raw))!==JSON.stringify(sp);
+  const years=yearsOf(raw).filter(e=>e.year!==year).concat([{year,...yp,updatedAt:yChanged?now:old.updatedAt}]).sort((a,b)=>a.year-b.year);
+  return{...sp,schema:3,updatedAt:sChanged?now:raw&&raw.updatedAt,years};
+}
+// writeConfig: persist a USER edit. Takes the single-year config a view or Setup was
+// editing, puts it back into the stored multi-year config, stamps what changed, and
+// returns the stored result (null if the write failed).
+function writeConfig(flat,base){
+  const raw=upgradeConfig(base||storageGet("planner-config")||{});
+  const next=putYear(raw,flat,new Date().toISOString());
+  return storageSet("planner-config",next)?next:null;
+}
+// mergeConfig: per-year last-write-wins (YEAR_MODEL_DESIGN.md section 9). Whole-record
+// merging could let an out-of-date device's single-year config delete another year;
+// merged year by year, a config can only ever overwrite the years it contains. Shared
+// settings merge by the top-level stamp, as before. preferA breaks ties towards `a`
+// (applyMerged passes the local config there); without it, ties break deterministically
+// so two devices converge on the same result.
+function mergeConfig(a,b,preferA){
+  if(!a||!b)return upgradeConfig(a||b);
+  const A=upgradeConfig(a),B=upgradeConfig(b);
+  const pick=(x,y)=>{if(!x)return y;if(!y)return x;const tx=recordTimestamp(x),ty=recordTimestamp(y);if(tx!==ty)return tx>ty?x:y;return preferA?x:pickNewer(x,y)};
+  const s=pick({...sharedPart(A),updatedAt:A.updatedAt},{...sharedPart(B),updatedAt:B.updatedAt});
+  const ys=[...new Set(A.years.concat(B.years).map(e=>e.year))].sort((x,y)=>x-y).map(yr=>pick(A.years.find(e=>e.year===yr),B.years.find(e=>e.year===yr)));
+  return{...s,schema:3,years:ys};
+}
 // Schema version for backup/sync data. Bump when the on-disk shape changes incompatibly.
 // importAllData refuses payloads whose _meta.version is higher than this constant, so an old
-// client never silently ingests data from a newer planner version.
-const SCHEMA_VERSION=2;
+// client never silently ingests data from a newer planner version, and sync goes to the
+// conflict state instead of pushing. v3 = the multi-year config (YEAR_MODEL_DESIGN.md).
+const SCHEMA_VERSION=3;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="2.23.1";
+const APP_VERSION="3.0.0";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -635,7 +701,13 @@ function importAllData(data){
     if(k==="_meta")return;
     if(k==="_config"){
       const c=data[k];
-      if(c&&typeof c==="object"&&!Array.isArray(c)){migrateConfig({...c});imported++}
+      // A backup restores the years it contains and leaves every other year alone, the
+      // same way it overwrites the notes it contains and keeps the rest. So restoring an
+      // old 2026 backup can never delete a 2027 set up since. Settings come from the backup.
+      if(c&&typeof c==="object"&&!Array.isArray(c)){
+        const inc=upgradeConfig({...c}),loc=storageGet("planner-config");
+        const keep=loc?yearsOf(upgradeConfig(loc)).filter(y=>!inc.years.some(i=>i.year===y.year)):[];
+        migrateConfig({...inc,years:keep.concat(inc.years).sort((a,b)=>a.year-b.year)});imported++}
       else skipped.push(k+" (invalid shape)");
       return;
     }
@@ -689,7 +761,7 @@ function mergeData(L,R){
   Object.keys(R||{}).forEach(k=>{if(isRec(k))keys.add(k)});
   keys.forEach(k=>{const a=L&&L[k],b=R&&R[k];out[k]=a&&!b?a:b&&!a?b:pickNewer(a,b)});
   const ca=L&&L._config,cb=R&&R._config;
-  if(ca||cb)out._config=ca&&!cb?ca:cb&&!ca?cb:pickNewer(ca,cb);
+  if(ca||cb)out._config=mergeConfig(ca,cb);
   return out;
 }
 // gcEmpties: drop records that are BOTH empty AND older than the horizon, so
@@ -732,36 +804,34 @@ function gistPullSafe(tok,gid){
 }
 
 /* ═══ CONFIG MIGRATION ═══════════════════════════════════════════════════
- * migrateConfig is run on every config load (from localStorage on startup
- * and after a backup import). Each clause handles one legacy shape and
- * upgrades it in place. New clauses get added at the bottom as the schema
+ * migrateConfig is run on every config load (from localStorage on startup,
+ * after a backup import, after a sync). It is upgradeConfig (pure: any legacy
+ * shape in, a v3 config out) plus persisting the result. Each clause handles
+ * one legacy shape. New clauses get added at the bottom as the schema
  * evolves; old ones must keep working forever, since old backups can be
  * imported at any time.
  * ═══════════════════════════════════════════════════════════════════════
  */
-function migrateConfig(cfg){
-  if(!cfg)return cfg;
+// normalizeYear: the per-year legacy clauses, applied to one year entry (a copy).
+function normalizeYear(y){
   // v1.0: holidays[] used to be plain ISO date strings. Now they are {date,name} objects.
-  if(cfg.holidays&&cfg.holidays.length>0&&typeof cfg.holidays[0]==="string")cfg.holidays=cfg.holidays.map(d=>({date:d,name:"Public Holiday"}));
+  if(y.holidays&&y.holidays.length>0&&typeof y.holidays[0]==="string")y.holidays=y.holidays.map(d=>({date:d,name:"Public Holiday"}));
   // v1.0: dayZeros[] used to be plain ISO strings. Now {date,label,source} objects.
-  if(cfg.dayZeros&&cfg.dayZeros.length>0&&typeof cfg.dayZeros[0]==="string")cfg.dayZeros=cfg.dayZeros.map(d=>({date:d,label:"Day 0",source:"manual"}));
-  // Ensure every dayZero has a `source` field (manual vs statutory) — added later, default "manual".
-  if(cfg.dayZeros)cfg.dayZeros=cfg.dayZeros.map(d=>({...d,source:d.source||"manual"}));
-  // Ensure every class has a description (added later for the timetable picker tooltip).
-  if(cfg.classes)cfg.classes=cfg.classes.map(c=>({...c,description:c.description||""}));
-  // Default theme for users who pre-date theme support.
-  if(!cfg.theme)cfg.theme="physics";
-  // School name is fixed in this single-school deployment. Overwrite any prior value
-  // so existing users see the canonical name and the input no longer needs to exist.
-  cfg.school="Dio";
+  if(y.dayZeros&&y.dayZeros.length>0&&typeof y.dayZeros[0]==="string")y.dayZeros=y.dayZeros.map(d=>({date:d,label:"Day 0",source:"manual"}));
+  // Ensure every dayZero has a `source` field (manual vs statutory), added later, default "manual".
+  if(y.dayZeros)y.dayZeros=y.dayZeros.map(d=>({...d,source:d.source||"manual"}));
+  // Every class has a description (added for the timetable picker tooltip) and, from v3,
+  // a course: the label that links the same course across years. Default: the code
+  // without its trailing class number (13DPHY3 -> 13DPHY, 7SCI2 -> 7SCI). Editable.
+  if(y.classes)y.classes=y.classes.map(c=>({...c,description:c.description||"",course:c.course||String(c.code||"").replace(/\d+$/,"")||c.code}));
   // Weekly activities array exists once the user opens 2.1.6+. Defaults to [] so users
   // who do not use this feature see no rendered chip, no clash chip, no extra UI.
-  if(!Array.isArray(cfg.weeklyEvents))cfg.weeklyEvents=[];
+  if(!Array.isArray(y.weeklyEvents))y.weeklyEvents=[];
   // v2: period keys upper-cased (p1→P1) and B-slot keys (B0, B1a, B1b, B2a, B2b, B3) seeded per cycle day.
   // Idempotent: data already in v2 shape passes through unchanged.
-  if(cfg.timetable&&typeof cfg.timetable==="object"){
-    Object.keys(cfg.timetable).forEach(d=>{
-      const day=cfg.timetable[d];
+  if(y.timetable&&typeof y.timetable==="object"){
+    Object.keys(y.timetable).forEach(d=>{
+      const day=y.timetable[d];
       if(!day||typeof day!=="object")return;
       for(let i=1;i<=6;i++){
         const lo="p"+i,up="P"+i;
@@ -775,9 +845,35 @@ function migrateConfig(cfg){
       for(let i=1;i<=6;i++){const k="P"+i;if(!day[k])day[k]="nc"}
     });
   }
+  return y;
+}
+// upgradeConfig: any config shape in, a v3 config out. Pure: never mutates its input
+// and never writes storage. A v2 config becomes one year entry that keeps the config's
+// updatedAt, because a migration is not an edit: stamping it "now" would let it beat
+// a genuinely newer edit made on another device before this one upgraded.
+function upgradeConfig(cfg){
+  if(!cfg||typeof cfg!=="object")return cfg;
+  const c=JSON.parse(JSON.stringify(cfg));
+  const years=yearsOf(c).map(y=>normalizeYear({...y}));
+  YEAR_FIELDS.forEach(k=>delete c[k]);
+  // Default theme for users who pre-date theme support.
+  if(!c.theme)c.theme="physics";
+  // School name is fixed in this single-school deployment. Overwrite any prior value
+  // so existing users see the canonical name and the input no longer needs to exist.
+  c.school="Dio";
   // mmType was per-day state in daymeta; defensively strip if it ever leaked into top-level config.
-  if("mmType" in cfg)delete cfg.mmType;
-  storageSet("planner-config",cfg);return cfg;
+  if("mmType" in c)delete c.mmType;
+  c.schema=3;c.years=years.sort((a,b)=>a.year-b.year);
+  return c;
+}
+// migrateConfig: upgrade and persist. The first time it meets a single-year (v2) config,
+// it also keeps a verbatim copy under planner-config-v2, never overwritten afterwards:
+// the escape hatch if the multi-year release ever has to be rolled back.
+function migrateConfig(cfg){
+  if(!cfg)return cfg;
+  if(!Array.isArray(cfg.years)&&hasYearFields(cfg)&&localStorage.getItem("planner-config-v2")===null)storageSet("planner-config-v2",cfg);
+  const out=upgradeConfig(cfg);
+  storageSet("planner-config",out);return out;
 }
 /* ═══ STORAGE MIGRATION ══════════════════════════════════════════════════
  * migrateStorage runs once at startup (after migrateConfig) and again after
@@ -2126,8 +2222,10 @@ function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,clash,d
  * notifies the App component (which rebuilds the date engine).
  * ═══════════════════════════════════════════════════════════════════════
  */
-function SettingsView({onSave,displayMode,setDisplayMode}){
-  const[cfg,setCfg]=useState(()=>migrateConfig(storageGet("planner-config")||{}));
+function SettingsView({year,onSave,displayMode,setDisplayMode}){
+  // Setup edits ONE year: the stored config is flattened to that year's single-year shape
+  // (which every control below already reads), and writeConfig puts it back in its slot.
+  const[cfg,setCfg]=useState(()=>{const raw=migrateConfig(storageGet("planner-config")||{});return flattenYear(raw,year)||{...sharedPart(raw),year}});
   const up=f=>{setCfg(c=>{const next={...c,...f};if(f.holidays)next.dayZeros=syncHolsToDZ(next.holidays,next.dayZeros);return next})};
   // Dirty-flush on leave. Setup is the one screen with an explicit Save button,
   // but to match the rest of the app (where navigating away never loses work) we
@@ -2139,7 +2237,7 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
   const onSaveRef=useRef(onSave);onSaveRef.current=onSave;
   const savedRef=useRef(JSON.stringify(cfg));
   useEffect(()=>{
-    const flush=()=>{const cur=JSON.stringify(cfgRef.current);if(cur===savedRef.current)return;writeConfig(cfgRef.current);savedRef.current=cur;try{if(onSaveRef.current)onSaveRef.current(cfgRef.current)}catch{}if(window._plannerSync)window._plannerSync()};
+    const flush=()=>{const cur=JSON.stringify(cfgRef.current);if(cur===savedRef.current)return;const raw=writeConfig(cfgRef.current);savedRef.current=cur;try{if(raw&&onSaveRef.current)onSaveRef.current(raw)}catch{}if(window._plannerSync)window._plannerSync()};
     const onHide=()=>{if(document.visibilityState==="hidden")flush()};
     window.addEventListener("pagehide",flush);document.addEventListener("visibilitychange",onHide);
     return()=>{window.removeEventListener("pagehide",flush);document.removeEventListener("visibilitychange",onHide);flush()};
@@ -2183,9 +2281,9 @@ function SettingsView({onSave,displayMode,setDisplayMode}){
   const addWeekly=()=>up({weeklyEvents:[...weeklyEvents,{weekday:1,slot:"B3",text:""}]});
   const updateWeekly=(i,field,val)=>{const arr=[...weeklyEvents];arr[i]={...arr[i],[field]:val};up({weeklyEvents:arr})};
   const deleteWeekly=i=>up({weeklyEvents:weeklyEvents.filter((_,j)=>j!==i)});
-  const doSave=()=>{writeConfig(cfg);savedRef.current=JSON.stringify(cfg);onSave(cfg);setSaved(true);setTimeout(()=>setSaved(false),2000);if(window._plannerSync)window._plannerSync()};
+  const doSave=()=>{const raw=writeConfig(cfg);savedRef.current=JSON.stringify(cfg);if(raw)onSave(raw);setSaved(true);setTimeout(()=>setSaved(false),2000);if(window._plannerSync)window._plannerSync()};
 
-  return<div style={{paddingBottom:120}}><div className="hd" style={{fontSize:"var(--fs-title)",fontWeight:600,color:"var(--accent)",marginBottom:14}}>{"\u2699\uFE0F"} School Setup</div>
+  return<div style={{paddingBottom:120}}><div className="hd" style={{fontSize:"var(--fs-title)",fontWeight:600,color:"var(--accent)",marginBottom:14}}>{"\u2699\uFE0F"} School Setup{cfg.year!=null&&<span className="mn" style={{fontSize:"var(--fs-caption)",fontWeight:600,color:"var(--text-muted)",marginLeft:8}}>{cfg.year}</span>}</div>
 
     <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Display</div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{[["light","\u2600\uFE0F Light"],["dark","\u{1F319} Dark"],["light-hc","\u2600\uFE0F Bold"],["dark-hc","\u{1F319} Bold"]].map(([k,lbl])=><button key={k} onClick={()=>setDisplayMode(k)} style={{padding:"7px 14px",borderRadius:"var(--radius-sm)",border:displayMode===k?"2px solid var(--accent)":"1px solid var(--border)",background:displayMode===k?"var(--accent-light)":"var(--surface)",cursor:"pointer",fontSize:"var(--fs-body)",color:displayMode===k?"var(--accent)":"var(--text-secondary)",fontWeight:displayMode===k?600:400,transition:"all .15s"}}>{lbl}</button>)}</div>
@@ -2616,6 +2714,10 @@ function HotkeyHelp({onClose}){
   </div>;
 }
 
+// loadMetaCache: every daymeta record for every school day of every configured year,
+// for the App's metaCache. (Startup, sync and import each used to inline one year's
+// version of this loop.)
+function loadMetaCache(raw){const p={};yearsOf(raw).forEach(y=>{const e=makeDateEngine(flattenYear(raw,y.year));if(!e)return;e.terms.forEach(term=>{e.getTermWeeks(term).flat().filter(e.isSchoolDay).forEach(d=>{const k=toDateKey(d),v=storageGet(`daymeta:${k}`);if(v)p[k]=normalizeMeta(v)})})});return p}
 function App(){
   const[dispMode,setDispMode]=useState(()=>{const v=localStorage.getItem("planner-theme");if(["light","dark","light-hc","dark-hc"].includes(v))return v;return "light-hc"});
   const[showSearch,setShowSearch]=useState(false);
@@ -2631,8 +2733,21 @@ function App(){
   const hotkeyRef=useRef(null);
   useEffect(()=>{const h=e=>hotkeyRef.current&&hotkeyRef.current(e);window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h)},[]);
   const today=useToday();const[cfg,setCfg]=useState(()=>migrateConfig(storageGet("planner-config")));
-  const eng=useMemo(()=>makeDateEngine(cfg),[cfg]);const planMon=useMemo(()=>getPlanMon(today),[today]);const planWN=eng?eng.wkN(planMon):8;
+  // Year model: cfg is the stored multi-year config. engFor(y) builds the single-year
+  // engine for year y, once per config. defaultYear is today's year if configured, else
+  // the nearest configured one; it drives gamification and the views that are not tied
+  // to a date on screen.
+  const engFor=useMemo(()=>{const m=new Map();return y=>{if(y==null)return null;if(!m.has(y)){const f=flattenYear(cfg,y);m.set(y,f?makeDateEngine(f):null)}return m.get(y)}},[cfg]);
+  const defaultYear=useMemo(()=>pickYear(cfg,today.getFullYear()),[cfg,today]);const todayEng=engFor(defaultYear);
+  const planMon=useMemo(()=>getPlanMon(today),[today]);const planWN=todayEng?todayEng.wkN(planMon):8;
   const[view,setView]=useState("week");const[base,setBase]=useState(planMon);const[detDate,setDetDate]=useState(null);
+  // The working year: the year of the date on screen in Week and Day View, the default
+  // year everywhere else. eng and ycfg (the single-year config handed to the views) both
+  // follow it, so every view keeps reading one year exactly as it always has.
+  const workYear=pickYear(cfg,view==="week"?base.getFullYear():view==="day"&&detDate?detDate.getFullYear():today.getFullYear());
+  const eng=engFor(workYear);
+  const ycfg=useMemo(()=>workYear!=null?flattenYear(cfg,workYear):null,[cfg,workYear]);
+  const workYearRef=useRef(workYear);workYearRef.current=workYear;
   const[prevV,setPrevV]=useState("week");const[fp,setFP]=useState(null);
   const[metaCache,setMC]=useState({});const mcR=useRef({});const[showDP,setShowDP]=useState(false);const[gr,setGR]=useState(0);
   // storageFailed: set when any storageSet call hits a quota error. The ref mirrors the state so
@@ -2663,32 +2778,29 @@ function App(){
     r.setProperty("--input-focus",ac);
   },[dispMode,cfg&&cfg.theme]);
 
-  useEffect(()=>{if(!eng)return;const p={};eng.terms.forEach(term=>{eng.getTermWeeks(term).flat().filter(eng.isSchoolDay).forEach(d=>{const k=toDateKey(d),v=storageGet(`daymeta:${k}`);if(v)p[k]=normalizeMeta(v)})});mcR.current={...mcR.current,...p};setMC(c=>({...c,...p}))},[eng]);
+  useEffect(()=>{if(!cfg)return;const p=loadMetaCache(cfg);mcR.current={...mcR.current,...p};setMC(c=>({...c,...p}))},[cfg]);
   // refreshFromLocal: after localStorage changes (a merge sync), rebuild the
   // config state, the daymeta cache, and bump the render counter. The engine is
   // rebuilt from the freshly-stored config so term walks use the right boundaries.
   const refreshFromLocal=useCallback(()=>{
     const nc=migrateConfig(storageGet("planner-config"));
-    if(nc)setCfg(nc);
-    const freshEng=nc?makeDateEngine(nc):null;
-    if(freshEng){
-      const p={};
-      freshEng.terms.forEach(term=>{freshEng.getTermWeeks(term).flat().filter(freshEng.isSchoolDay).forEach(d=>{const k=toDateKey(d),v=storageGet(`daymeta:${k}`);if(v)p[k]=normalizeMeta(v)})});
-      mcR.current=p;setMC(p);
-    }
+    if(nc){setCfg(nc);const p=loadMetaCache(nc);mcR.current=p;setMC(p)}
     setGR(r=>r+1);
   },[]);
   // applyMerged: write the merged blob M to localStorage. Records dropped by the
   // GC (empty AND old, so present locally but absent from M) are removed; the rest
   // are written with storageSet so their updatedAt is preserved (NOT restamped). _config
-  // is adopted only when M's config has a strictly newer real timestamp, so a
-  // legacy/epoch config can never clobber locally-edited settings on a tie.
+  // is merged into the local config part by part (shared settings, then each year):
+  // a part from M is adopted only when its real timestamp is strictly newer, so a
+  // legacy/epoch config can never clobber locally-edited settings on a tie. Per part,
+  // not whole: a newer year from another device must land even when the shared
+  // settings' stamp is unchanged.
   const applyMerged=useCallback(M=>{
     const isRec=k=>k.startsWith("note:")||k.startsWith("daymeta:");
     Object.keys(localStorage).forEach(k=>{if(isRec(k)&&!(k in M))localStorage.removeItem(k)});
     Object.keys(M).forEach(k=>{if(isRec(k))storageSet(k,M[k])});
     const localCfg=storageGet("planner-config");
-    if(M._config&&recordTimestamp(M._config)>recordTimestamp(localCfg))storageSet("planner-config",M._config);
+    if(M._config){const next=localCfg?mergeConfig(localCfg,M._config,true):upgradeConfig(M._config);if(JSON.stringify(next)!==JSON.stringify(localCfg))storageSet("planner-config",next)}
   },[]);
   // syncNow: the single convergence operation, replacing the old push and pull.
   // Read (safe) -> version guard -> merge per record -> GC old empties -> apply
@@ -2767,13 +2879,17 @@ function App(){
   },[]);
 
   const themeKey=cfg&&cfg.theme||"physics";
-  const gam=useMemo(()=>({...compGam(eng,planWN,themeKey),showGam:cfg?.showGam!==false}),[gr,view,planWN,eng,themeKey,cfg]);
+  // Gamification follows the default year, not the working year, so XP and the week bar
+  // do not change just because you browsed into another year.
+  const gam=useMemo(()=>({...compGam(todayEng,planWN,themeKey),showGam:cfg?.showGam!==false}),[gr,view,planWN,todayEng,themeKey,cfg]);
   const updateMeta=useCallback((key,ch)=>{const cur=mcR.current[key]||emptyMeta(),u={...cur,...ch};mcR.current={...mcR.current,[key]:u};setMC(c=>({...c,[key]:u}));writeRecord(`daymeta:${key}`,u);triggerSync()},[triggerSync]);
   // onUpdateCfg: lets a non-Settings view (e.g. DayView's "Save to D{cd}") write
   // a partial change into cfg.timetable. Persists to localStorage and bumps the
   // gamification refresh counter so any view that reads through eng picks up the
   // new shape on the next render.
-  const onUpdateCfg=useCallback(updater=>{setCfg(prev=>{const next=updater(prev);writeConfig(next);return next});setGR(r=>r+1);triggerSync()},[triggerSync]);
+  // The updater receives the working year's single-year config, as views always assumed;
+  // writeConfig puts the result back into that year's slot.
+  const onUpdateCfg=useCallback(updater=>{setCfg(prev=>{const flat=flattenYear(prev,workYearRef.current);if(!flat)return prev;return writeConfig(updater(flat),prev)||prev});setGR(r=>r+1);triggerSync()},[triggerSync]);
   const onMS=useCallback((key,m)=>{mcR.current={...mcR.current,[key]:m};setMC(c=>({...c,[key]:m}));triggerSync()},[triggerSync]);
   const goDay=(d,pid)=>{setPrevV(view);setDetDate(d);setFP(pid||null);setView("day")};
   const goWk=d=>{setBase(d);setView("week")};
@@ -2781,13 +2897,14 @@ function App(){
   // handleImport runs after a backup-file import lands. We build a fresh engine
   // from the just-imported config rather than using the closed-over `eng` (which
   // still reflects the pre-import config because setCfg has not committed yet).
-  const handleImport=useCallback(()=>{const nc=migrateConfig(storageGet("planner-config"));if(nc)setCfg(nc);const freshEng=nc?makeDateEngine(nc):eng;const p={};if(freshEng)freshEng.terms.forEach(term=>{freshEng.getTermWeeks(term).flat().filter(freshEng.isSchoolDay).forEach(d=>{const k=toDateKey(d),v=storageGet(`daymeta:${k}`);if(v)p[k]=normalizeMeta(v)})});mcR.current=p;setMC(p);setGR(r=>r+1);triggerSync()},[eng,triggerSync]);
+  const handleImport=useCallback(()=>{const nc=migrateConfig(storageGet("planner-config"));if(nc){setCfg(nc);const p=loadMetaCache(nc);mcR.current=p;setMC(p)}setGR(r=>r+1);triggerSync()},[triggerSync]);
   const onWE=isWE(today);
 
   useEffect(()=>{if(!cfg){
     if(new Date().getFullYear()>SEED_YEAR)console.warn(`Lesson planner: the built-in default calendar is for ${SEED_YEAR}; seeding this fresh profile with ${SEED_YEAR} dates. Update DEFAULT_YEAR_SEED in index.html for the current year (see its comment).`);
     // Deep-clone so the shared constant is never mutated by later edits to cfg.
-    const blank=JSON.parse(JSON.stringify(DEFAULT_YEAR_SEED));storageSet("planner-config",blank);setCfg(blank)}},[cfg]);
+    // upgradeConfig deep-copies, so the shared constant is never mutated by later edits.
+    const blank=upgradeConfig(DEFAULT_YEAR_SEED);storageSet("planner-config",blank);setCfg(blank)}},[cfg]);
   if(!cfg||!eng)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>Loading...</div>;
 
   // ── Compact phone nav (v2.13.0): below 800px the view tabs shrink to icons (the active
@@ -2867,12 +2984,12 @@ function App(){
     {showHelp&&<HotkeyHelp onClose={()=>setShowHelp(false)}/>}
     {showDP&&<DataPanel onClose={()=>setShowDP(false)} onImported={handleImport} onSync={syncNow} onSyncConn={(tok,gid)=>{setGhToken(tok);setGhGistId(gid);triggerSync()}} onSyncDisc={()=>{setGhToken("");setGhGistId("");clearTimeout(syncTimer.current);setSyncSt("idle");setLastSync(null)}} lastSync={lastSync} token={ghToken} gistId={ghGistId} setToken={setGhToken} setGistId={setGhGistId}/>}
     <ErrorBoundary key={view}>
-    {view==="term"&&<TermView onDay={goDay} onWk={goWk} metaCache={metaCache} gam={gam} cfg={cfg}/>}
-    {view==="week"&&<WeekView base={base} setBase={setBase} onDet={(d,pid)=>goDay(d,pid)} metaCache={metaCache} updateMeta={updateMeta} gam={gam} onUpdateCfg={onUpdateCfg} cfg={cfg}/>}
-    {view==="day"&&detDate&&<DayView date={detDate} setDate={d=>{setDetDate(d);setFP(null);setView("day")}} onBack={()=>{setFP(null);setGR(r=>r+1);setView(prevV==="day"?"week":prevV)}} metaCache={metaCache} onMS={onMS} fp={fp} gam={gam} onUpdateCfg={onUpdateCfg} cfg={cfg}/>}
+    {view==="term"&&<TermView onDay={goDay} onWk={goWk} metaCache={metaCache} gam={gam} cfg={ycfg}/>}
+    {view==="week"&&<WeekView base={base} setBase={setBase} onDet={(d,pid)=>goDay(d,pid)} metaCache={metaCache} updateMeta={updateMeta} gam={gam} onUpdateCfg={onUpdateCfg} cfg={ycfg}/>}
+    {view==="day"&&detDate&&<DayView date={detDate} setDate={d=>{setDetDate(d);setFP(null);setView("day")}} onBack={()=>{setFP(null);setGR(r=>r+1);setView(prevV==="day"?"week":prevV)}} metaCache={metaCache} onMS={onMS} fp={fp} gam={gam} onUpdateCfg={onUpdateCfg} cfg={ycfg}/>}
     {view==="class"&&<ClassView onDet={(d,pid)=>goDay(d,pid)} gam={gam}/>}
     {view==="lab"&&<LabView gam={gam}/>}
-    {view==="setup"&&<SettingsView onSave={newCfg=>{setCfg(newCfg);setGR(r=>r+1)}} displayMode={dispMode} setDisplayMode={setDispMode}/>}
+    {view==="setup"&&<SettingsView year={defaultYear} onSave={newCfg=>{setCfg(newCfg);setGR(r=>r+1)}} displayMode={dispMode} setDisplayMode={setDispMode}/>}
     </ErrorBoundary>
   </div></div></CfgCtx.Provider>;
 }

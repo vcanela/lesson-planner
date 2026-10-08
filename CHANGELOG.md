@@ -6,6 +6,32 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.0.0 — 2026-10-08
+
+### Major: one config entry per school year (phase 1 of YEAR_MODEL_DESIGN.md)
+
+The config described exactly one school year, and lesson notes never record their class: every view works it out from the date, the anchor and the current timetable. So setting up 2027 by editing Setup would either have made a year of 2026 plans vanish from every view (dates outside the new terms) or, worse, re-labelled them with 2027's classes (the 2027 timetable read for 2026 dates). Nothing would have been deleted; the model simply had no way to address last year.
+
+The config now holds a `years` list, one entry per calendar year (terms, holidays, Day 0s, anchor, cycle length, timetables, classes, weekly events, duties), with display and identity settings shared at the top. Lesson notes and day records are unchanged: their date keys were already unique across years, so **no lesson data is migrated at all**.
+
+**Visible change: none, apart from the year in Setup's heading.** This release puts the risky part (the config migration and the sync changes) into daily use while 2026 is still the only year. Setting up a new year, year switchers and the rest come in phase 2.
+
+`SCHEMA_VERSION` 2 → 3, hence the major version, as with 2.0.0. **Open the planner online once on every device.** A device still on 2.x stops syncing (conflict state) rather than overwriting anything, and resumes once it has updated. Taking a backup from the Data panel first is a good idea.
+
+### How it works
+- **One year per screen.** Every screen shows dates from one year, so the date engine stays single-year and unchanged; the App builds it for the *working year*, the year of the date on screen in Week and Day View, today's year elsewhere. `flattenYear()` turns the stored config back into the single-year shape every view already read, and `writeConfig()` puts edits back into their year's slot, stamping only the parts that actually changed. Gamification follows today's year, so XP does not change as you browse.
+- **Migration** (`migrateConfig`, now `upgradeConfig` plus persisting) wraps the old config as one year, taken from its first term. Classes gain a `course` label, defaulting to the code without its class number (`13DPHY3` → `13DPHY`, `7SCI2` and `7SCI8` → `7SCI`), which will link the same course across years. The year keeps the old config's timestamp: a migration is not an edit. A verbatim copy of the old config is kept once under `planner-config-v2`, as the way back if this release ever had to be rolled back.
+- **Sync merges the config year by year.** It used to merge the config as one record, newest whole copy wins. In the changeover window that could delete a year: add 2027 on the laptop, edit 2026 on an iPad still running 2.x, and the iPad's whole config, being newer, wins. Merged per year, a config can only overwrite the years it contains. Adopting the merged config locally is per part too, with ties keeping the local copy.
+- **Import restores the years a backup contains and keeps the others**, as it already did for notes. Restoring an old backup can no longer delete a newer year.
+- Browsing into a year that is not configured (say January 2027, today) falls back to the nearest configured year, which renders exactly as before: an empty holiday week.
+
+### Implementation
+- New pure helpers in the test core: `yearsOf` (reads v3 and v2 alike), `flattenYear`, `pickYear`, `putYear`, `upgradeConfig`, `normalizeYear` (the old migration clauses, now per year), `mergeConfig`. `loadMetaCache` replaces three copies of the daymeta pre-load loop and now covers every configured year. `BACKUP_SCHEMA.md` moves to v3 (the single-year form stays accepted for hand-written backups), and `YEAR_MODEL_DESIGN.md` is corrected where building it proved the draft wrong: do not restamp on migration, and the two further doors (local adoption, import) above.
+- Tests: 182 assertions (from 119). 46 new unit tests cover the migration, reading and writing a year, the per-year merge including the changeover race, import, and the exact rollover failure kept as a permanent regression test (a 2026 date must keep its 2026 class after 2027 is added; 2027 must count from its own anchor, deliberately Day 4). Smoke tests now check that the real app migrates the old-shape fixture on boot, and a fourth boot drives a two-year config across New Year with the week keys. Both were validated against deliberate breakage: whole-record merging fails the changeover-race test; pinning the engine to one year fails the two 2027 checks.
+- Differential test on real data: the May 2026 backup (261 lessons) imported through the new code gives the same cycle day and the same class as the old engine on every one of 1,038 period slots across 173 school days of 2026, with all 261 lessons carried over.
+
+---
+
 ## 2.23.1 — 2026-10-08
 
 ### Tests

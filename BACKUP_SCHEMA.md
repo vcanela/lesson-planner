@@ -1,23 +1,26 @@
-# Backup file schema (v2)
+# Backup file schema (v3)
 
 This is the authoritative shape of a Lesson Planner backup. It exists so anyone (including a third-party LLM) can produce a backup from a school timetable without guessing.
 
-The planner accepts JSON files matching this shape via **Setup → Data → Import**. v1 backups still load cleanly: they are upgraded to v2 in place on import.
+The planner accepts JSON files matching this shape via **Setup → Data → Import**. v1 and v2 backups still load cleanly: they are upgraded to v3 on import.
+
+**What changed in v3 (planner 3.0.0):** the config holds one entry per school year, so last year's lessons keep last year's timetable and classes after a new year is set up. See `YEAR_MODEL_DESIGN.md`. If you are writing a backup by hand for a single year, the simpler v2 `_config` (year fields at the top level) is still accepted and is read as one year; see "Single-year form" below.
 
 ## Top level
 
 ```json
 {
-  "_meta":   { "synced": "<ISO timestamp>", "version": 2 },
+  "_meta":   { "synced": "<ISO timestamp>", "version": 3 },
   "_config": { /* config object, see below */ },
   "note:<date>:<slot>":   { "subject": "...", "notes": "...", "resources": "...", "status": "" },
   "daymeta:<date>":       { "dayNotes": "...", "day0label": "...", "reflections": "...", "overrides": {} }
 }
 ```
 
-- `_meta.version` **must** be `2`. v1 backups (version `1`) are accepted and upgraded; anything higher than `2` is refused.
+- `_meta.version` should be `3`. Versions `1` and `2` are accepted and upgraded; anything higher than `3` is refused.
 - `note:` and `daymeta:` entries are optional. A fresh setup only needs `_meta` and `_config`.
 - A backup with only `_config` is a "blank slate": classes + timetable + duties, no historical lesson notes.
+- **Importing restores the years the backup contains and leaves every other year alone**, the same way notes in the backup overwrite their dates and other dates are kept. Restoring an old 2026 backup never deletes a 2027 set up since. Shared settings (theme, name and so on) come from the backup.
 
 ## Date formats
 
@@ -28,15 +31,28 @@ Two formats are used, and they are not interchangeable:
 
 ## `_config`
 
-Single object with these top-level keys.
+Shared settings at the top level, plus a `years` list with one entry per school year.
 
 | Key | Type | Notes |
 |---|---|---|
+| `schema` | number | `3`. Set by the planner; optional when writing by hand. |
 | `school` | string | Always `"Dio"` for this deployment. Overwritten on load. |
 | `userName` | string | Optional teacher name, e.g. `"Andrew Blackstone"`. |
-| `cycleDays` | number | Cycle length. Usually `7` at Dio. |
 | `theme` | string | One of `"physics"`, `"coffee"`, `"cooking"`, `"ocean"`, `"birds"`. |
 | `exportStyle` | string | `"plain"` or `"org"`. |
+| `showGam` | boolean | Optional. `false` hides the gamification. |
+| `updatedAt` | string | ISO timestamp of the last edit to the shared settings. Used by sync; optional when writing by hand. |
+| `years` | array | One entry per school year, in year order. See below. |
+
+### `years[]` entries
+
+Each entry describes one calendar year. The year is the key: a date belongs to the entry whose `year` equals its calendar year.
+
+| Key | Type | Notes |
+|---|---|---|
+| `year` | number | The calendar year, e.g. `2026`. |
+| `updatedAt` | string | ISO timestamp of the last edit to this year. Sync merges years one by one, newest wins. Optional when writing by hand. |
+| `cycleDays` | number | Cycle length. Usually `7` at Dio. |
 | `terms` | array | See below. |
 | `holidays` | array | See below. |
 | `dayZeros` | array | See below. |
@@ -46,6 +62,11 @@ Single object with these top-level keys.
 | `timetable` | object | The 12-slot weekly grid, keyed by cycle day. |
 | `timetableS2` | object | Optional. Second timetable grid that applies on or after `semesterBoundary`. Same shape as `timetable`. Omit when the schedule does not change mid-year. |
 | `semesterBoundary` | string | Optional ISO date. The start of Semester 2. Pre-boundary dates use `timetable`; post-boundary dates use `timetableS2` if present, else fall back to `timetable`. Also drives the `classes[].semester` filter. |
+| `weeklyEvents` | array | Optional. Activities that follow the weekday rather than the cycle, e.g. `{ "weekday": 3, "slot": "B2a", "text": "Science club" }`. |
+
+### Single-year form (v2, still accepted)
+
+A `_config` with no `years` list and the year fields above (`terms`, `anchor`, `timetable`, `classes` and so on) at the top level is read as a single year. The year is taken from the first term's start date. This is the easiest form to write by hand, and the planner converts it to the `years` form on import.
 
 ### `terms`
 
@@ -96,7 +117,8 @@ Pins one date to one cycle day. The planner walks the calendar from the anchor (
 - `colour` is one of the 12 Okabe-Ito-derived hex codes accepted by the planner:
   `#E8C8C0 #EDD9B5 #C5D9C0 #B8CCE0 #D0C0E0 #D4B8A0 #A8C8C0 #E0C0D0 #C0C8A8 #E0D0A8 #B0C0D8 #D8B8B8`.
   Reuse is allowed but the colour picker dims used colours.
-- `semester` is optional, one of `"full"` / `"S1"` / `"S2"`. Defaults to full-year. When set to `"S1"` the class is active only before `cfg.semesterBoundary`; `"S2"` only on or after. If no `semesterBoundary` is set, all classes are treated as full-year regardless. Lesson notes from past dates stay reachable even after a class is out of its active range.
+- `semester` is optional, one of `"full"` / `"S1"` / `"S2"`. Defaults to full-year. When set to `"S1"` the class is active only before the year's `semesterBoundary`; `"S2"` only on or after. If no `semesterBoundary` is set, all classes are treated as full-year regardless. Lesson notes from past dates stay reachable even after a class is out of its active range.
+- `course` is optional: a short label shared by the same course across years, so this year's `9SCI5` and last year's `9SCI3` are known to be the same course. Defaults to the code without its trailing class number (`9SCI3` → `9SCI`, `13DPHY3` → `13DPHY`).
 
 ### `duties`
 
@@ -187,30 +209,35 @@ Optional. One per date that has any per-day metadata.
 
 ```json
 {
-  "_meta": { "synced": "2026-05-08T00:00:00.000Z", "version": 2 },
+  "_meta": { "synced": "2026-05-08T00:00:00.000Z", "version": 3 },
   "_config": {
     "school": "Dio",
     "userName": "Jane Doe",
-    "cycleDays": 7,
     "theme": "coffee",
     "exportStyle": "plain",
-    "anchor": { "date": "2026-04-20", "day": 1 },
-    "terms":    [ { "n": 1, "start": "2026-01-27", "end": "2026-04-03" } ],
-    "holidays": [],
-    "dayZeros": [],
-    "classes":  [ { "code": "10PHY", "description": "Year 10 Physics", "colour": "#FBE2C2" } ],
-    "duties":   [],
-    "timetable": {
-      "1": {
-        "P1": "10PHY", "P2": "nc", "P3": "nc", "P4": "nc", "P5": "nc", "P6": "nc",
-        "B0": null, "B1a": null, "B1b": null, "B2a": null, "B2b": null, "B3": null
+    "years": [
+      {
+        "year": 2026,
+        "cycleDays": 7,
+        "anchor": { "date": "2026-04-20", "day": 1 },
+        "terms":    [ { "n": 1, "start": "2026-01-27", "end": "2026-04-03" } ],
+        "holidays": [],
+        "dayZeros": [],
+        "classes":  [ { "code": "10PHY", "description": "Year 10 Physics", "colour": "#B8CCE0", "course": "10PHY" } ],
+        "duties":   [],
+        "timetable": {
+          "1": {
+            "P1": "10PHY", "P2": "nc", "P3": "nc", "P4": "nc", "P5": "nc", "P6": "nc",
+            "B0": null, "B1a": null, "B1b": null, "B2a": null, "B2b": null, "B3": null
+          }
+        }
       }
-    }
+    ]
   }
 }
 ```
 
-This loads on a fresh planner with one class, one cycle day populated, no historical notes.
+This loads on a fresh planner with one class, one cycle day populated, no historical notes. The same file with the `years[0]` fields moved to the top level of `_config` (and no `years`) is the single-year form, and loads identically.
 
 ## Things that look reasonable but break the planner
 
@@ -226,7 +253,7 @@ This loads on a fresh planner with one class, one cycle day populated, no histor
 
 The planner refuses to import:
 
-- a backup whose `_meta.version` is greater than `2`
+- a backup whose `_meta.version` is greater than `3`
 - a non-object payload
 - entries with keys outside the `_config | note:<date>:<slot> | daymeta:<date>` allowlist (those are reported as "skipped" but the rest still imports)
 - entries whose value is not a non-array object

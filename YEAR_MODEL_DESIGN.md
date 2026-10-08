@@ -1,6 +1,6 @@
 # Year Model Design (multi-year config)
 
-Status: DRAFT, decisions resolved 2026-10-08 (section 14). No code written yet.
+Status: decisions resolved 2026-10-08 (section 14). Phase 1 built in 3.0.0 (section 13); phases 2 to 4 not started.
 Target: the planner moves into 2027 with 2026 intact and correctly labelled, and setting up a new year becomes a short guided task. Needed before the 2027 setup in late January; phase 1 should ship early in Term 4 2026.
 
 ## 1. The problem, concretely
@@ -84,7 +84,7 @@ Runs in `migrateConfig`, which already runs on every config load and after every
 1. If `years` is absent: build one entry from the per-year fields, with `year` taken from the first term's start date (2026), and remove those fields from the top level. Set `schema: 3`.
 2. Derive each class's `course` by stripping the trailing class number from the code: `9SCI3 -> 9SCI`, `13DPHY3 -> 13DPHY`, `11PSC7 -> 11PSC`; `7SCI2` and `7SCI8` both become `7SCI`. Editable in Setup.
 3. Before writing, keep a one-time copy of the v2 config under `planner-config-v2`, never overwritten. If the release ever has to be rolled back, that copy restores the old shape in one step.
-4. Stamp the new config and its year entry with the current time (section 9 explains why this matters).
+4. **Do not restamp.** The year entry keeps the v2 config's `updatedAt`. (Corrected during phase 1; the first draft said to stamp it with the current time.) A migration is not an edit: stamping it "now" would let the migrated config beat a genuinely newer edit made on another device before this one upgraded, and silently discard it. What protects a new year during the transition is the per-year merge in section 9, not the stamp.
 
 Notes and daymeta are untouched; their date keys are already unique across years.
 
@@ -148,6 +148,11 @@ mergeConfig(a, b):
 
 An old-shape config can now only ever overwrite its own year, never remove another. Unstamped years count as epoch and lose to any stamped edit, as records do today. It also fixes an everyday case: editing the 2027 timetable on one device while correcting a 2026 Day 0 on another, both edits now survive.
 
+Two more doors to the same problem, found while building phase 1:
+
+- **Adopting the merged config locally.** `applyMerged` used to adopt the merged config only if its top-level timestamp was strictly newer than the local one, so that an unstamped config could never clobber local settings on a tie. Per-year merging breaks that test: a merged config can carry a newer year from another device while its top-level stamp is unchanged, and that year would never land. Now the local config and the merged one are merged again part by part, with ties going to the local side: newer parts are adopted, ties keep what is local.
+- **Importing a backup.** Import used to replace the config wholesale, so restoring an old 2026 backup after 2027 exists would delete 2027. Import now restores the years the backup contains and keeps the rest, the same way it overwrites the notes it contains and keeps other dates. Shared settings come from the backup, as before.
+
 For the release notes and the guide: open the planner online once on every device after the update. Until a device has updated, it stops syncing (conflict state) rather than doing harm.
 
 ## 10. What this enables next
@@ -182,7 +187,7 @@ Smoke (a new two-year fixture):
 
 ## 13. Rollout
 
-1. **Phase 1, model and migration (early Term 4).** Sections 5, 6, 7 (engine and working year only) and 9, with no visible change beyond a year label. This puts the risky parts, migration and sync, into daily use for weeks while 2026 is still the only year and the stakes are lowest. Take a backup from the Data panel before updating. `BACKUP_SCHEMA.md` moves to v3. Roughly two working sessions.
+1. **Phase 1, model and migration (early Term 4). Built in 3.0.0.** Sections 5, 6, 7 (engine and working year only) and 9, with no visible change beyond a year label in Setup. When the date on screen falls in a year that is not configured, phase 1 works in the nearest configured year instead, which renders exactly as the single-year planner always has (an empty holiday week); the "not set up yet" card arrives with phase 2. Day View Prev/Next and search still work within one year until phase 2. This puts the risky parts, migration and sync, into daily use for weeks while 2026 is still the only year and the stakes are lowest. Take a backup from the Data panel before updating. `BACKUP_SCHEMA.md` moves to v3. Roughly two working sessions.
 2. **Phase 2, the year UI (before Term 4 ends on 8 December).** Setup selector and new-year flow, Term and Class year switchers, cross-year Prev/Next, search, gamification totals, a guide section. Roughly two to three sessions.
 3. **Phase 3, set up 2027 (January).** Needs two facts from the school: the 2027 calendar (term dates, holidays, Day 0s) for the seed, and the cycle day of the first teaching day.
 4. **Phase 4, last year panel (Term 1 2027).** Separate design.

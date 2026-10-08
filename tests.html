@@ -74,7 +74,8 @@ async function loadCore(ls){
     src+"\nreturn {recordTimestamp,isEmptyRecord,pickNewer,mergeData,gcEmpties,importAllData,"+
     "migrateConfig,migrateStorage,makeDateEngine,resolveSlot,asmBellsForDate,"+
     "NOTE_KEY_RE,META_KEY_RE,GC_HORIZON_MS,toDateKey,storageGet,storageSet,emptyNote,emptyMeta,normalizeMeta,getAllData,"+
-    "flagLines,hasFlag,flagCount,hexAlpha};");
+    "flagLines,hasFlag,flagCount,hexAlpha,"+
+    "SCHEMA_VERSION,yearsOf,flattenYear,pickYear,putYear,upgradeConfig,mergeConfig,writeConfig,sharedPart};");
   return factory(ls,stub,stub);
 }
 // fresh isolated core+storage for tests that write to localStorage
@@ -177,8 +178,9 @@ try{
   {
     const {core}=await freshCore();
     const cfg=core.migrateConfig({holidays:["2026-01-01"],dayZeros:["2026-02-06"]});
-    eq("string holidays migrate to {date,name} objects",cfg.holidays[0],{date:"2026-01-01",name:"Public Holiday"});
-    eq("string dayZeros migrate to {date,label,source} objects",cfg.dayZeros[0],{date:"2026-02-06",label:"Day 0",source:"manual"});
+    // From schema v3 the year fields live inside the year entry.
+    eq("string holidays migrate to {date,name} objects",cfg.years[0].holidays[0],{date:"2026-01-01",name:"Public Holiday"});
+    eq("string dayZeros migrate to {date,label,source} objects",cfg.years[0].dayZeros[0],{date:"2026-02-06",label:"Day 0",source:"manual"});
   }
 
   // ══ ENGINE: cycle-day walk (weekend / holiday / Day 0 / term boundary) ════════
@@ -287,9 +289,124 @@ try{
     eq("empty input passes through",C.hexAlpha("",.3),"");
   }
 
+  // ══ YEAR MODEL (schema v3) ═════════════════════════════════════════════════
+  // YEAR_MODEL_DESIGN.md section 12. Builders: a v2 (single-year) config like the ones
+  // stored before the year model, and the year entries of a two-year v3 config.
+  const v2=(extra)=>({school:"Dio",theme:"coffee",userName:"V",showGam:true,cycleDays:7,
+    terms:[{n:3,start:"2026-07-27",end:"2026-09-25"}],holidays:[],dayZeros:[],anchor:{date:"2026-07-27",day:1},
+    timetable:{1:{P1:"9SCI3",P2:"13DPHY3"}},classes:[{code:"9SCI3",colour:"#C5D9C0"},{code:"13DPHY3",colour:"#D0C0E0"}],
+    weeklyEvents:[],duties:[],updatedAt:isoAgo(30),...(extra||{})});
+  const y2027=(stamp)=>({year:2027,updatedAt:stamp,cycleDays:7,terms:[{n:1,start:"2027-02-01",end:"2027-04-09"}],
+    holidays:[],dayZeros:[],anchor:{date:"2027-02-01",day:4},timetable:{1:{P1:"9SCI5"},4:{P1:"9SCI5"}},
+    classes:[{code:"9SCI5",colour:"#B8CCE0",course:"9SCI"}],weeklyEvents:[],duties:[]});
+
+  G("Year model: migration (v2 to v3)");
+  {
+    const old=v2();const up=C.upgradeConfig(old);
+    eq("SCHEMA_VERSION is 3",C.SCHEMA_VERSION,3);
+    assert("a v2 config becomes schema 3 with one year entry",up.schema===3&&up.years.length===1);
+    eq("the year comes from the first term's start date",up.years[0].year,2026);
+    assert("the year fields move into the entry",up.years[0].terms[0].start==="2026-07-27"&&up.years[0].timetable[1].P1==="9SCI3"&&up.years[0].anchor.day===1);
+    assert("no year fields are left at the top level",["terms","timetable","classes","anchor","holidays","dayZeros","cycleDays"].every(k=>!(k in up)));
+    assert("shared settings stay at the top level",up.theme==="coffee"&&up.userName==="V"&&up.showGam===true);
+    eq("the year keeps the config's own updatedAt (a migration is not an edit)",up.years[0].updatedAt,old.updatedAt);
+    eq("course labels default to the code without its class number",up.years[0].classes.map(c=>c.course),["9SCI","13DPHY"]);
+    eq("an existing course label is kept",C.upgradeConfig(v2({classes:[{code:"9SCI3",course:"Y9 Science"}]})).years[0].classes[0].course,"Y9 Science");
+    eq("upgrading twice changes nothing",C.upgradeConfig(up),up);
+    assert("the input is never mutated",old.terms&&old.timetable&&!("years" in old));
+  }
+  {
+    const {ls,core}=await freshCore();
+    const first=v2({userName:"first"});
+    core.migrateConfig(first);core.migrateConfig(v2({userName:"second"}));
+    const bak=JSON.parse(ls.getItem("planner-config-v2"));
+    assert("migrating a v2 config keeps a verbatim copy under planner-config-v2",bak&&bak.terms&&!bak.years);
+    eq("…written once and never overwritten",bak.userName,"first");
+    const {ls:ls2,core:core2}=await freshCore();
+    core2.migrateConfig({...core2.upgradeConfig(v2())});
+    assert("a config that is already v3 leaves no v2 copy",ls2.getItem("planner-config-v2")===null);
+  }
+
+  G("Year model: reading one year (yearsOf / flattenYear / pickYear)");
+  {
+    const two={...C.upgradeConfig(v2()),years:[C.upgradeConfig(v2()).years[0],y2027(isoAgo(1))]};
+    eq("yearsOf lists both years",C.yearsOf(two).map(y=>y.year),[2026,2027]);
+    eq("yearsOf reads a v2 config as one year, before any migration",C.yearsOf(v2()).map(y=>y.year),[2026]);
+    const f=C.flattenYear(two,2027);
+    assert("flattenYear gives the single-year shape the views read",f.year===2027&&f.anchor.day===4&&f.timetable[1].P1==="9SCI5"&&f.theme==="coffee");
+    assert("…without the multi-year bookkeeping",!("years" in f)&&!("schema" in f)&&!("updatedAt" in f));
+    eq("flattenYear of a year that is not configured is null",C.flattenYear(two,2030),null);
+    eq("pickYear: a configured year is itself",C.pickYear(two,2027),2027);
+    eq("pickYear: an unconfigured later year falls back to the latest earlier one",C.pickYear(two,2029),2027);
+    eq("pickYear: a year before all of them falls back to the earliest",C.pickYear(two,2020),2026);
+    eq("pickYear: no years at all gives null",C.pickYear({},2026),null);
+  }
+
+  G("Year model: one engine per year (the rollover failure, as a regression test)");
+  {
+    // YEAR_MODEL_DESIGN.md section 1: adding 2027 must not change how 2026 reads.
+    const two={...C.upgradeConfig(v2()),years:[C.upgradeConfig(v2()).years[0],y2027(isoAgo(1))]};
+    const e26=C.makeDateEngine(C.flattenYear(two,2026)),e27=C.makeDateEngine(C.flattenYear(two,2027));
+    const mon26=new Date(2026,6,27),mon27=new Date(2027,1,1);
+    eq("a 2026 date still has its 2026 cycle day",e26.cycleDayFor(mon26),1);
+    eq("…and its 2026 class, though 2027 puts another class in that slot",e26.classAt(mon26,1,"P1"),"9SCI3");
+    eq("2027 starts from its own anchor, on the day number the school sets (here Day 4)",e27.cycleDayFor(mon27),4);
+    eq("…and counts on from there",e27.cycleDayFor(new Date(2027,1,2)),5);
+    eq("2027 reads its own timetable",e27.classAt(mon27,4,"P1"),"9SCI5");
+    eq("2026 dates are not school days in the 2027 engine (each year stands alone)",e27.cycleDayFor(mon26),null);
+  }
+
+  G("Year model: writing one year back (putYear / writeConfig)");
+  {
+    const base={...C.upgradeConfig(v2()),years:[C.upgradeConfig(v2()).years[0],y2027(isoAgo(5))]};
+    const now=new Date().toISOString();
+    const f=C.flattenYear(base,2026);f.timetable={...f.timetable,1:{...f.timetable[1],P1:"9SCI4"}};
+    const out=C.putYear(base,f,now);
+    eq("an edit lands in its own year",out.years.find(y=>y.year===2026).timetable[1].P1,"9SCI4");
+    eq("…stamps that year",out.years.find(y=>y.year===2026).updatedAt,now);
+    eq("…leaves the other year exactly as it was",out.years.find(y=>y.year===2027),base.years[1]);
+    eq("…and does not stamp the shared settings",out.updatedAt,base.updatedAt);
+    const g=C.flattenYear(base,2026);g.theme="ocean";
+    const out2=C.putYear(base,g,now);
+    assert("a shared-setting edit stamps the top level only",out2.theme==="ocean"&&out2.updatedAt===now&&out2.years[0].updatedAt===base.years[0].updatedAt);
+    const {ls,core}=await freshCore();
+    ls.setItem("planner-config",JSON.stringify(base));
+    const w=core.flattenYear(base,2027);w.anchor={date:"2027-02-01",day:5};
+    const saved=core.writeConfig(w);const stored=JSON.parse(ls.getItem("planner-config"));
+    assert("writeConfig persists the edit into the stored multi-year config",stored.years.length===2&&stored.years.find(y=>y.year===2027).anchor.day===5&&saved.years.length===2);
+  }
+
+  G("Year model: per-year merge (sync) and import");
+  {
+    const loc={...C.upgradeConfig(v2({updatedAt:isoAgo(9)})),years:[{...C.upgradeConfig(v2()).years[0],updatedAt:isoAgo(9)},y2027(isoAgo(2))]};
+    // The transition race: an out-of-date device's v2 config, edited more recently.
+    const rem=v2({userName:"iPad",updatedAt:isoAgo(1)});
+    const M=C.mergeConfig(loc,rem);
+    eq("an old-shape config cannot delete a year it does not contain",M.years.map(y=>y.year),[2026,2027]);
+    eq("…but its newer edit to its own year wins",M.years[0].updatedAt,rem.updatedAt);
+    eq("the result is always v3",M.schema,3);
+    const a={...loc,years:[{...loc.years[0],updatedAt:isoAgo(3)},loc.years[1]]};
+    const b={...loc,years:[{...loc.years[0],updatedAt:isoAgo(4),cycleDays:6}]};
+    eq("each year is merged on its own: the newer 2026 wins",C.mergeConfig(a,b).years[0].cycleDays,7);
+    eq("…and a year only one side has is kept",C.mergeConfig(a,b).years.length,2);
+    const t1={...loc,years:[{...loc.years[0],cycleDays:6}]},t2={...loc,years:[{...loc.years[0],cycleDays:8}]};
+    eq("on an exact tie the merge is the same whichever side goes first (devices converge)",C.mergeConfig(t1,t2),C.mergeConfig(t2,t1));
+    eq("…and with preferA the local side keeps its own year",C.mergeConfig(t1,t2,true).years[0].cycleDays,6);
+    eq("mergeData merges _config per year",C.mergeData({_config:loc},{_config:rem})._config.years.map(y=>y.year),[2026,2027]);
+  }
+  {
+    const {ls,core}=await freshCore();
+    ls.setItem("planner-config",JSON.stringify({...core.upgradeConfig(v2()),years:[core.upgradeConfig(v2()).years[0],y2027(isoAgo(2))]}));
+    core.importAllData({_meta:{version:2},_config:v2({userName:"restored",cycleDays:6})});
+    const st=JSON.parse(ls.getItem("planner-config"));
+    eq("importing an old single-year backup keeps the years it does not contain",st.years.map(y=>y.year),[2026,2027]);
+    assert("…restores the year it does contain",st.years[0].cycleDays===6);
+    eq("…and restores the backup's settings",st.userName,"restored");
+  }
+
   // ══ SMOKE ══════════════════════════════════════════════════════════════════
-  // Boots the real app three times in a hidden frame and drives it. See runSmoke().
-  document.getElementById("summary").textContent="Unit tests done. Running smoke tests (boots the app three times)…";
+  // Boots the real app four times in a hidden frame and drives it. See runSmoke().
+  document.getElementById("summary").textContent="Unit tests done. Running smoke tests (boots the app four times)…";
   await runSmoke();
 
   render();
@@ -402,10 +519,29 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 // an event, so every check waits for its condition rather than reading once.
 async function waitFor(fn,ms){const t0=performance.now();for(;;){let v=null;try{v=fn()}catch(e){}if(v)return v;if(performance.now()-t0>(ms||4000))return null;await sleep(25)}}
 
-// Boot the app in a fresh frame with the given storage contents.
-async function bootApp(store){
+/* The two-year fixture (schema v3): the same 2026 as smokeFixture, plus a 2027 with
+ * its own classes (same courses, new codes) and its own anchor. 2027's first teaching
+ * day is deliberately Day 4, not Day 1 (YEAR_MODEL_DESIGN.md decision 6), so a Week
+ * View that wrongly carried 2026's count or assumed Day 1 shows the wrong class. */
+function smokeTwoYears(){
+  const f=smokeFixture(),c=JSON.parse(f["planner-config"]);
+  const map={"9SCI1":"9SCI5","10SCI2":"10SCI7","12PHY1":"12PHY2","13CHM1":"13CHM2"};
+  const tt27={};Object.keys(c.timetable).forEach(d=>{tt27[d]={};Object.keys(c.timetable[d]).forEach(k=>{const v=c.timetable[d][k];tt27[d][k]=typeof v==="string"&&map[v]?map[v]:v})});
+  const y26={year:2026,updatedAt:c.updatedAt};
+  ["cycleDays","anchor","terms","holidays","dayZeros","timetable","classes","weeklyEvents","duties"].forEach(k=>{if(c[k]!==undefined)y26[k]=c[k]});
+  const y27={year:2027,updatedAt:c.updatedAt,cycleDays:7,anchor:{date:"2027-02-01",day:4},
+    terms:[{n:1,start:"2027-02-01",end:"2027-04-16"}],holidays:[],dayZeros:[],timetable:tt27,
+    classes:c.classes.map(k=>({...k,code:map[k.code]})),weeklyEvents:[],duties:[]};
+  const shared={school:c.school,theme:c.theme,exportStyle:c.exportStyle,userName:c.userName,showGam:c.showGam,updatedAt:c.updatedAt};
+  return{...f,"planner-config":JSON.stringify({...shared,schema:3,years:[y26,y27]})};
+}
+// Press a key until a condition holds, waiting for the screen to change after each press.
+async function pressUntil(D,k,cond,max){for(let i=0;i<(max||12);i++){if(cond())return true;const before=D.text();D.key(k);await waitFor(()=>D.text()!==before,1500)}return!!cond()}
+
+// Boot the app in a fresh frame with the given storage contents, the clock frozen at now.
+async function bootApp(store,now){
   const html=await(await fetch("index.html?cb="+Date.now())).text();
-  const S={store,now:SMOKE_NOW,origin:location.origin,errors:[],blocked:[],swRegister:0,shadowed:false};
+  const S={store,now:now||SMOKE_NOW,origin:location.origin,errors:[],blocked:[],swRegister:0,shadowed:false};
   window.__SMOKE=S;
   const pre=`<base href="${new URL(".",location.href).href}"><script>(${smokePrelude.toString()})();<\/script>`;
   const m=html.match(/<head[^>]*>/i);
@@ -478,9 +614,15 @@ async function runSmoke(){
   if(D.booted&&D.S.shadowed){
     assert(`footer shows the version in the file (v${D.ver})`,!!D.ver&&D.text().includes("v"+D.ver));
     assert("no errors during boot",!D.S.errors.length,D.S.errors.join("\n"));
+    // The fixture is stored in the old single-year shape, exactly as real data was before
+    // 3.0.0, so this boot is the upgrade path every existing user takes.
+    const mig=JSON.parse(D.win.localStorage.getItem("planner-config")||"null");
+    assert("the app migrates the old single-year config to schema 3 on boot",mig&&mig.schema===3&&mig.years.length===1&&mig.years[0].year===2026&&!mig.terms);
+    assert("…keeping a verbatim copy of the old config",!!D.win.localStorage.getItem("planner-config-v2"));
 
     G("Smoke: every view");
     await visitViews(D,"fixture",true);
+    assert("Setup shows the year it is editing",D.qa(".hd").some(h=>h.textContent.includes("School Setup")&&h.textContent.includes("2026")));
 
     G("Smoke: Week View");
     await step(D,"Week View opens on the fixture week",()=>D.key("w"),()=>D.view()==="Week"&&D.text().includes("17 Aug"));
@@ -534,6 +676,25 @@ async function runSmoke(){
   D=await bootApp(smokeFixture({"planner-theme":"dark"}));
   assert("app boots in dark theme",D.booted&&!D.crashed()&&D.doc.documentElement.getAttribute("data-theme")==="dark",D.S.errors.join("\n"));
   if(D.booted&&D.S.shadowed)await visitViews(D,"dark",true);
+
+  // ── Run 4: two years (schema v3), frozen in Term 4 2026, driven across New Year. ─
+  G("Smoke: two years");
+  D=await bootApp(smokeTwoYears(),new Date(2026,11,2,10,0,0).getTime());
+  assert("app boots with a two-year config",D.booted&&!D.crashed(),D.S.errors.join("\n"));
+  if(D.booted&&D.S.shadowed){
+    const has=code=>D.qa(".pb[aria-label]").some(e=>e.getAttribute("aria-label").split(", ")[1]===code);
+    await step(D,"Week View opens on the frozen 2026 week with 2026's classes",()=>D.key("w"),()=>D.text().includes("30 Nov")&&has("9SCI1")&&!has("9SCI5"));
+    await step(D,"] walks forward across New Year into 2027 Term 1",()=>pressUntil(D,"]",()=>D.text().includes("1 Feb")),()=>D.text().includes("1 Feb"));
+    await step(D,"2027 shows 2027's classes, not 2026's",null,()=>has("9SCI5")&&!has("9SCI1"));
+    // 2027 Day 4 P1 is 12PHY2. Carrying 2026's cycle count, or assuming Day 1 (9SCI5),
+    // would put a different class here.
+    await step(D,"2027 counts from its own anchor: Monday 1 Feb is Day 4",null,()=>D.q('.pb[aria-label^="P1, 12PHY2, Mon, 1 Feb"]'));
+    await step(D,"[ walks back into 2026 with 2026's classes again",()=>pressUntil(D,"[",()=>D.text().includes("30 Nov")),()=>D.text().includes("30 Nov")&&has("9SCI1")&&!has("9SCI5"));
+    await visitViews(D,"two years",true);
+    const st=JSON.parse(D.win.localStorage.getItem("planner-config")||"null");
+    eq("both years are still stored after all of that",st&&st.years.map(y=>y.year),[2026,2027]);
+    assert("no requests to other sites during the run",!D.S.blocked.length,D.S.blocked.join("\n"));
+  }
 
   // ── Isolation: prove the runs never touched this browser's real data. ────────
   G("Smoke: isolation");
