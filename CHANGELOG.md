@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.6.1 — 2026-10-08
+
+### Wording
+- **"Break slot" replaces "B-slot" everywhere you read.** The B-codes (B0, B1a and so on) are the planner's internal names for the non-teaching windows; on screen they have always been *before school*, *after 2*, *before 3*, *after 4*, *before 5* and *after school*. The Guide now calls them break slots and uses those labels wherever it named a code, including the section heading and the older release notes. The Duties and Weekly activities help in Setup says "break slot" too.
+
+---
+
 ## 3.6.0 — 2026-10-08
 
 ### Visual audit, part 3c: dark-mode class colours and drawn icons

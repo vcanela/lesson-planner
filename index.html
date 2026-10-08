@@ -773,7 +773,7 @@ const SCHEMA_VERSION=3;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="3.6.0";
+const APP_VERSION="3.6.1";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -2560,7 +2560,7 @@ function SettingsView({year,years,draft,draftYear,onDraft,onCreate,onDiscard,onP
       })()}
     </div>
 
-    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>{step(8,"Duties")}</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",marginBottom:10}}>Duty codes appear as pill chips in the B-slot popup above. Code is short (e.g. "GD"); description shows in Day View.</div>
+    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>{step(8,"Duties")}</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",marginBottom:10}}>Duty codes appear as pill chips in the break slot popup above. Code is short (e.g. "GD"); description shows in Day View.</div>
       {duties.map((d,i)=><div key={i} style={{marginBottom:10,padding:10,background:"var(--surface)",borderRadius:"var(--radius-md)",border:"1px solid var(--border)"}}><div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:4}}><button className="btn btn-sm" onClick={()=>moveDuty(i,-1)} disabled={i===0} style={{padding:"2px 6px"}}>{"\u25b2"}</button><button className="btn btn-sm" onClick={()=>moveDuty(i,1)} disabled={i===duties.length-1} style={{padding:"2px 6px"}}>{"\u25bc"}</button></div>
         <div style={{flex:"0 0 84px"}}><input className="inp mn" value={d.code} onChange={e=>updateDuty(i,"code",e.target.value.toUpperCase().replace(/\s/g,""))} placeholder="GD" style={{fontSize:"var(--fs-body)",fontWeight:700,textAlign:"center",background:d.color,color:d.textColor||TEXT_FOR_BG[d.color]||"#000",borderRadius:"var(--radius-md)"}}/></div>
@@ -2569,7 +2569,7 @@ function SettingsView({year,years,draft,draftYear,onDraft,onCreate,onDiscard,onP
         <ColourPicker value={d.color} onChange={col=>updateDuty(i,"color",col)} usedColours={usedDutyColours}/></div>)}
       <button className="btn-add" onClick={addDuty}>+ Add duty</button>{duties.length===0&&<div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)",marginTop:8,fontStyle:"italic"}}>No duties defined yet.</div>}</div>
 
-    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>{step(9,"Weekly activities")}</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",marginBottom:10}}>Activities that repeat on a weekday regardless of cycle day (e.g. Chess Club every Wednesday). Each entry occupies one B-slot on one weekday. To repeat the same activity across multiple weekdays, add separate entries.</div>
+    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>{step(9,"Weekly activities")}</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",marginBottom:10}}>Activities that repeat on a weekday regardless of cycle day (e.g. Chess Club every Wednesday). Each entry occupies one break slot on one weekday. To repeat the same activity across multiple weekdays, add separate entries.</div>
       {weeklyEvents.map((e,i)=><div key={i} style={{marginBottom:10,padding:10,background:"var(--surface)",borderRadius:"var(--radius-md)",border:"1px solid var(--border)",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         <select className="inp" value={e.weekday} onChange={ev=>updateWeekly(i,"weekday",Number(ev.target.value))} style={{flex:"0 0 110px",fontSize:"var(--fs-body)"}}>
           {[[1,"Monday"],[2,"Tuesday"],[3,"Wednesday"],[4,"Thursday"],[5,"Friday"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}

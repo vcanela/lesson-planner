@@ -371,10 +371,10 @@ a:hover{text-decoration:underline}
 
 <div class="step-card">
   <h3>Step 2: Build your timetable</h3>
-  <p>Scroll to the <strong>Timetable</strong> section. The grid runs days across the top (Day 1 through Day 7) and slots down the side. Teaching periods are labelled P1 to P6; the rows in between (<em>after 2</em>, <em>before 3</em>, <em>after 4</em>, <em>before 5</em>) are <strong>B-slots</strong>: the morning, lunch, and after-school windows.</p>
+  <p>Scroll to the <strong>Timetable</strong> section. The grid runs days across the top (Day 1 through Day 7) and slots down the side. Teaching periods are labelled P1 to P6; the rows in between (<em>after 2</em>, <em>before 3</em>, <em>after 4</em>, <em>before 5</em>) are <strong>break slots</strong>: the morning, lunch, and after-school windows.</p>
   <ul>
     <li><strong>Teaching period cells:</strong> click and pick a class from the dropdown, or type the code directly. Use <code>nc</code> for non-contact.</li>
-    <li><strong>B-slot cells:</strong> click to set a morning structure (Tutor, Chapel, FSA, DA on B1a or B1b), a duty pill, or a free-text activity. Empty stays empty.</li>
+    <li><strong>Break cells:</strong> click to set a morning structure (Tutor, Chapel, FSA, DA in <em>after 2</em> or <em>before 3</em>), a duty pill, or a free-text activity. Empty stays empty.</li>
     <li><strong>Before/after school:</strong> click <em>+ Before school</em> or <em>+ After school</em> to surface those rows when you need them.</li>
     <li><strong>Assembly day:</strong> the cycle day with FSA picks up the assembly bell schedule automatically. A small ☀ appears in that day header.</li>
   </ul>
@@ -382,7 +382,7 @@ a:hover{text-decoration:underline}
 
 <div class="step-card">
   <h3>Step 3: Define your duties</h3>
-  <p>Below the timetable, the <strong>Duties</strong> card is where you register the duty codes used elsewhere (Gate duty, Library, Bus, …). Each duty has a short code, a description, and a colour swatch. Add them once; they appear as options in every B-slot popup.</p>
+  <p>Below the timetable, the <strong>Duties</strong> card is where you register the duty codes used elsewhere (Gate duty, Library, Bus, …). Each duty has a short code, a description, and a colour swatch. Add them once; they appear as options in every break slot popup.</p>
 </div>
 
 <div class="step-card">
@@ -460,28 +460,28 @@ a:hover{text-decoration:underline}
 
 <h2>Week View &#128467;&#65039;</h2>
 <p>This is your main workspace. It shows Monday to Friday with your full timetable laid out in a grid. Each column shows the date and the cycle day number (D3, D5, etc.). Each teaching-period cell shows the class code, the topic if entered, a flag icon if a line in your notes starts with an exclamation mark, and a green dot if the period has been planned.</p>
-<p>The fill tells you the state of a period at a glance. A solid class colour means a lesson is planned and going ahead. A faint diagonal hatch in the class colour, with the code struck through and an <strong>NL</strong> mark, means the period is set to <em>No lesson</em>: the class is still yours, but nothing is being taught. It uses the same recessive hatch as a free B-slot, so it stays quiet on the page. A red outline with no fill is a teaching period you have not planned yet, and flat grey is a non-contact.</p>
+<p>The fill tells you the state of a period at a glance. A solid class colour means a lesson is planned and going ahead. A faint diagonal hatch in the class colour, with the code struck through and an <strong>NL</strong> mark, means the period is set to <em>No lesson</em>: the class is still yours, but nothing is being taught. It uses the same recessive hatch as a free break slot, so it stays quiet on the page. A red outline with no fill is a teaching period you have not planned yet, and flat grey is a non-contact.</p>
 <p>The <em>planned</em> count shown above the grid (e.g. <code>21/30</code>) only counts your teaching periods. Non-contacts are excluded.</p>
 <p><strong>Clicking any cell</strong> opens a quick-edit box at the bottom of the screen where you can type a topic and press Enter.</p>
 <p><strong>Clicking "Full detail"</strong> in the quick-edit box takes you to Day View for that specific period.</p>
 <p>Other things you can do in Week View:</p>
 <ul>
   <li><strong>Day notes row:</strong> a small text area per day for meetings, reminders, or duty notes</li>
-  <li><strong>B-slot rows:</strong> if any cycle day has a value for a B-slot (morning structure, duty, or activity), that row appears across the week. Empty cells in a visible row are diagonally hatched. Click any B-slot cell for an editor anchored to that cell; the change saves as a per-date override.</li>
+  <li><strong>Break slot rows:</strong> if any cycle day has a value for a break slot (morning structure, duty, or activity), that row appears across the week. Empty cells in a visible row are diagonally hatched. Click any break cell for an editor anchored to that cell; the change saves as a per-date override.</li>
   <li><strong>Class spotlighting:</strong> click any class badge above the grid to see every time that class appears this week. Lessons already past are dimmed above a "Still this week" divider; lessons still to come are below it at full opacity, so you can see at a glance how many times you've yet to see that class.</li>
   <li><strong>Navigate:</strong> use the left/right arrows to move between weeks, or hit "Today" to jump back to the current week</li>
   <li><strong>Export:</strong> at the bottom, download the full week or just your reflections as a text file</li>
 </ul>
 
 <h2>Day View &#128203;</h2>
-<p>The most detailed view. Shows every slot of a single day in order. Each teaching period shows the class code, start time, and topic; each B-slot shows its chip (when set) plus the relational label and time range.</p>
+<p>The most detailed view. Shows every slot of a single day in order. Each teaching period shows the class code, start time, and topic; each break slot shows its chip (when set) plus its label (<em>after 2</em>, <em>before 3</em> and so on) and time range.</p>
 <p><strong>Clicking a period</strong> expands it. You can choose:</p>
 <ul>
   <li><strong>Quick mode</strong>: a single text field for the topic. Good for a one-liner.</li>
   <li><strong>Detailed mode</strong>: three fields: Topic/Subject, Notes and Tasks, and Resources and Links.</li>
 </ul>
 <p>At the top of the expanded period, a <strong>lesson context</strong> strip tells you the lesson number for that class this term (e.g. "Lesson 12/48"), and the dates of the previous and next lessons with that class.</p>
-<p><strong>Clicking a B-slot row</strong> expands it to an editor: pick a value (Tutor, Chapel, FSA, DA, a duty pill, an activity, or Free), add notes for that slot, and hit <em>Save today</em>. The change is a one-day override; the cycle-day default in Setup is untouched. If today's value differs from the cycle default, a small orange dot marks the row.</p>
+<p><strong>Clicking a break slot row</strong> expands it to an editor: pick a value (Tutor, Chapel, FSA, DA, a duty pill, an activity, or Free), add notes for that slot, and hit <em>Save today</em>. The change is a one-day override; the cycle-day default in Setup is untouched. If today's value differs from the cycle default, a small orange dot marks the row.</p>
 <p>Other features:</p>
 <ul>
   <li><strong>Day notes:</strong> a text area at the top for meetings or reminders</li>
@@ -532,14 +532,14 @@ a:hover{text-decoration:underline}
 <h2>Day notes</h2>
 <p>At the top of each day (in both Day View and Week View) there's a text area for things that aren't tied to a specific period, staff meetings, duty, reminders, anything you want to see when you look at that day.</p>
 
-<h2>B-slots: morning structure, duties, activities</h2>
-<p>The non-teaching windows in your day are <strong>B-slots</strong>. There are six of them per day:</p>
+<h2>Break slots: morning structure, duties, activities</h2>
+<p>The non-teaching windows in your day are <strong>break slots</strong>. There are six of them per day:</p>
 <ul>
   <li><em>before school</em>, <em>after 2</em>, <em>before 3</em>, <em>after 4</em>, <em>before 5</em>, <em>after school</em></li>
 </ul>
-<p>Each B-slot can hold one of:</p>
+<p>Each break slot can hold one of:</p>
 <ul>
-  <li><strong>Morning structure</strong> (B1a or B1b only): Tutor, Chapel, FSA, DA</li>
+  <li><strong>Morning structure</strong> (<em>after 2</em> or <em>before 3</em> only): Tutor, Chapel, FSA, DA</li>
   <li><strong>Duty</strong>: a pill from the duties registry you defined in Setup</li>
   <li><strong>Activity</strong>: free-form text up to about 30 characters (e.g. "Chess club", "Scholarship catchup")</li>
   <li><strong>Empty</strong>: nothing scheduled</li>
@@ -953,7 +953,7 @@ a:hover{text-decoration:underline}
   <li><strong>Arrow keys</strong>: move around the Week grid</li>
   <li><strong>Home</strong> and <strong>End</strong>: Monday and Friday of the row you are on</li>
 </ul>
-<p>Tab and Enter reach everything you can click. The Week grid is a special case: Tab enters it once, landing on the cell you last used, and from there the arrow keys move you around it, including the B-slot rows. Arrows step over holidays rather than stopping on them. Tab again leaves the grid for the next control.</p>
+<p>Tab and Enter reach everything you can click. The Week grid is a special case: Tab enters it once, landing on the cell you last used, and from there the arrow keys move you around it, including the break slot rows. Arrows step over holidays rather than stopping on them. Tab again leaves the grid for the next control.</p>
 <p>Enter opens the quick editor for whatever is focused, with the cursor already in the field, and <strong>Esc</strong> closes it and puts you back on the cell you came from. So a whole week can be planned without touching the mouse: arrow, Enter, type, Enter, arrow. The same Enter works on the day cells in Term View, the lesson rows in Class View, and every control in Setup. Whatever has focus carries a coloured ring so you can see where you are.</p>
 <p>Phones and tablets do not use these; the compact top bar covers navigation there.</p>
 
@@ -1067,7 +1067,7 @@ a:hover{text-decoration:underline}
 
 <h2>16 May 2026, v2.1.6</h2>
 <ul>
-  <li><strong>Weekly activities.</strong> A new Setup card registers activities that repeat on a fixed weekday regardless of the cycle (e.g. Chess Club every Wednesday after school). Each entry sits in one B-slot on one weekday. To repeat the same activity across multiple weekdays, add separate entries. Day View and Week View show the activity chip on every matching date.</li>
+  <li><strong>Weekly activities.</strong> A new Setup card registers activities that repeat on a fixed weekday regardless of the cycle (e.g. Chess Club every Wednesday after school). Each entry sits in one break slot on one weekday. To repeat the same activity across multiple weekdays, add separate entries. Day View and Week View show the activity chip on every matching date.</li>
   <li><strong>Clash warning.</strong> If a weekly activity hides what was scheduled by the cycle default on a given date, a small ⚠ appears next to the chip. Expanding the row shows a one-line explanation. The cycle default still applies on every other date.</li>
   <li><strong>Override beats weekly beats cycle.</strong> If you save a per-date override on a row that has a weekly activity, the override wins. To skip a weekly activity for one date, expand the row and pick "Free", then "Save today".</li>
 </ul>
@@ -1089,13 +1089,13 @@ a:hover{text-decoration:underline}
 
 <h2>7 May 2026, v2.1</h2>
 <ul>
-  <li><strong>12-slot model.</strong> The day is now a strict twelve-slot sequence: B0, P1, P2, B1a, B1b, P3, P4, B2a, B2b, P5, P6, B3. The four middle B-slots show as <em>after 2</em>, <em>before 3</em>, <em>after 4</em>, <em>before 5</em>. B0 (before school) and B3 (after school) are toggleable.</li>
-  <li><strong>B-slots hold real values.</strong> Morning structure (Tutor, Chapel, FSA, DA), duty pills, or free-text activities. Both B1a and B1b accept morning-structure values, so chapel-on-B1a teachers and chapel-on-B1b teachers are both covered.</li>
-  <li><strong>Per-date overrides.</strong> Clicking a B-slot row in Day View or Week View opens an editor with a single <em>Save today</em> action; the change applies only to that date and is marked with an orange dot. Cycle-default edits live in Setup.</li>
+  <li><strong>12-slot model.</strong> The day is now a strict twelve-slot sequence: <em>before school</em>, P1, P2, <em>after 2</em>, <em>before 3</em>, P3, P4, <em>after 4</em>, <em>before 5</em>, P5, P6, <em>after school</em>. <em>Before school</em> and <em>after school</em> are toggleable.</li>
+  <li><strong>Break slots hold real values.</strong> Morning structure (Tutor, Chapel, FSA, DA), duty pills, or free-text activities. Both <em>after 2</em> and <em>before 3</em> accept morning-structure values, so teachers with chapel in either slot are covered.</li>
+  <li><strong>Per-date overrides.</strong> Clicking a break slot row in Day View or Week View opens an editor with a single <em>Save today</em> action; the change applies only to that date and is marked with an orange dot. Cycle-default edits live in Setup.</li>
   <li><strong>Duties registry.</strong> A new card in Setup where you define the duty codes (GD, LD, Bus, …) used everywhere else.</li>
   <li><strong>Assembly bell schedule is automatic.</strong> Whichever cycle day has FSA on it picks up the shifted P1/P2 timing, no separate toggle.</li>
   <li><strong>Goodbye, Mid-morning Block.</strong> The MMBar selector and the bottom-of-Week-View setup panel are gone, replaced by per-slot editing in Day and Week views.</li>
-  <li><strong>Existing data migrates automatically.</strong> Old backups (v1) import cleanly into the new schema. Period note keys are re-cased and B-slot defaults are seeded.</li>
+  <li><strong>Existing data migrates automatically.</strong> Old backups (v1) import cleanly into the new schema. Period note keys are re-cased and break slot defaults are seeded.</li>
 </ul>
 
 <h2>1 May 2026</h2>
