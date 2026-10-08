@@ -637,6 +637,21 @@ function flattenYear(c,year){const y=yearsOf(c).find(e=>e.year===year);if(!y)ret
 // earliest. (Phase 1 of the design: browsing into an unconfigured year falls back
 // to a neighbour, which renders exactly as the single-year planner always did.)
 function pickYear(c,y){const ys=yearsOf(c).map(e=>e.year).sort((a,b)=>a-b);if(!ys.length)return null;if(ys.includes(y))return y;const le=ys.filter(v=>v<=y);return le.length?le[le.length-1]:ys[0]}
+// stepSchoolDay: the nearest school day before (dir -1) or after (dir +1) date d, across
+// years. A year's engine only knows its own terms, so a walk that runs off the end of
+// d's year continues into the neighbouring configured years in order, entering each at
+// its edge (1 January going forward, 31 December going back). engOf(year) returns that
+// year's engine or null; years is the list of configured years.
+function stepSchoolDay(years,engOf,d,dir){
+  const y0=d.getFullYear(),own=engOf(y0),r=own?own.nearestSchoolDay(d,dir):null;
+  if(r)return r;
+  for(const y of years.filter(y=>dir>0?y>y0:y<y0).sort((a,b)=>dir>0?a-b:b-a)){
+    const e=engOf(y);if(!e)continue;
+    const edge=dir>0?new Date(y,0,1):new Date(y,11,31);
+    const s=e.isSchoolDay(edge)?edge:e.nearestSchoolDay(edge,dir);if(s)return s;
+  }
+  return null;
+}
 // putYear: write an edited single-year config into its slot in a v3 config. Each part
 // is stamped only if it actually changed, so the per-year merge sees real edit times.
 function putYear(raw,flat,now){
@@ -678,7 +693,7 @@ const SCHEMA_VERSION=3;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="3.0.1";
+const APP_VERSION="3.1.0";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -1130,7 +1145,10 @@ const normalizeMeta=v=>({...emptyMeta(),...(v||{})});
  * snapshot for the achievement triggers, and bundled into the return.
  * ═══════════════════════════════════════════════════════════════════════
  */
-function compGam(eng,pwn,themeKey){
+// others: the engines of every OTHER configured year. XP, levels and achievements are
+// lifetime and count them too (YEAR_MODEL_DESIGN.md decision 1); streaks, the current
+// week and the term figures belong to this year (eng) alone.
+function compGam(eng,pwn,themeKey,others){
   const th=getTheme(themeKey);
   const empty={cum:{tp:0,tl:0,sk:0,ls:0},term:{tp:0,tl:0,pw:0,allCls:false,allHalf:false,cd:{}},sk:0,ls:0,achs:[],xp:0,lev:th.levels[0],nxt:th.levels[1],levXp:0,nxtXp:100,cw:{p:0,t:0},th,pw:0,tp:0,tl:0,wd:{},cd:{}};
   if(!eng)return empty;
@@ -1138,42 +1156,49 @@ function compGam(eng,pwn,themeKey){
   // Active-term index: pick the first term whose end is in the future, or the last term otherwise.
   let ati=0;for(let i=0;i<eng.terms.length;i++){if(now<=eng.terms[i].end){ati=i;break}else ati=i}
 
-  // calcStats: walk every school day in the given terms, count total teaching periods (tl)
-  // and planned periods (tp), and roll up by week (wd) and by class (cd). This is the only
-  // place that touches localStorage in compGam; everything else is derived from these counts.
-  function calcStats(termList){
+  // calcStats: walk every school day in the given terms of engine e, count total teaching
+  // periods (tl) and planned periods (tp), and roll up by week (wd) and by class (cd). This
+  // is the only place that touches localStorage in compGam; everything else is derived
+  // from these counts.
+  function calcStats(e,termList){
     const wd={},cd={};let tp=0,tl=0;
-    termList.forEach(term=>{eng.getTermWeeks(term).flat().forEach(d=>{
-      const c=eng.cycleDayFor(d);if(!c||c===0)return;const key=toDateKey(d),wn=eng.wkN(d);
+    termList.forEach(term=>{e.getTermWeeks(term).flat().forEach(d=>{
+      const c=e.cycleDayFor(d);if(!c||c===0)return;const key=toDateKey(d),wn=e.wkN(d);
       if(!wd[wn])wd[wn]={p:0,t:0};
-      eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,c,pid);if(cls==="nc")return;
+      e.PIDS.forEach(pid=>{const cls=e.classAt(d,c,pid);if(cls==="nc")return;
         tl++;wd[wn].t++;if(!cd[cls])cd[cls]={p:0,t:0};cd[cls].t++;
         const n=storageGet(`note:${key}:${pid}`);if(n&&(n.subject||n.notes||n.status==="nl")){tp++;wd[wn].p++;cd[cls].p++}});
     })});
     const pw=Object.values(wd).filter(w=>w.t>0&&w.p===w.t).length;
-    const allCls=eng.classCodes.length>0&&eng.classCodes.every(c=>cd[c]&&cd[c].p>0);
-    const allHalf=eng.classCodes.length>0&&eng.classCodes.every(c=>{const d=cd[c];return d&&d.p>d.t*ALL_HALF_THRESHOLD_PCT});
+    const allCls=e.classCodes.length>0&&e.classCodes.every(c=>cd[c]&&cd[c].p>0);
+    const allHalf=e.classCodes.length>0&&e.classCodes.every(c=>{const d=cd[c];return d&&d.p>d.t*ALL_HALF_THRESHOLD_PCT});
     return{tp,tl,pw,wd,cd,allCls,allHalf};
   }
+  // Longest run of weeks at or above the streak threshold, in one year's week map.
+  const longestRun=wd=>{let longest=0,run=0;Object.keys(wd).map(Number).sort((a,b)=>a-b).forEach(wn=>{const w=wd[wn];if(w&&w.t>0&&w.p/w.t>=STREAK_THRESHOLD_PCT){run++;if(run>longest)longest=run}else run=0});return longest};
 
-  // Two passes: cumulative (all terms) and active-term-only.
-  const cum=calcStats(eng.terms);
-  const at=eng.terms[ati];const term=at?calcStats([at]):{tp:0,tl:0,pw:0,wd:{},cd:{},allCls:false,allHalf:false};
+  // Two passes for this year: cumulative (all its terms) and active-term-only.
+  const cum=calcStats(eng,eng.terms);
+  const at=eng.terms[ati];const term=at?calcStats(eng,[at]):{tp:0,tl:0,pw:0,wd:{},cd:{},allCls:false,allHalf:false};
 
   // Streak (sk): count consecutive weeks ending at pwn where >=80% of teaching periods were planned.
   // Walk weeks in reverse-chronological order; stop as soon as a week falls below threshold.
   const sorted=Object.keys(cum.wd).map(Number).filter(n=>n<=pwn).sort((a,b)=>b-a);
   let sk=0;for(const wn of sorted){const w=cum.wd[wn];if(w&&w.t>0&&w.p/w.t>=STREAK_THRESHOLD_PCT)sk++;else break}
-  // Longest streak (ls): walk weeks in chronological order, track the longest run of >=80% weeks.
-  // This is independent of `sk`: the longest streak might not be the current one.
-  let longest=0,run=0;Object.keys(cum.wd).map(Number).sort((a,b)=>a-b).forEach(wn=>{const w=cum.wd[wn];if(w&&w.t>0&&w.p/w.t>=STREAK_THRESHOLD_PCT){run++;if(run>longest)longest=run}else run=0});
+  // Longest streak (ls) this year. Independent of `sk`: the longest streak might not be the current one.
+  const longest=longestRun(cum.wd);
+  // Lifetime: this year plus every other configured year. Week numbers are per-year, so
+  // years are summed as counts and the longest streak is the best single year's.
+  const past=(others||[]).map(e=>calcStats(e,e.terms));
+  const life={tp:past.reduce((a,p)=>a+p.tp,cum.tp),tl:past.reduce((a,p)=>a+p.tl,cum.tl),pw:past.reduce((a,p)=>a+p.pw,cum.pw),ls:Math.max(longest,...past.map(p=>longestRun(p.wd)))};
 
-  // Snapshot used by the achievement triggers (each trigger's ck() reads from this).
-  const st={cum:{...cum,sk,ls:longest},term};
+  // Snapshot used by the achievement triggers (each trigger's ck() reads from this). Lifetime
+  // counts, so an achievement earned last year stays earned; the current streak is this year's.
+  const st={cum:{...cum,tp:life.tp,tl:life.tl,pw:life.pw,sk,ls:life.ls},term};
   // Each achievement combines its trigger (id, xp, ck) with the theme's icon/title/etc.
   const achs=ACH_TRIGGERS.map((a,i)=>({...a,...th.achs[i],unlocked:a.ck(st)}));
-  // Total XP: planned periods, perfect-week bonuses, and unlocked achievement bonuses.
-  let xp=cum.tp*XP_PER_LESSON+cum.pw*XP_PER_PERFECT_WEEK;achs.forEach(a=>{if(a.unlocked)xp+=a.xp});
+  // Total XP (lifetime): planned periods, perfect-week bonuses, and unlocked achievement bonuses.
+  let xp=life.tp*XP_PER_LESSON+life.pw*XP_PER_PERFECT_WEEK;achs.forEach(a=>{if(a.unlocked)xp+=a.xp});
   // Look up the highest level whose XP threshold has been crossed.
   let levIdx=0;LEVEL_XP.forEach((x,i)=>{if(xp>=x)levIdx=i});
   const cw=cum.wd[pwn]||{p:0,t:0};
@@ -1311,6 +1336,9 @@ function Badges({achs}){
   const[open,setOpen]=useState(null);
   return<div className="bs np">{achs.map((a,i)=><div key={a.id} role="button" tabIndex={0} aria-expanded={open===i} aria-label={`${a.title}${a.unlocked?" (unlocked)":` (locked): ${a.desc}`}`} onClick={()=>setOpen(open===i?null:i)} onKeyDown={kAct(()=>setOpen(open===i?null:i))} className={`bm${a.unlocked?"":" lk"}${open===i?" open":""}`} style={a.unlocked?{background:"var(--surface)",borderColor:"var(--accent)"}:{}}><span>{a.icon}</span><div className="bt"><strong>{a.title}</strong>{a.unlocked?" \u2713":` ${a.desc}`}</div></div>)}</div>;
 }
+// YearSwitch: one button per configured school year, for Term and Class View. Renders
+// nothing until a second year exists, so a single-year planner looks as it always has.
+const YearSwitch=({years,year,onPick})=>years&&years.length>1?<div role="group" aria-label="School year" style={{display:"flex",gap:4,alignItems:"center",marginRight:4,paddingRight:8,borderRight:"1px solid var(--border)"}}>{years.map(y=><button key={y} className="mn" aria-pressed={y===year} onClick={()=>onPick(y)} style={{padding:"4px 10px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:y===year?700:400,background:y===year?"var(--accent)":"var(--surface)",color:y===year?"var(--on-accent)":"var(--text-secondary)"}}>{y}</button>)}</div>:null;
 // Sits in the Week View summary strip: reminds you how to raise a flag.
 const FlagHint=()=>{const[o,setO]=useState(false);return<div className="fwb"><span role="button" tabIndex={0} aria-expanded={o} aria-label={`How flags work, ${o?"collapse":"expand"}`} onClick={()=>setO(!o)} onKeyDown={kAct(()=>setO(o=>!o))} style={{cursor:"pointer",color:"var(--flag)"}}>{"\u2691"} flags {o?"\u25B4":"\u25BE"}</span>{o&&<><span>start a line with</span><span className="fw">!</span><span>to flag it, e.g.</span><span className="fw">! photocopy worksheet</span></>}</div>};
 
@@ -1465,7 +1493,7 @@ function DayView({date,setDate,onBack,metaCache,onMS,fp,gam,onUpdateCfg,cfg}){
  * a "Wk" button to open Week View. Defaults to the active term.
  * ═══════════════════════════════════════════════════════════════════════
  */
-function TermView({onDay,onWk,metaCache,gam,cfg}){
+function TermView({onDay,onWk,metaCache,gam,cfg,years,year,onYear}){
   const eng=useCfg();const today=useToday();const[termIdx,setTermIdx]=useState(()=>{if(!eng||!eng.terms)return 0;const now=new Date();now.setHours(0,0,0,0);let ati=0;for(let i=0;i<eng.terms.length;i++){if(now<=eng.terms[i].end){ati=i;break}else ati=i}return ati});
   const term=eng.terms[termIdx];const weeks=useMemo(()=>term?eng.getTermWeeks(term):[],[term]);
   const ts=useMemo(()=>{if(!term)return new Date();const d=new Date(term.start);d.setHours(0,0,0,0);return d},[term]);
@@ -1500,7 +1528,7 @@ function TermView({onDay,onWk,metaCache,gam,cfg}){
   const coarse=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(pointer: coarse)").matches;
   if(!term)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>No terms configured. Head to Setup to get started.</div>;
   return<div>{gam.showGam&&<><XpStrip gam={gam}/><Badges achs={gam.achs}/></>}
-    <div style={{marginBottom:14,marginTop:10}}><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4}}>{eng.terms.map((t,i)=><button key={i} className="hd" onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:termIdx===i?700:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div><div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}>{term.start.toLocaleDateString("en-NZ",{day:"numeric",month:"short"})} {"\u2013"} {term.end.toLocaleDateString("en-NZ",{day:"numeric",month:"short",year:"numeric"})}</div></div>
+    <div style={{marginBottom:14,marginTop:10}}><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4}}><YearSwitch years={years} year={year} onPick={onYear}/>{eng.terms.map((t,i)=><button key={i} className="hd" onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:termIdx===i?700:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div><div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}>{term.start.toLocaleDateString("en-NZ",{day:"numeric",month:"short"})} {"\u2013"} {term.end.toLocaleDateString("en-NZ",{day:"numeric",month:"short",year:"numeric"})}</div></div>
     <div style={{display:"grid",gridTemplateColumns:"58px repeat(5,1fr)",gap:3,marginBottom:4}}><div/>{["Mon","Tue","Wed","Thu","Fri"].map(d=><div key={d} className="hd" style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",textAlign:"center",fontWeight:600}}>{d}</div>)}</div>
     {weeks.map((days,wi)=><div key={wi} style={{display:"grid",gridTemplateColumns:"58px repeat(5,1fr)",gap:3,marginBottom:3,alignItems:"start"}}><div style={{paddingTop:2}}><Btn onClick={()=>onWk(days[0])} style={{padding:"3px 0",fontSize:"var(--fs-nano)",width:"100%",textAlign:"center",borderRadius:5}}>Wk {wi+1}</Btn></div>
       {days.map(d=>{const dn=new Date(d);dn.setHours(0,0,0,0);const iT=dn>=ts&&dn<=te,sch=eng.isSchoolDay(d),isT=dn.toDateString()===today.toDateString(),cd=sch?eng.cycleDayFor(d):null,isZ=cd===0,k=toDateKey(d),meta=metaCache[k]||emptyMeta(),cv=cov[k];
@@ -1885,7 +1913,7 @@ function DetailedNoteEditor({dateKey,pid,onSave}){
  * without leaving the Class View.
  * ═══════════════════════════════════════════════════════════════════════
  */
-function ClassView({onDet,gam}){
+function ClassView({onDet,gam,years,year,onYear}){
   const eng=useCfg();const today=useToday();const[sel,setSel]=useState(eng.classCodes[0]||"");
   const[termIdx,setTermIdx]=useState(()=>{if(!eng||!eng.terms)return 0;const now=new Date();now.setHours(0,0,0,0);let ati=0;for(let i=0;i<eng.terms.length;i++){if(now<=eng.terms[i].end){ati=i;break}else ati=i}return ati});
   const[qe,setQE]=useState(null);const[qv,setQV]=useState("");const[nr,setNR]=useState(0);
@@ -1961,7 +1989,7 @@ function ClassView({onDet,gam}){
   if(eng.classCodes.length===0)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>No classes configured. Head to Setup to add your classes.</div>;
   return<div>{gam.showGam&&<><XpStrip gam={gam}/><Badges achs={gam.achs}/></>}
     <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14,marginTop:10}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c],a=c===sel,sem=cl&&cl.semester;return<span key={c} className="mn" onClick={()=>{setSel(c);setQE(null)}} role="button" tabIndex={0} aria-pressed={a} aria-label={`${c}${sem&&sem!=="full"?", "+sem:""}, show this class`} onKeyDown={kAct(()=>{setSel(c);setQE(null)})} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"4px 12px",borderRadius:6,fontSize:"var(--fs-body)",fontWeight:700,cursor:"pointer",outline:a?"2px solid var(--accent)":"none",outlineOffset:2}}>{c}{sem&&sem!=="full"&&<span style={{fontSize:"var(--fs-nano)",fontWeight:600,marginLeft:5,opacity:.7}}>{sem}</span>}</span>})}</div>
-    <div style={{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"}}><button onClick={()=>setTermIdx(-1)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:termIdx===-1?600:400,background:termIdx===-1?"var(--accent)":"var(--surface)",color:termIdx===-1?"var(--on-accent)":"var(--text-secondary)"}}>All terms</button>{eng.terms.map((t,i)=><button key={i} onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:termIdx===i?600:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div>
+    <div style={{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"}}><YearSwitch years={years} year={year} onPick={onYear}/><button onClick={()=>setTermIdx(-1)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:termIdx===-1?600:400,background:termIdx===-1?"var(--accent)":"var(--surface)",color:termIdx===-1?"var(--on-accent)":"var(--text-secondary)"}}>All terms</button>{eng.terms.map((t,i)=><button key={i} onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:termIdx===i?600:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div>
     <div style={{marginBottom:14}}><div className="hd" style={{fontSize:"var(--fs-title)",fontWeight:600,color:clr.tx}}><span style={{background:clr.bg,padding:"2px 10px",borderRadius:5}}>{sel}</span></div>{clr.desc&&<div style={{fontSize:"var(--fs-body)",color:"var(--text-secondary)",marginTop:4}}>{clr.desc}</div>}<div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginTop:4}}>{lessons.length} lessons {"\u00B7"} <strong className="mn" style={{color:planned===lessons.length?"var(--success)":"var(--text)"}}>{planned} planned</strong> {"\u00B7"} {lessons.length-planned} empty{flagged>0&&<span style={{color:"var(--flag)",marginLeft:6}}>{"\u2691"} {flagged}</span>}</div></div>
     {shiftMsg&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 12px",marginBottom:10,borderRadius:"var(--radius-sm)",background:"var(--surface)",border:`1px solid ${shiftMsg.err?"var(--error)":"var(--border)"}`,fontSize:"var(--fs-caption)",color:shiftMsg.err?"var(--error)":"var(--text-secondary)"}}><span style={{flex:1,minWidth:120}}>{shiftMsg.text}</span>{shiftUndo&&!shiftMsg.err&&<button onClick={undoShift} style={{background:"var(--accent)",color:"var(--on-accent)",border:"none",borderRadius:"var(--radius-sm)",padding:"3px 12px",fontSize:"var(--fs-micro)",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Undo</button>}<button onClick={()=>{setShiftMsg(null);setShiftUndo(null)}} style={{background:"none",border:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:"var(--fs-emph)"}}>{"✕"}</button></div>}
     <div className="card" style={{overflow:"hidden"}}>{lessons.map((l,i)=>{const ld=new Date(l.date);ld.setHours(0,0,0,0);const isT=ld.toDateString()===today.toDateString(),isPast=ld<today,isNl=l.notes.status==="nl",empty=!l.notes.subject&&!l.notes.notes&&!isNl,fl=hasFlag(l.notes.notes)||hasFlag(l.notes.subject),isN=i===nxtI&&!isT,per=bldP(asmBellsForDate(l.cd,l.date,{timetable:eng.timetableForDate(l.date),weeklyEvents:[]})).find(p=>p.id===l.pid),isEd=qe&&qe.i===i;
@@ -2539,7 +2567,7 @@ function DataPanel({onClose,onImported,onSync,onSyncConn,onSyncDisc,lastSync,tok
  * Pure read of localStorage; adds no stored state. Closes on Escape, backdrop
  * click, or a result tap (which navigates via onGo → goDay).
  * ═══════════════════════════════════════════════════════════════════════ */
-function SearchOverlay({eng,onGo,onClose}){
+function SearchOverlay({engOf,onGo,onClose}){
   const[q,setQ]=useState("");
   const inputRef=useRef(null);
   useEffect(()=>{if(inputRef.current)inputRef.current.focus()},[]);
@@ -2557,7 +2585,9 @@ function SearchOverlay({eng,onGo,onClose}){
         const dkey=rest.slice(0,ci),pid=rest.slice(ci+1),n=storageGet(k);if(!n)continue;
         const hit=[["subject",n.subject],["notes",n.notes],["resources",n.resources]].find(f=>f[1]&&f[1].toLowerCase().includes(term));
         if(!hit)continue;
-        const date=parseDk(dkey);let cls=null;try{const cd=eng.cycleDayFor(date);if(cd)cls=eng.classAt(date,cd,pid)}catch{}
+        // Each lesson is labelled through the engine for its own year: a 2026 lesson keeps its
+        // 2026 class while you work in 2027. A year that is not configured gives no label.
+        const date=parseDk(dkey);let cls=null;try{const e=engOf(date),cd=e&&e.cycleDayFor(date);if(cd)cls=e.classAt(date,cd,pid)}catch{}
         out.push({key:k,date,pid,locator:(cls&&cls!=="nc"?cls+" · ":"")+(SL[pid]||pid),title:n.subject||"",text:hit[1]});
       }else if(k.slice(0,8)==="daymeta:"){
         const dkey=k.slice(8),m=storageGet(k);if(!m)continue;
@@ -2568,7 +2598,7 @@ function SearchOverlay({eng,onGo,onClose}){
     }
     out.sort((a,b)=>b.date-a.date);
     return out;
-  },[term,eng]);
+  },[term,engOf]);
   const snip=text=>{
     const idx=text.toLowerCase().indexOf(term);
     if(idx<0)return text.slice(0,90);
@@ -2741,11 +2771,19 @@ function App(){
   const defaultYear=useMemo(()=>pickYear(cfg,today.getFullYear()),[cfg,today]);const todayEng=engFor(defaultYear);
   const planMon=useMemo(()=>getPlanMon(today),[today]);const planWN=todayEng?todayEng.wkN(planMon):8;
   const[view,setView]=useState("week");const[base,setBase]=useState(planMon);const[detDate,setDetDate]=useState(null);
-  // The working year: the year of the date on screen in Week and Day View, the default
-  // year everywhere else. eng and ycfg (the single-year config handed to the views) both
-  // follow it, so every view keeps reading one year exactly as it always has.
-  const workYear=pickYear(cfg,view==="week"?base.getFullYear():view==="day"&&detDate?detDate.getFullYear():today.getFullYear());
-  const eng=engFor(workYear);
+  // The working year: the year of the date on screen in Week and Day View; elsewhere the
+  // selected year, which follows Week and Day as you navigate and which the Term and
+  // Class View year switchers change. eng and ycfg (the single-year config handed to the
+  // views) both follow it, so every view keeps reading one year exactly as it always has.
+  const yearList=useMemo(()=>yearsOf(cfg).map(y=>y.year),[cfg]);
+  const[selYear,setSelYear]=useState(()=>today.getFullYear());
+  useEffect(()=>{if(view==="week")setSelYear(base.getFullYear());else if(view==="day"&&detDate)setSelYear(detDate.getFullYear())},[view,base,detDate]);
+  const workYear=pickYear(cfg,view==="week"?base.getFullYear():view==="day"&&detDate?detDate.getFullYear():selYear);
+  // The engine handed down is the working year's, with one change: nearestSchoolDay walks
+  // across years (stepSchoolDay), so Day View's Prev/Next, the [ ] keys and the Day tab
+  // carry on past New Year into the neighbouring configured year without knowing years exist.
+  const yearEng=engFor(workYear);
+  const eng=useMemo(()=>yearEng?{...yearEng,nearestSchoolDay:(d,dir)=>stepSchoolDay(yearList,engFor,d,dir)}:null,[yearEng,yearList,engFor]);
   const ycfg=useMemo(()=>workYear!=null?flattenYear(cfg,workYear):null,[cfg,workYear]);
   const workYearRef=useRef(workYear);workYearRef.current=workYear;
   const[prevV,setPrevV]=useState("week");const[fp,setFP]=useState(null);
@@ -2881,7 +2919,7 @@ function App(){
   const themeKey=cfg&&cfg.theme||"physics";
   // Gamification follows the default year, not the working year, so XP and the week bar
   // do not change just because you browsed into another year.
-  const gam=useMemo(()=>({...compGam(todayEng,planWN,themeKey),showGam:cfg?.showGam!==false}),[gr,view,planWN,todayEng,themeKey,cfg]);
+  const gam=useMemo(()=>({...compGam(todayEng,planWN,themeKey,yearList.filter(y=>y!==defaultYear).map(engFor).filter(Boolean)),showGam:cfg?.showGam!==false}),[gr,view,planWN,todayEng,themeKey,cfg,yearList,defaultYear,engFor]);
   const updateMeta=useCallback((key,ch)=>{const cur=mcR.current[key]||emptyMeta(),u={...cur,...ch};mcR.current={...mcR.current,[key]:u};setMC(c=>({...c,[key]:u}));writeRecord(`daymeta:${key}`,u);triggerSync()},[triggerSync]);
   // onUpdateCfg: lets a non-Settings view (e.g. DayView's "Save to D{cd}") write
   // a partial change into cfg.timetable. Persists to localStorage and bumps the
@@ -2980,14 +3018,14 @@ function App(){
     </div>
     {storageFailed&&<div className="card" style={{padding:"12px 16px",marginBottom:14,border:"1px solid var(--error)",background:"var(--surface)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:"var(--fs-title)"}}>{"⚠"}</span><div style={{flex:1,minWidth:200}}><div className="hd" style={{fontSize:"var(--fs-emph)",fontWeight:600,color:"var(--error)"}}>Browser storage is full</div><div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",lineHeight:1.5}}>Recent changes have not been saved. Cloud sync is paused while this is unresolved. Open the Data Panel to download a backup, then clear old data in your browser settings.</div></div><button className="btn-a" onClick={()=>setShowDP(true)} style={{padding:"6px 14px",fontSize:"var(--fs-body)"}}>Open Data Panel</button><button className="btn" onClick={()=>{storageFailedRef.current=false;setStorageFailed(false)}} style={{padding:"4px 10px",fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}>Dismiss</button></div>}
     {(ycfg&&(!ycfg.classes||ycfg.classes.length===0||!ycfg.timetable||Object.keys(ycfg.timetable).length===0))&&<div className="card" style={{padding:"14px 18px",marginBottom:14,border:"1px solid var(--dz-border)",background:"var(--dz-bg)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:"var(--fs-title)"}}>{"\u{1F44B}"}</span><div style={{flex:1,minWidth:200}}><div className="hd" style={{fontSize:"var(--fs-emph)",fontWeight:600,color:"var(--dz-text)"}}>Welcome! Add your classes and timetable</div><div style={{fontSize:"var(--fs-caption)",color:"var(--dz-text)",opacity:.8}}>Term dates and holidays are already set up. Head to Setup to add your classes and timetable.</div></div><button className="btn-a" onClick={()=>{setView("setup");setGR(r=>r+1)}} style={{padding:"6px 14px",fontSize:"var(--fs-body)"}}>Go to Setup {"\u2192"}</button></div>}
-    {showSearch&&<SearchOverlay eng={eng} onGo={goDay} onClose={()=>setShowSearch(false)}/>}
+    {showSearch&&<SearchOverlay engOf={d=>engFor(d.getFullYear())} onGo={goDay} onClose={()=>setShowSearch(false)}/>}
     {showHelp&&<HotkeyHelp onClose={()=>setShowHelp(false)}/>}
     {showDP&&<DataPanel onClose={()=>setShowDP(false)} onImported={handleImport} onSync={syncNow} onSyncConn={(tok,gid)=>{setGhToken(tok);setGhGistId(gid);triggerSync()}} onSyncDisc={()=>{setGhToken("");setGhGistId("");clearTimeout(syncTimer.current);setSyncSt("idle");setLastSync(null)}} lastSync={lastSync} token={ghToken} gistId={ghGistId} setToken={setGhToken} setGistId={setGhGistId}/>}
     <ErrorBoundary key={view}>
-    {view==="term"&&<TermView onDay={goDay} onWk={goWk} metaCache={metaCache} gam={gam} cfg={ycfg}/>}
+    {view==="term"&&<TermView key={workYear} onDay={goDay} onWk={goWk} metaCache={metaCache} gam={gam} cfg={ycfg} years={yearList} year={workYear} onYear={setSelYear}/>}
     {view==="week"&&<WeekView base={base} setBase={setBase} onDet={(d,pid)=>goDay(d,pid)} metaCache={metaCache} updateMeta={updateMeta} gam={gam} onUpdateCfg={onUpdateCfg} cfg={ycfg}/>}
     {view==="day"&&detDate&&<DayView date={detDate} setDate={d=>{setDetDate(d);setFP(null);setView("day")}} onBack={()=>{setFP(null);setGR(r=>r+1);setView(prevV==="day"?"week":prevV)}} metaCache={metaCache} onMS={onMS} fp={fp} gam={gam} onUpdateCfg={onUpdateCfg} cfg={ycfg}/>}
-    {view==="class"&&<ClassView onDet={(d,pid)=>goDay(d,pid)} gam={gam}/>}
+    {view==="class"&&<ClassView key={workYear} onDet={(d,pid)=>goDay(d,pid)} gam={gam} years={yearList} year={workYear} onYear={setSelYear}/>}
     {view==="lab"&&<LabView gam={gam}/>}
     {view==="setup"&&<SettingsView year={defaultYear} onSave={newCfg=>{setCfg(newCfg);setGR(r=>r+1)}} displayMode={dispMode} setDisplayMode={setDispMode}/>}
     </ErrorBoundary>

@@ -75,7 +75,7 @@ async function loadCore(ls){
     "migrateConfig,migrateStorage,makeDateEngine,resolveSlot,asmBellsForDate,"+
     "NOTE_KEY_RE,META_KEY_RE,GC_HORIZON_MS,toDateKey,storageGet,storageSet,emptyNote,emptyMeta,normalizeMeta,getAllData,"+
     "flagLines,hasFlag,flagCount,hexAlpha,"+
-    "SCHEMA_VERSION,yearsOf,flattenYear,pickYear,putYear,upgradeConfig,mergeConfig,writeConfig,sharedPart};");
+    "SCHEMA_VERSION,yearsOf,flattenYear,pickYear,putYear,upgradeConfig,mergeConfig,writeConfig,sharedPart,stepSchoolDay};");
   return factory(ls,stub,stub);
 }
 // fresh isolated core+storage for tests that write to localStorage
@@ -356,6 +356,20 @@ try{
     eq("2026 dates are not school days in the 2027 engine (each year stands alone)",e27.cycleDayFor(mon26),null);
   }
 
+  G("Year model: stepping school days across New Year (stepSchoolDay)");
+  {
+    const two={...C.upgradeConfig(v2({terms:[{n:4,start:"2026-10-12",end:"2026-12-08"}],anchor:{date:"2026-10-12",day:1}})),years:[]};
+    two.years=[C.upgradeConfig(v2({terms:[{n:4,start:"2026-10-12",end:"2026-12-08"}],anchor:{date:"2026-10-12",day:1}})).years[0],y2027(isoAgo(1))];
+    const engOf=y=>{const f=C.flattenYear(two,y);return f?C.makeDateEngine(f):null};
+    const ys=[2026,2027],key=d=>d?C.toDateKey(d):null;
+    eq("within a year it is the plain next school day",key(C.stepSchoolDay(ys,engOf,new Date(2026,9,12),1)),"2026-9-13");
+    eq("forward from the last day of 2026 lands on 2027's first teaching day",key(C.stepSchoolDay(ys,engOf,new Date(2026,11,8),1)),"2027-1-1");
+    eq("back from 2027's first day lands on 2026's last",key(C.stepSchoolDay(ys,engOf,new Date(2027,1,1),-1)),"2026-11-8");
+    eq("from the summer holidays it finds 2027 going forward",key(C.stepSchoolDay(ys,engOf,new Date(2027,0,10),1)),"2027-1-1");
+    eq("past the last configured year there is nowhere to go",C.stepSchoolDay(ys,engOf,new Date(2027,3,16),1),null);
+    eq("with one year configured it behaves exactly as before",key(C.stepSchoolDay([2026],engOf,new Date(2026,11,8),1)),null);
+  }
+
   G("Year model: writing one year back (putYear / writeConfig)");
   {
     const base={...C.upgradeConfig(v2()),years:[C.upgradeConfig(v2()).years[0],y2027(isoAgo(5))]};
@@ -405,8 +419,8 @@ try{
   }
 
   // ══ SMOKE ══════════════════════════════════════════════════════════════════
-  // Boots the real app four times in a hidden frame and drives it. See runSmoke().
-  document.getElementById("summary").textContent="Unit tests done. Running smoke tests (boots the app four times)…";
+  // Boots the real app five times in a hidden frame and drives it. See runSmoke().
+  document.getElementById("summary").textContent="Unit tests done. Running smoke tests (boots the app five times)…";
   await runSmoke();
 
   render();
@@ -697,6 +711,33 @@ async function runSmoke(){
     await visitViews(D,"two years",true);
     const st=JSON.parse(D.win.localStorage.getItem("planner-config")||"null");
     eq("both years are still stored after all of that",st&&st.years.map(y=>y.year),[2026,2027]);
+    assert("no requests to other sites during the run",!D.S.blocked.length,D.S.blocked.join("\n"));
+  }
+
+  // ── Run 5: the same two years, frozen in 2027 Term 1 (3.1.0: reading across years). ─
+  G("Smoke: working in 2027 with 2026 behind it");
+  D=await bootApp(smokeTwoYears(),new Date(2027,1,3,10,0,0).getTime());
+  assert("app boots in 2027",D.booted&&!D.crashed(),D.S.errors.join("\n"));
+  if(D.booted&&D.S.shadowed){
+    const has=code=>D.qa(".pb[aria-label]").some(e=>e.getAttribute("aria-label").split(", ")[1]===code);
+    const yearBtn=y=>D.qa('[role="group"][aria-label="School year"] button').find(b=>b.textContent.trim()===String(y));
+    const tileFor=s=>D.qa("[role=button]").find(e=>(e.getAttribute("aria-label")||"").startsWith(s));
+    await step(D,"Week View opens on 2027 with 2027's classes",()=>D.key("w"),()=>D.text().includes("1 Feb")&&has("9SCI5")&&!has("9SCI1"));
+    await step(D,"Term View offers both years, with 2027 selected",()=>D.key("t"),()=>yearBtn(2026)&&yearBtn(2027)&&yearBtn(2027).getAttribute("aria-pressed")==="true"&&tileFor("Wednesday, 3 February"));
+    // XP is lifetime (decision 1). 2027 has no lessons yet, so per-year XP would read 0.
+    await step(D,"XP counts last year's lessons too",null,()=>{const m=D.text().match(/(\d+) XP/);return m&&+m[1]>0});
+    await step(D,"choosing 2026 shows 2026's terms, opening on its last",()=>yearBtn(2026).click(),()=>yearBtn(2026).getAttribute("aria-pressed")==="true"&&tileFor("Wednesday, 2 December"));
+    await step(D,"Class View follows the chosen year (2026's classes)",()=>D.key("c"),()=>D.q('[role=button][aria-label^="9SCI1"]')&&!D.q('[role=button][aria-label^="9SCI5"]'));
+    await step(D,"and switches to 2027's classes",()=>yearBtn(2027).click(),()=>D.q('[role=button][aria-label^="9SCI5"]')&&!D.q('[role=button][aria-label^="9SCI1"]'));
+    const dayHas=code=>D.qa(".pr").some(r=>r.textContent.includes(code));
+    await step(D,"Day View opens on the frozen today",()=>{D.key("w");return sleep(50).then(()=>D.key("d"))},()=>D.view()==="Day"&&D.text().includes("3 February 2027"));
+    await step(D,"[ steps back past New Year to 2026's last school day",()=>pressUntil(D,"[",()=>D.text().includes("8 December 2026"),5),()=>D.text().includes("8 December 2026"));
+    await step(D,"…which shows 2026's classes",null,()=>dayHas("9SCI1")||dayHas("10SCI2")||dayHas("12PHY1")||dayHas("13CHM1"));
+    await step(D,"] steps forward again to 2027's first teaching day",()=>pressUntil(D,"]",()=>D.text().includes("1 February 2027"),3),()=>D.text().includes("1 February 2027")&&(dayHas("9SCI5")||dayHas("12PHY2")));
+    // The 2026 lesson must carry its 2026 class. The old single-engine search, working in
+    // 2027, could not place a 2026 date at all and showed no class.
+    await step(D,"search labels a 2026 lesson with its 2026 class",()=>{D.key("/");return waitFor(()=>D.q('input[placeholder^="Search"]')).then(i=>D.type(i,"Forces"))},()=>D.text().includes("Forces recap")&&D.text().includes("9SCI1")&&!D.text().includes("9SCI5 ·"));
+    await step(D,"Esc closes search",()=>D.key("Escape"),()=>!D.q('input[placeholder^="Search"]'));
     assert("no requests to other sites during the run",!D.S.blocked.length,D.S.blocked.join("\n"));
   }
 

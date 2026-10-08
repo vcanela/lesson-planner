@@ -6,6 +6,23 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.1.0 — 2026-10-08
+
+### Features (year model, phase 2a: reading across years)
+With only 2026 configured, nothing here is visible yet; it all becomes live the moment a second year exists (the next release adds setting one up).
+- **Term and Class View get a year switcher**, one button per configured year, next to the term buttons. Hidden while there is only one year. The chosen year follows you: browse Week View into 2027 and Term View opens on 2027.
+- **Day View's Prev/Next and the `[` `]` keys cross New Year**, from the last school day of one year to the first of the next and back. A year's engine only knows its own terms, so the engine handed to the views now steps through the neighbouring configured years when its own runs out.
+- **Search labels every lesson with its own year's class.** Working in 2027, a 2026 lesson shows the 2026 class it was taught to. A lesson in a year that is not configured gets no label rather than a wrong one.
+- **XP, levels and achievements are lifetime** (design decision 1): they count every configured year, so January does not reset your level. The current streak, the week bar and the term figures stay with this year.
+
+### Implementation
+- `stepSchoolDay(years, engOf, d, dir)` in the pure core: within d's own year first, then the neighbouring years in order, entering each at its edge. The App wraps the working year's engine so its `nearestSchoolDay` uses it; Day View, the hotkeys and the Day tab are unchanged.
+- `compGam` takes the other years' engines; its stats walk takes the engine as a parameter. Lifetime figures are summed as counts (week numbers are per year), and the longest streak is the best single year's.
+- `YearSwitch` component; Term and Class View remount per year (`key`), so each opens on the right term and class for that year.
+- Tests: 204 assertions (from 184). Six unit tests for `stepSchoolDay` across New Year and at the edges; a fifth smoke boot works in 2027 with 2026 behind it (year switchers, both years' classes, Prev across New Year and back, search labels, lifetime XP). Validated against deliberate breakage: single-year stepping, per-year XP and the old single-engine search each failed their own checks. Differential on the May 2026 backup: Lab View (2,700 XP, every planned count) is identical between 3.0.1 and 3.1.0.
+
+---
+
 ## 3.0.1 — 2026-10-08
 
 ### Fixes
