@@ -6,6 +6,28 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.2.0 — 2026-10-08
+
+### Features (year model, phase 2b: setting up a year)
+- **Start a new school year in Setup.** A row of year buttons at the top of Setup switches between years and ends with **+ Start 2027** (whichever year is next). Starting a year opens a numbered draft of the same Setup cards: cycle length, terms, cycle start, holidays, Day 0s, classes, timetable, duties, weekly activities, then **Create**. It is pre-filled from the year before: classes carry over with their colours and courses (change each code, delete what you no longer teach), and cycle length, duties and weekly activities carry over too. The timetable starts empty, and the calendar comes from the built-in seed when the app has one for that year. **Nothing is saved until Create**, and last year is never changed. The draft survives switching views while the planner stays open, and can be discarded.
+- **The cycle start must be confirmed** (design decision 6). The school sets the cycle day of the first teaching day and it is not always Day 1, so Create stays disabled until it is ticked as checked against the school calendar, and the step says why: every lesson of the year is placed by counting from it. Until a date is chosen it follows Term 1's start.
+- **Changing an anchor asks first** once that year has lessons planned: lessons are kept by date and period, not by class, so a different count shows every one of them under a different class.
+- **Course labels are editable**: a small field after each class code (9SCI for 9SCI3) links the same course across years; left blank it is the code without its class number. Class View shows it under the class name.
+- **A year that isn't set up gets a card** in Week and Day View, offering to set it up or to go back to the latest year. This replaces 3.0.0's quiet fallback (an empty holiday week).
+- **Editing a past year shows a banner**: changes there change how that year's lessons display.
+- **A guide section**, "Starting a new school year", in Customising Setup.
+
+### Fixes found while building it
+- **The welcome card would have greeted you after creating a year.** It shows when the working year has no timetable, which is also true of a freshly created year. It now distinguishes a first run (no year has classes: the welcome) from a new year without a timetable yet (a "2027 has no timetable yet" reminder), and neither shows inside Setup or over the "not set up yet" card.
+- **A literal `·` in the Create step's title**: an escape sequence written into JSX text, where it prints as written, the same class of bug as the `—` literals in April. A new "source hygiene" test now scans the source for escapes in JSX text, so this cannot ship again.
+
+### Implementation
+- Draft mode reuses Setup rather than a separate wizard: the year cards were already in a workable order, so it hides the shared cards and numbers the rest in place. No reordering, so Tab order always matches what is on screen. The draft lives in the App and is never auto-saved (Setup's save-on-leave is off in draft mode); Create writes only the draft's year fields, since its copy of the shared settings may be stale by then.
+- New pure helpers: `buildYearDraft(raw, year, seed)` and `yearHasNotes(year)`. `DEFAULT_YEAR_SEED` becomes `YEAR_SEEDS`, keyed by year, calendar fields only; a fresh profile takes the current year's seed, else the latest. Add 2027's entry when the school publishes its calendar.
+- Tests: 245 assertions (from 204). 18 unit tests for the draft builder and the lesson check; the source-hygiene scan; a sixth smoke boot walks the whole flow through the real UI (start a year, date a term with the calendar pickers, set and confirm the cycle start, change a class code, create, then the empty-timetable reminder, the not-set-up card for the following year, a second draft and discarding it); the 2027 boot gains the past-year banner, the anchor warning (declined, anchor unchanged) and course labels. Validated against deliberate breakage: removing the confirmation gate, auto-saving the draft, and removing the anchor warning each failed their checks.
+
+---
+
 ## 3.1.0 — 2026-10-08
 
 ### Features (year model, phase 2a: reading across years)

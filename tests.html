@@ -75,7 +75,8 @@ async function loadCore(ls){
     "migrateConfig,migrateStorage,makeDateEngine,resolveSlot,asmBellsForDate,"+
     "NOTE_KEY_RE,META_KEY_RE,GC_HORIZON_MS,toDateKey,storageGet,storageSet,emptyNote,emptyMeta,normalizeMeta,getAllData,"+
     "flagLines,hasFlag,flagCount,hexAlpha,"+
-    "SCHEMA_VERSION,yearsOf,flattenYear,pickYear,putYear,upgradeConfig,mergeConfig,writeConfig,sharedPart,stepSchoolDay};");
+    "SCHEMA_VERSION,yearsOf,flattenYear,pickYear,putYear,upgradeConfig,mergeConfig,writeConfig,sharedPart,stepSchoolDay,"+
+    "buildYearDraft,yearHasNotes};");
   return factory(ls,stub,stub);
 }
 // fresh isolated core+storage for tests that write to localStorage
@@ -289,6 +290,19 @@ try{
     eq("empty input passes through",C.hexAlpha("",.3),"");
   }
 
+  // ══ SOURCE HYGIENE ═════════════════════════════════════════════════════════
+  // An escape like · is decoded inside a JS string but printed literally in JSX text,
+  // so the screen shows "·" instead of "·". It reached the UI in April (—) and
+  // again while building 3.2.0. A static scan of the source catches every instance.
+  G("Source hygiene");
+  {
+    const src=await(await fetch("index.html?cb="+Date.now())).text();
+    const at=src.indexOf('<script type="text/babel">');
+    if(at<0)assert("no \\u escape sequences in JSX text (checked on the source copy; this is the precompiled build)",true);
+    else{const bad=[...src.slice(at).matchAll(/>([^<>{}"'`\n]*)\\u[0-9a-fA-F]{4}/g)].map(m=>m[0].slice(0,40));
+      assert("no \\u escape sequences in JSX text (they print literally)",!bad.length,bad.join("\n"))}
+  }
+
   // ══ YEAR MODEL (schema v3) ═════════════════════════════════════════════════
   // YEAR_MODEL_DESIGN.md section 12. Builders: a v2 (single-year) config like the ones
   // stored before the year model, and the year entries of a two-year v3 config.
@@ -390,6 +404,39 @@ try{
     assert("writeConfig persists the edit into the stored multi-year config",stored.years.length===2&&stored.years.find(y=>y.year===2027).anchor.day===5&&saved.years.length===2);
   }
 
+  G("Year model: starting a new year (buildYearDraft / yearHasNotes)");
+  {
+    const base=C.upgradeConfig(v2({classes:[{code:"9SCI3",description:"Y9",colour:"#C5D9C0",semester:"S1"},{code:"13DPHY3",colour:"#D0C0E0",course:"IB Physics"}],
+      duties:[{code:"GD",description:"Gate",color:"#E0D0A8"}],weeklyEvents:[{weekday:3,slot:"B2a",text:"Club"}],semesterBoundary:"2026-06-22",timetableS2:{1:{P1:"9SCI3"}}}));
+    const d=C.buildYearDraft(base,2027,null);
+    eq("the draft is for the new year",d.year,2027);
+    eq("classes carry over with their codes, to be edited",d.classes.map(c=>c.code),["9SCI3","13DPHY3"]);
+    eq("…keeping their course labels (derived where missing)",d.classes.map(c=>c.course),["9SCI","IB Physics"]);
+    assert("…without last year's semester setting",d.classes.every(c=>!("semester" in c))&&!("semesterBoundary" in d)&&!("timetableS2" in d));
+    assert("cycle length, duties and weekly activities carry over",d.cycleDays===7&&d.duties.length===1&&d.weeklyEvents.length===1);
+    eq("the timetable starts empty",d.timetable,{});
+    assert("with no seed the calendar starts empty",d.terms.length===0&&d.holidays.length===0);
+    eq("…and the cycle start is unset, defaulting to Day 1",d.anchor,{date:"",day:1});
+    assert("shared settings come along for the views",d.theme==="coffee"&&d.userName==="V");
+    d.classes[0].code="9SCI5";
+    eq("editing the draft never touches last year",C.flattenYear(base,2026).classes[0].code,"9SCI3");
+    const seed={terms:[{n:1,start:"2027-02-01",end:"2027-04-16"}],holidays:[{date:"2027-02-08",name:"Waitangi Day (observed)"}],dayZeros:[],anchor:{date:"2027-02-01",day:4}};
+    const s=C.buildYearDraft(base,2027,seed);
+    assert("a seed fills the calendar",s.terms.length===1&&s.holidays.length===1);
+    assert("…its holidays become statutory Day 0s",s.dayZeros.some(z=>z.date==="2027-02-08"&&z.source==="statutory"));
+    eq("…and its cycle start is used (here Day 4)",s.anchor,{date:"2027-02-01",day:4});
+    seed.terms[0].start="2099-01-01";
+    eq("the seed itself is copied, never shared",s.terms[0].start,"2027-02-01");
+  }
+  {
+    const {ls,core}=await freshCore();
+    ls.setItem("note:2026-7-19:P1",JSON.stringify({subject:"Forces"}));
+    ls.setItem("note:2027-1-3:P2",JSON.stringify({subject:"",notes:"",resources:"",status:""}));
+    eq("a year with a planned lesson has notes",core.yearHasNotes(2026),true);
+    eq("a year with only an emptied lesson does not",core.yearHasNotes(2027),false);
+    eq("a year with nothing does not",core.yearHasNotes(2028),false);
+  }
+
   G("Year model: per-year merge (sync) and import");
   {
     const loc={...C.upgradeConfig(v2({updatedAt:isoAgo(9)})),years:[{...C.upgradeConfig(v2()).years[0],updatedAt:isoAgo(9)},y2027(isoAgo(2))]};
@@ -419,8 +466,8 @@ try{
   }
 
   // ══ SMOKE ══════════════════════════════════════════════════════════════════
-  // Boots the real app five times in a hidden frame and drives it. See runSmoke().
-  document.getElementById("summary").textContent="Unit tests done. Running smoke tests (boots the app five times)…";
+  // Boots the real app six times in a hidden frame and drives it. See runSmoke().
+  document.getElementById("summary").textContent="Unit tests done. Running smoke tests (boots the app six times)…";
   await runSmoke();
 
   render();
@@ -738,6 +785,53 @@ async function runSmoke(){
     // 2027, could not place a 2026 date at all and showed no class.
     await step(D,"search labels a 2026 lesson with its 2026 class",()=>{D.key("/");return waitFor(()=>D.q('input[placeholder^="Search"]')).then(i=>D.type(i,"Forces"))},()=>D.text().includes("Forces recap")&&D.text().includes("9SCI1")&&!D.text().includes("9SCI5 ·"));
     await step(D,"Esc closes search",()=>D.key("Escape"),()=>!D.q('input[placeholder^="Search"]'));
+    // 3.2.0: Setup across years.
+    const setupBtn=y=>D.qa('[role="group"][aria-label="School year to edit"] button').find(b=>b.textContent.trim()===String(y));
+    await step(D,"Class View shows each class's course",()=>D.key("c"),()=>D.text().includes("course 9SCI"));
+    await step(D,"Setup offers both years and the next one",()=>D.key("s"),()=>setupBtn(2026)&&setupBtn(2027)&&D.text().includes("+ Start 2028"));
+    await step(D,"editing a past year shows the past-year banner",()=>setupBtn(2026).click(),()=>D.text().includes("You are editing 2026, a past year"));
+    const asked=[];D.win.confirm=m=>{asked.push(m);return false};
+    const anchorSel=()=>D.qa(".sl").find(e=>/^Anchor$/i.test(e.textContent.trim())).parentElement.querySelector("select");
+    const before=anchorSel()&&anchorSel().value;
+    await step(D,"changing the anchor of a year with lessons asks first",()=>{const s=anchorSel();Object.getOwnPropertyDescriptor(D.win.HTMLSelectElement.prototype,"value").set.call(s,before==="5"?"6":"5");s.dispatchEvent(new D.win.Event("change",{bubbles:true}))},()=>asked.length===1&&/already has lessons planned/.test(asked[0]));
+    await step(D,"…and declining leaves the anchor as it was",null,()=>anchorSel().value===before);
+    assert("no requests to other sites during the run",!D.S.blocked.length,D.S.blocked.join("\n"));
+  }
+
+  // ── Run 6: starting a new year through the real UI (3.2.0). ───────────────────
+  G("Smoke: starting a new year");
+  D=await bootApp(smokeFixture(),new Date(2026,11,2,10,0,0).getTime());
+  assert("app boots in Term 4 2026",D.booted&&!D.crashed(),D.S.errors.join("\n"));
+  if(D.booted&&D.S.shadowed){
+    const btn=t=>D.qa("button").find(b=>b.textContent.trim()===t);
+    const card=re=>{const h=D.qa(".sl").find(e=>re.test(e.textContent.trim()));return h&&h.parentElement};
+    const setSelect=(s,v)=>{Object.getOwnPropertyDescriptor(D.win.HTMLSelectElement.prototype,"value").set.call(s,v);s.dispatchEvent(new D.win.Event("change",{bubbles:true}))};
+    // Pick a date in a SingleDatePicker: open it, step its own calendar to the month, click the day.
+    const pickDate=async(toggle,label,month)=>{toggle.click();const box=toggle.parentElement;
+      await waitFor(()=>box.querySelector(".cal-grid"));const head=()=>box.querySelector(".cal-grid").parentElement;
+      for(let i=0;i<14&&!head().textContent.includes(month);i++){head().querySelectorAll("button")[1].click();await sleep(40)}
+      const c=[...box.querySelectorAll("[role=button]")].find(e=>e.getAttribute("aria-label")===label);if(c)c.click();return!!c};
+    const stored=()=>JSON.parse(D.win.localStorage.getItem("planner-config")||"null");
+    await step(D,"Setup offers + Start 2027",()=>D.key("s"),()=>btn("+ Start 2027"));
+    await step(D,"starting it opens the draft, saving nothing",()=>btn("+ Start 2027").click(),()=>D.text().includes("Setting up 2027")&&D.text().includes("Nothing is saved until you press Create 2027")&&stored().years.length===1);
+    assert("the draft hides the shared cards",(()=>{const c=card(/^Display$/i);return c&&D.win.getComputedStyle(c).display==="none"})());
+    assert("the draft carries last year's classes",["9SCI1","10SCI2","12PHY1","13CHM1"].every(code=>D.qa("input.inp.mn").some(i=>i.value===code)));
+    assert("Create waits for the calendar and the cycle start",btn("Create 2027").disabled&&D.text().includes("Still needed"));
+    await step(D,"a term can be added and dated with the pickers",async()=>{btn("+ Add Term").click();await waitFor(()=>D.qa('[aria-label*="date picker"]').length>=2);
+      const t=()=>D.qa('[aria-label*="date picker"]');await pickDate(t()[0],"Monday, 1 February 2027","February 2027");await sleep(60);await pickDate(t()[1],"Friday, 16 April 2027","April 2027")},
+      ()=>{const t=D.qa('[aria-label*="date picker"]');return t[0].getAttribute("aria-label").startsWith("Mon, 1 Feb 2027")&&t[1].getAttribute("aria-label").startsWith("Fri, 16 Apr 2027")});
+    await step(D,"the cycle start follows Term 1 until it is set",null,()=>D.qa('[aria-label*="date picker"]')[2].getAttribute("aria-label").startsWith("Mon, 1 Feb 2027"));
+    await step(D,"Create still waits for the cycle start to be confirmed",()=>setSelect(card(/Cycle start/i).querySelector("select"),"4"),()=>btn("Create 2027").disabled&&D.text().includes("confirmation of the cycle start"));
+    await step(D,"confirming it enables Create",()=>card(/Cycle start/i).querySelector("input[type=checkbox]").click(),()=>!btn("Create 2027").disabled);
+    await step(D,"a carried class code can be changed for the new year",()=>D.type(D.qa("input.inp.mn").find(i=>i.value==="9SCI1"),"9SCI5"),()=>D.qa("input.inp.mn").some(i=>i.value==="9SCI5"));
+    await step(D,"Create adds 2027 and leaves 2026 alone",()=>btn("Create 2027").click(),()=>{const c=stored();if(!c||c.years.length!==2)return false;const y26=c.years[0],y27=c.years[1];
+      return y27.year===2027&&y27.anchor.date==="2027-02-01"&&y27.anchor.day===4&&y27.terms.length===1&&y27.classes.some(k=>k.code==="9SCI5"&&k.course==="9SCI")&&Object.keys(y27.timetable).length===0&&y26.classes.some(k=>k.code==="9SCI1")});
+    await step(D,"Setup then edits 2027 and offers 2028",null,()=>D.text().includes("School Setup")&&!D.text().includes("Setting up")&&btn("+ Start 2028"));
+    await step(D,"Week View in 2027 reminds you the timetable is empty",async()=>{D.key("w");await sleep(80);return pressUntil(D,"]",()=>D.text().includes("1 Feb"),12)},()=>D.text().includes("2027 has no timetable yet")&&!D.text().includes("Welcome!"));
+    await step(D,"a year that is not set up gets its own card",()=>pressUntil(D,"]",()=>D.text().includes("isn't set up yet"),60),()=>D.text().includes("2028 isn't set up yet")&&!D.text().includes("has no timetable yet"));
+    await step(D,"Set up 2028 opens a draft carrying 2027's classes",()=>btn("Set up 2028").click(),()=>D.text().includes("Setting up 2028")&&D.qa("input.inp.mn").some(i=>i.value==="9SCI5"));
+    D.win.confirm=()=>true;
+    await step(D,"Discard drops the draft without saving",()=>btn("Discard draft").click(),()=>!D.text().includes("Setting up 2028")&&btn("+ Start 2028")&&stored().years.length===2);
     assert("no requests to other sites during the run",!D.S.blocked.length,D.S.blocked.join("\n"));
   }
 

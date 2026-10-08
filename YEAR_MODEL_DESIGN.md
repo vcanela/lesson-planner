@@ -1,6 +1,6 @@
 # Year Model Design (multi-year config)
 
-Status: decisions resolved 2026-10-08 (section 14). Phase 1 built in 3.0.0. Phase 2 split in two: reading across years built in 3.1.0, setting up a year (3.2.0) next. Phases 3 and 4 not started.
+Status: decisions resolved 2026-10-08 (section 14). Phase 1 built in 3.0.0; phase 2 built in 3.1.0 and 3.2.0. Phase 3 (setting up 2027) waits for the school's 2027 calendar; phase 4 not started.
 Target: the planner moves into 2027 with 2026 intact and correctly labelled, and setting up a new year becomes a short guided task. Needed before the 2027 setup in late January; phase 1 should ship early in Term 4 2026.
 
 ## 1. The problem, concretely
@@ -190,7 +190,7 @@ Smoke (a new two-year fixture):
 1. **Phase 1, model and migration (early Term 4). Built in 3.0.0.** Sections 5, 6, 7 (engine and working year only) and 9, with no visible change beyond a year label in Setup. When the date on screen falls in a year that is not configured, phase 1 works in the nearest configured year instead, which renders exactly as the single-year planner always has (an empty holiday week); the "not set up yet" card arrives with phase 2. Day View Prev/Next and search still work within one year until phase 2. This puts the risky parts, migration and sync, into daily use for weeks while 2026 is still the only year and the stakes are lowest. Take a backup from the Data panel before updating. `BACKUP_SCHEMA.md` moves to v3. Roughly two working sessions.
 2. **Phase 2, the year UI (before Term 4 ends on 8 December).** Split into two releases:
    - **3.1.0, reading across years. Built.** Term and Class View year switchers (shown only once a second year exists), Day View Prev/Next and the `[` `]` keys across New Year (the engine handed to views steps through `stepSchoolDay`), search labelling each lesson through its own year's engine, lifetime XP, levels and achievements.
-   - **3.2.0, setting up a year.** Setup's year selector and the new-year flow (section 8), editable course labels, the anchor confirmation and the warning on changing an anchor once a year has notes, the "not set up yet" card replacing the phase 1 fallback, `YEAR_SEEDS`, and the guide section.
+   - **3.2.0, setting up a year. Built.** Setup's year selector and the new-year flow (section 8), editable course labels, the anchor confirmation and the warning on changing an anchor once a year has notes, the "not set up yet" card replacing the phase 1 fallback, `YEAR_SEEDS`, and the guide section. One departure from section 8: the flow is Setup itself in a draft mode (the same cards, numbered, shared cards hidden) rather than a separate wizard, and "continuing or not" per course is done by editing or deleting the carried-over classes. Same steps, no duplicated editors, and Tab order matches the screen.
 3. **Phase 3, set up 2027 (January).** Needs two facts from the school: the 2027 calendar (term dates, holidays, Day 0s) for the seed, and the cycle day of the first teaching day.
 4. **Phase 4, last year panel (Term 1 2027).** Separate design.
 

@@ -637,6 +637,27 @@ function flattenYear(c,year){const y=yearsOf(c).find(e=>e.year===year);if(!y)ret
 // earliest. (Phase 1 of the design: browsing into an unconfigured year falls back
 // to a neighbour, which renders exactly as the single-year planner always did.)
 function pickYear(c,y){const ys=yearsOf(c).map(e=>e.year).sort((a,b)=>a-b);if(!ys.length)return null;if(ys.includes(y))return y;const le=ys.filter(v=>v<=y);return le.length?le[le.length-1]:ys[0]}
+// buildYearDraft: the starting point for setting up `year`, as a single-year config for
+// Setup's draft mode (YEAR_MODEL_DESIGN.md section 8). Carried from the latest earlier
+// year: classes (code, description, colour, course; the codes are there to be edited),
+// cycle length, duties and weekly activities. Not carried: the timetable, which changes
+// completely, and the semester split. The calendar comes from `seed` (YEAR_SEEDS[year])
+// when the app ships one, else it starts empty. The anchor's day defaults to 1 but Setup
+// will not create the year until it is confirmed (decision 6).
+function buildYearDraft(raw,year,seed){
+  const prev=yearsOf(raw).filter(y=>y.year<year).sort((a,b)=>b.year-a.year)[0]||{};
+  const s=seed?JSON.parse(JSON.stringify(seed)):{},copy=v=>JSON.parse(JSON.stringify(v||[]));
+  const terms=s.terms||[],holidays=s.holidays||[];
+  return{...sharedPart(raw),year,cycleDays:prev.cycleDays||s.cycleDays||7,terms,holidays,
+    dayZeros:syncHolsToDZ(holidays,s.dayZeros||[]),
+    anchor:{date:(s.anchor&&s.anchor.date)||(terms[0]&&terms[0].start)||"",day:(s.anchor&&s.anchor.day)||1},
+    classes:copy(prev.classes).map(c=>({code:c.code,description:c.description||"",colour:c.colour,course:c.course||String(c.code||"").replace(/\d+$/,"")||c.code})),
+    timetable:{},duties:copy(prev.duties),weeklyEvents:copy(prev.weeklyEvents)};
+}
+// yearHasNotes: does any lesson in `year` have content? Lessons are stored by date and
+// period, not class, so changing a year's anchor moves every planned lesson onto
+// whichever class the new count puts in its slot; Setup asks before allowing it.
+function yearHasNotes(year){const p=`note:${year}-`;return Object.keys(localStorage).some(k=>{if(!k.startsWith(p))return false;const r=storageGet(k);return!!(r&&(r.subject||r.notes||r.resources||r.status))})}
 // stepSchoolDay: the nearest school day before (dir -1) or after (dir +1) date d, across
 // years. A year's engine only knows its own terms, so a walk that runs off the end of
 // d's year continues into the neighbouring configured years in order, entering each at
@@ -693,7 +714,7 @@ const SCHEMA_VERSION=3;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="3.1.0";
+const APP_VERSION="3.2.0";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -990,7 +1011,7 @@ function makeDateEngine(cfg){
   const timetableS2=cfg.timetableS2||null;
   const semesterBoundary=cfg.semesterBoundary?parseISO(cfg.semesterBoundary):null;
   const classes=(cfg.classes||[]);
-  const classMap={};classes.forEach(c=>{classMap[c.code]={bg:c.colour,tx:TEXT_FOR_BG[c.colour]||"#000",desc:c.description||"",semester:c.semester||"full"}});
+  const classMap={};classes.forEach(c=>{classMap[c.code]={bg:c.colour,tx:TEXT_FOR_BG[c.colour]||"#000",desc:c.description||"",semester:c.semester||"full",course:c.course||""}});
   const classCodes=classes.map(c=>c.code);
   // Pick the timetable grid that applies on `date`. If no semester boundary is set or
   // no S2 grid exists, the regular timetable is used for every date.
@@ -1990,7 +2011,7 @@ function ClassView({onDet,gam,years,year,onYear}){
   return<div>{gam.showGam&&<><XpStrip gam={gam}/><Badges achs={gam.achs}/></>}
     <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14,marginTop:10}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c],a=c===sel,sem=cl&&cl.semester;return<span key={c} className="mn" onClick={()=>{setSel(c);setQE(null)}} role="button" tabIndex={0} aria-pressed={a} aria-label={`${c}${sem&&sem!=="full"?", "+sem:""}, show this class`} onKeyDown={kAct(()=>{setSel(c);setQE(null)})} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"4px 12px",borderRadius:6,fontSize:"var(--fs-body)",fontWeight:700,cursor:"pointer",outline:a?"2px solid var(--accent)":"none",outlineOffset:2}}>{c}{sem&&sem!=="full"&&<span style={{fontSize:"var(--fs-nano)",fontWeight:600,marginLeft:5,opacity:.7}}>{sem}</span>}</span>})}</div>
     <div style={{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"}}><YearSwitch years={years} year={year} onPick={onYear}/><button onClick={()=>setTermIdx(-1)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:termIdx===-1?600:400,background:termIdx===-1?"var(--accent)":"var(--surface)",color:termIdx===-1?"var(--on-accent)":"var(--text-secondary)"}}>All terms</button>{eng.terms.map((t,i)=><button key={i} onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:termIdx===i?600:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div>
-    <div style={{marginBottom:14}}><div className="hd" style={{fontSize:"var(--fs-title)",fontWeight:600,color:clr.tx}}><span style={{background:clr.bg,padding:"2px 10px",borderRadius:5}}>{sel}</span></div>{clr.desc&&<div style={{fontSize:"var(--fs-body)",color:"var(--text-secondary)",marginTop:4}}>{clr.desc}</div>}<div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginTop:4}}>{lessons.length} lessons {"\u00B7"} <strong className="mn" style={{color:planned===lessons.length?"var(--success)":"var(--text)"}}>{planned} planned</strong> {"\u00B7"} {lessons.length-planned} empty{flagged>0&&<span style={{color:"var(--flag)",marginLeft:6}}>{"\u2691"} {flagged}</span>}</div></div>
+    <div style={{marginBottom:14}}><div className="hd" style={{fontSize:"var(--fs-title)",fontWeight:600,color:clr.tx}}><span style={{background:clr.bg,padding:"2px 10px",borderRadius:5}}>{sel}</span></div>{(clr.desc||clr.course)&&<div style={{fontSize:"var(--fs-body)",color:"var(--text-secondary)",marginTop:4}}>{clr.desc}{clr.course&&<span className="mn" title="Course: links this class with the same course in other years" style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)",marginLeft:clr.desc?8:0}}>course {clr.course}</span>}</div>}<div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginTop:4}}>{lessons.length} lessons {"\u00B7"} <strong className="mn" style={{color:planned===lessons.length?"var(--success)":"var(--text)"}}>{planned} planned</strong> {"\u00B7"} {lessons.length-planned} empty{flagged>0&&<span style={{color:"var(--flag)",marginLeft:6}}>{"\u2691"} {flagged}</span>}</div></div>
     {shiftMsg&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 12px",marginBottom:10,borderRadius:"var(--radius-sm)",background:"var(--surface)",border:`1px solid ${shiftMsg.err?"var(--error)":"var(--border)"}`,fontSize:"var(--fs-caption)",color:shiftMsg.err?"var(--error)":"var(--text-secondary)"}}><span style={{flex:1,minWidth:120}}>{shiftMsg.text}</span>{shiftUndo&&!shiftMsg.err&&<button onClick={undoShift} style={{background:"var(--accent)",color:"var(--on-accent)",border:"none",borderRadius:"var(--radius-sm)",padding:"3px 12px",fontSize:"var(--fs-micro)",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Undo</button>}<button onClick={()=>{setShiftMsg(null);setShiftUndo(null)}} style={{background:"none",border:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:"var(--fs-emph)"}}>{"✕"}</button></div>}
     <div className="card" style={{overflow:"hidden"}}>{lessons.map((l,i)=>{const ld=new Date(l.date);ld.setHours(0,0,0,0);const isT=ld.toDateString()===today.toDateString(),isPast=ld<today,isNl=l.notes.status==="nl",empty=!l.notes.subject&&!l.notes.notes&&!isNl,fl=hasFlag(l.notes.notes)||hasFlag(l.notes.subject),isN=i===nxtI&&!isT,per=bldP(asmBellsForDate(l.cd,l.date,{timetable:eng.timetableForDate(l.date),weeklyEvents:[]})).find(p=>p.id===l.pid),isEd=qe&&qe.i===i;
       return<React.Fragment key={i}>
@@ -2250,11 +2271,30 @@ function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,clash,d
  * notifies the App component (which rebuilds the date engine).
  * ═══════════════════════════════════════════════════════════════════════
  */
-function SettingsView({year,onSave,displayMode,setDisplayMode}){
-  // Setup edits ONE year: the stored config is flattened to that year's single-year shape
-  // (which every control below already reads), and writeConfig puts it back in its slot.
-  const[cfg,setCfg]=useState(()=>{const raw=migrateConfig(storageGet("planner-config")||{});return flattenYear(raw,year)||{...sharedPart(raw),year}});
+/* SettingsView edits ONE year: the stored config is flattened to that year's single-year
+ * shape (which every control below already reads), and writeConfig puts it back in its
+ * slot. A year bar at the top switches years and starts the next one.
+ *
+ * Draft mode (`draft` given) is the new-year flow (YEAR_MODEL_DESIGN.md section 8): the
+ * same year cards, numbered, pre-filled by buildYearDraft, with the shared cards hidden.
+ * It writes NOTHING until "Create": no auto-save on leave. The App holds the draft
+ * (onDraft keeps it current), so it survives switching views until the page closes. */
+function SettingsView({year,years,draft,draftYear,onDraft,onCreate,onDiscard,onPickYear,onShowDraft,onStartYear,onSave,displayMode,setDisplayMode}){
+  const isDraft=!!draft;
+  const[cfg,setCfg]=useState(()=>{if(draft)return draft;const raw=migrateConfig(storageGet("planner-config")||{});return flattenYear(raw,year)||{...sharedPart(raw),year}});
   const up=f=>{setCfg(c=>{const next={...c,...f};if(f.holidays)next.dayZeros=syncHolsToDZ(next.holidays,next.dayZeros);return next})};
+  useEffect(()=>{if(isDraft&&onDraft)onDraft(cfg)},[cfg]);
+  const step=(n,label)=>isDraft?`${n} · ${label}`:label;
+  // Cycle start (decision 6): the school sets the cycle day of the first teaching day and
+  // it is not always Day 1, so a new year is not created until that has been confirmed.
+  // Until a date is chosen it follows Term 1's start.
+  const[anchorOk,setAnchorOk]=useState(false);
+  const anchorDate=(cfg.anchor&&cfg.anchor.date)||((cfg.terms||[])[0]||{}).start||"";
+  // Changing an existing year's anchor re-attributes its planned lessons, so ask once first.
+  const anchorWarned=useRef(false);
+  const setAnchor=a=>{if(!isDraft&&!anchorWarned.current&&yearHasNotes(cfg.year)){if(!window.confirm(`${cfg.year} already has lessons planned. Lessons are kept by date and period, not by class, so changing the anchor changes which class every one of them appears under. Change it anyway?`))return;anchorWarned.current=true}up({anchor:a})};
+  const missing=isDraft?[!(cfg.terms||[]).length&&"at least one term",(cfg.terms||[]).some(t=>!t.start||!t.end)&&"start and end dates for every term",!anchorDate&&"the cycle start date",!anchorOk&&"confirmation of the cycle start (step 3)"].filter(Boolean):[];
+  const pastYear=!isDraft&&cfg.year!=null&&cfg.year<new Date().getFullYear();
   // Dirty-flush on leave. Setup is the one screen with an explicit Save button,
   // but to match the rest of the app (where navigating away never loses work) we
   // also persist any unsaved changes when the user leaves: on unmount (tab
@@ -2265,12 +2305,13 @@ function SettingsView({year,onSave,displayMode,setDisplayMode}){
   const onSaveRef=useRef(onSave);onSaveRef.current=onSave;
   const savedRef=useRef(JSON.stringify(cfg));
   useEffect(()=>{
-    const flush=()=>{const cur=JSON.stringify(cfgRef.current);if(cur===savedRef.current)return;const raw=writeConfig(cfgRef.current);savedRef.current=cur;try{if(raw&&onSaveRef.current)onSaveRef.current(raw)}catch{}if(window._plannerSync)window._plannerSync()};
+    const flush=()=>{if(isDraft)return;const cur=JSON.stringify(cfgRef.current);if(cur===savedRef.current)return;const raw=writeConfig(cfgRef.current);savedRef.current=cur;try{if(raw&&onSaveRef.current)onSaveRef.current(raw)}catch{}if(window._plannerSync)window._plannerSync()};
     const onHide=()=>{if(document.visibilityState==="hidden")flush()};
     window.addEventListener("pagehide",flush);document.addEventListener("visibilitychange",onHide);
     return()=>{window.removeEventListener("pagehide",flush);document.removeEventListener("visibilitychange",onHide);flush()};
   },[]);
-  const[saved,setSaved]=useState(false);const termHint=(cfg.terms&&cfg.terms[0]&&cfg.terms[0].start)?cfg.terms[0].start:fmtISO(new Date());
+  // Calendars open on the year being edited: an empty 2027 should not open on today's month.
+  const[saved,setSaved]=useState(false);const termHint=(cfg.terms&&cfg.terms[0]&&cfg.terms[0].start)?cfg.terms[0].start:cfg.year!=null?`${cfg.year}-02-01`:fmtISO(new Date());
   // Edge-row visibility for the timetable grid: B0/B3 stay hidden until the user opts in
   // OR the data already has a value for that slot on any cycle day (auto-shown).
   const[showEdgeRows,setShowEdgeRows]=useState({B0:false,B3:false});
@@ -2309,53 +2350,71 @@ function SettingsView({year,onSave,displayMode,setDisplayMode}){
   const addWeekly=()=>up({weeklyEvents:[...weeklyEvents,{weekday:1,slot:"B3",text:""}]});
   const updateWeekly=(i,field,val)=>{const arr=[...weeklyEvents];arr[i]={...arr[i],[field]:val};up({weeklyEvents:arr})};
   const deleteWeekly=i=>up({weeklyEvents:weeklyEvents.filter((_,j)=>j!==i)});
-  const doSave=()=>{const raw=writeConfig(cfg);savedRef.current=JSON.stringify(cfg);if(raw)onSave(raw);setSaved(true);setTimeout(()=>setSaved(false),2000);if(window._plannerSync)window._plannerSync()};
+  const doSave=()=>{if(isDraft){if(!missing.length)onCreate({...cfg,anchor:{...(cfg.anchor||{}),date:anchorDate,day:(cfg.anchor||{}).day||1}});return}
+    const raw=writeConfig(cfg);savedRef.current=JSON.stringify(cfg);if(raw)onSave(raw);setSaved(true);setTimeout(()=>setSaved(false),2000);if(window._plannerSync)window._plannerSync()};
 
-  return<div style={{paddingBottom:120}}><div className="hd" style={{fontSize:"var(--fs-title)",fontWeight:600,color:"var(--accent)",marginBottom:14}}>{"\u2699\uFE0F"} School Setup{cfg.year!=null&&<span className="mn" style={{fontSize:"var(--fs-caption)",fontWeight:600,color:"var(--text-muted)",marginLeft:8}}>{cfg.year}</span>}</div>
+  const nextYear=years&&years.length?Math.max(...years)+1:null;
+  const pill=(on,extra)=>({padding:"5px 12px",borderRadius:"var(--radius-sm)",border:on?"2px solid var(--accent)":"1px solid var(--border)",background:on?"var(--accent-light)":"var(--surface)",cursor:"pointer",fontSize:"var(--fs-body)",color:on?"var(--accent)":"var(--text-secondary)",fontWeight:on?600:400,fontFamily:"inherit",...extra});
+  return<div style={{paddingBottom:120}}><div className="hd" style={{fontSize:"var(--fs-title)",fontWeight:600,color:"var(--accent)",marginBottom:10}}>{"\u2699\uFE0F"} {isDraft?`Setting up ${cfg.year}`:"School Setup"}{!isDraft&&cfg.year!=null&&<span className="mn" style={{fontSize:"var(--fs-caption)",fontWeight:600,color:"var(--text-muted)",marginLeft:8}}>{cfg.year}</span>}</div>
 
-    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Display</div>
+    {years&&years.length>0&&<div role="group" aria-label="School year to edit" style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
+      {years.map(y=><button key={y} className="mn" aria-pressed={!isDraft&&y===cfg.year} onClick={()=>onPickYear(y)} style={pill(!isDraft&&y===cfg.year)}>{y}</button>)}
+      {draftYear?<button className="mn" aria-pressed={isDraft} onClick={onShowDraft} style={pill(isDraft,{borderStyle:"dashed"})}>{draftYear} (draft)</button>
+        :nextYear&&<button onClick={()=>onStartYear(nextYear)} style={pill(false,{borderStyle:"dashed",color:"var(--accent)"})}>+ Start {nextYear}</button>}
+    </div>}
+
+    {isDraft&&<div className="card" style={{padding:"14px 18px",marginBottom:14,border:"1px solid var(--accent)",background:"var(--accent-light)"}}>
+      <div style={{fontSize:"var(--fs-body)",color:"var(--text)",lineHeight:1.55}}><strong>Nothing is saved until you press Create {cfg.year} at the bottom.</strong> Work through the numbered steps. Your classes, cycle length, duties and weekly activities are carried over from {cfg.year-1}: change each class code to this year's, delete any class you no longer teach, and add new ones. The timetable starts empty. {cfg.year-1} itself is not changed.</div>
+      <button className="btn" onClick={()=>{if(window.confirm(`Discard the ${cfg.year} draft?`))onDiscard()}} style={{marginTop:10,fontSize:"var(--fs-caption)"}}>Discard draft</button></div>}
+
+    {pastYear&&<div className="card" role="note" style={{padding:"12px 18px",marginBottom:14,border:"1px solid var(--flag)"}}><div style={{fontSize:"var(--fs-body)",color:"var(--text)",lineHeight:1.55}}>You are editing <strong>{cfg.year}</strong>, a past year. Changes here change how {cfg.year}'s lessons display.</div></div>}
+
+    <div className="card" style={{padding:18,marginBottom:14,display:isDraft?"none":undefined}}><div className="sl" style={{marginBottom:8}}>Display</div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{[["light","\u2600\uFE0F Light"],["dark","\u{1F319} Dark"],["light-hc","\u2600\uFE0F Bold"],["dark-hc","\u{1F319} Bold"]].map(([k,lbl])=><button key={k} onClick={()=>setDisplayMode(k)} style={{padding:"7px 14px",borderRadius:"var(--radius-sm)",border:displayMode===k?"2px solid var(--accent)":"1px solid var(--border)",background:displayMode===k?"var(--accent-light)":"var(--surface)",cursor:"pointer",fontSize:"var(--fs-body)",color:displayMode===k?"var(--accent)":"var(--text-secondary)",fontWeight:displayMode===k?600:400,transition:"all .15s"}}>{lbl}</button>)}</div>
       <div style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",marginTop:8}}>Bold modes use higher contrast colours for improved readability.</div>
       <div style={{marginTop:12,display:"flex",alignItems:"center",gap:10}}><button onClick={()=>up({showGam:cfg.showGam===false})} style={{padding:"7px 14px",borderRadius:"var(--radius-sm)",border:cfg.showGam!==false?"2px solid var(--accent)":"1px solid var(--border)",background:cfg.showGam!==false?"var(--accent-light)":"var(--surface)",cursor:"pointer",fontSize:"var(--fs-body)",color:cfg.showGam!==false?"var(--accent)":"var(--text-secondary)",fontWeight:cfg.showGam!==false?600:400,transition:"all .15s"}}>{cfg.showGam!==false?"\u2713 Gamification on":"Gamification off"}</button><span style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)"}}>Hides XP bar and awards. Planning counts still tracked.</span></div>
       </div>
 
-    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>School & Cycle</div>
-      <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:10}}><div style={{flex:1,minWidth:180}}><label className="fl">Your Name (optional)</label><input className="inp" value={cfg.userName||""} onChange={e=>up({userName:e.target.value})} placeholder="e.g. Ms Smith"/></div></div>
+    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>{step(1,isDraft?"Cycle length":"School & Cycle")}</div>
+      <div style={{display:isDraft?"none":"flex",gap:12,flexWrap:"wrap",marginBottom:10}}><div style={{flex:1,minWidth:180}}><label className="fl">Your Name (optional)</label><input className="inp" value={cfg.userName||""} onChange={e=>up({userName:e.target.value})} placeholder="e.g. Ms Smith"/></div></div>
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}><div style={{minWidth:120}}><label className="fl">Cycle Length</label><select className="inp" value={cfg.cycleDays||7} onChange={e=>up({cycleDays:Number(e.target.value)})}>{[5,6,7,8,9,10].map(n=><option key={n} value={n}>{n}-day</option>)}</select></div><div style={{minWidth:160}}><label className="fl">Semester 2 starts <span style={{color:"var(--text-muted)",fontWeight:400}}>(optional)</span></label><input className="inp" type="date" value={cfg.semesterBoundary||""} onChange={e=>up({semesterBoundary:e.target.value||undefined})}/></div></div>
       {cfg.semesterBoundary&&<div style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",marginTop:6,lineHeight:1.5}}>The boundary date is the first day of Semester 2. Classes whose semester is set to S1 or S2 (in the Classes card) are filtered around it. If your timetable also changes mid-year, create a Semester 2 variant of the grid below.</div>}
       <div style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",marginTop:10,lineHeight:1.5}}>Your school uses a rotating timetable where the cycle advances one day for each teaching day. Weekends, public holidays, and Day 0 events pause the cycle {"\u2014"} it picks up where it left off on the next teaching day.</div></div>
 
-    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Export Format</div>
+    <div className="card" style={{padding:18,marginBottom:14,display:isDraft?"none":undefined}}><div className="sl" style={{marginBottom:8}}>Export Format</div>
       <div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginBottom:10}}>Format used when downloading or copying the week plan.</div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{[["org","Formatted"],["plain","Plain text"]].map(([k,lbl])=><button key={k} onClick={()=>up({exportStyle:k})} style={{padding:"7px 14px",borderRadius:"var(--radius-sm)",border:(cfg.exportStyle||"org")===k?"2px solid var(--accent)":"1px solid var(--border)",background:(cfg.exportStyle||"org")===k?"var(--accent-light)":"var(--surface)",cursor:"pointer",fontSize:"var(--fs-body)",color:(cfg.exportStyle||"org")===k?"var(--accent)":"var(--text-secondary)",fontWeight:(cfg.exportStyle||"org")===k?600:400,transition:"all .15s"}}>{lbl}</button>)}</div></div>
 
-    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Theme</div>
+    <div className="card" style={{padding:18,marginBottom:14,display:isDraft?"none":undefined}}><div className="sl" style={{marginBottom:8}}>Theme</div>
       <div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginBottom:10}}>Choose the style for your achievements and planning lab.</div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{THEME_KEYS.map(k=>{const t=THEMES[k],on=cfg.theme===k;return<button key={k} onClick={()=>up({theme:k})} style={{padding:"8px 14px",borderRadius:"var(--radius-md)",border:on?"2px solid var(--accent)":"1px solid var(--border)",background:on?"var(--accent-light)":"var(--surface)",cursor:"pointer",display:"flex",alignItems:"center",gap:6,fontSize:"var(--fs-body)",color:on?"var(--accent)":"var(--text-secondary)",fontWeight:on?600:400,transition:"all .15s"}}><span style={{fontSize:"var(--fs-title)"}}>{t.icon}</span>{t.name}</button>})}</div></div>
 
-    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Terms</div>
+    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>{step(2,"Terms")}</div>
       {(cfg.terms||[]).map((t,i)=><div key={i} style={{marginBottom:12,padding:10,background:"var(--surface)",borderRadius:"var(--radius-md)",border:"1px solid var(--border)"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}><span className="hd" style={{fontSize:"var(--fs-body)",fontWeight:600}}>Term {t.n}</span>{(cfg.terms||[]).length>1&&<button className="btn" onClick={()=>up({terms:(cfg.terms||[]).filter((_,j)=>j!==i).map((t,j)=>({...t,n:j+1}))})} style={{padding:"2px 8px",color:"var(--error)",fontSize:"var(--fs-micro)"}}>{"\u2715"}</button>}</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><div><label className="fl">Start</label><SingleDatePicker value={t.start||""} onChange={v=>{const terms=[...(cfg.terms||[])];terms[i]={...terms[i],start:v};up({terms})}} startHint={t.start||termHint}/></div><div><label className="fl">End</label><SingleDatePicker value={t.end||""} onChange={v=>{const terms=[...(cfg.terms||[])];terms[i]={...terms[i],end:v};up({terms})}} startHint={t.end||t.start||termHint}/></div></div></div>)}
       <button className="btn" onClick={()=>up({terms:[...(cfg.terms||[]),{n:(cfg.terms||[]).length+1,start:"",end:""}]})}>+ Add Term</button></div>
 
-    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Anchor</div>
-      <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"end"}}><div><label className="fl">Anchor Date</label><SingleDatePicker value={(cfg.anchor||{}).date||""} onChange={v=>up({anchor:{...(cfg.anchor||{}),date:v}})} startHint={termHint}/></div><div><label className="fl">Cycle Day</label><select className="inp" value={(cfg.anchor||{}).day||1} onChange={e=>up({anchor:{...(cfg.anchor||{}),day:Number(e.target.value)}})} style={{maxWidth:100}}>{Array.from({length:cfg.cycleDays||7},(_,i)=><option key={i+1} value={i+1}>Day {i+1}</option>)}</select></div></div></div>
+    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>{step(3,isDraft?"Cycle start":"Anchor")}</div>
+      {isDraft&&<div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginBottom:10,lineHeight:1.5}}>Which cycle day is the first teaching day of {cfg.year}? The school sets it, and it is not always Day 1. Check the school calendar: every lesson of the year is placed by counting from this day.</div>}
+      <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"end"}}><div><label className="fl">{isDraft?"First teaching day":"Anchor Date"}</label><SingleDatePicker value={isDraft?anchorDate:(cfg.anchor||{}).date||""} onChange={v=>setAnchor({...(cfg.anchor||{}),date:v})} startHint={anchorDate||termHint}/></div><div><label className="fl">Cycle Day</label><select className="inp" value={(cfg.anchor||{}).day||1} onChange={e=>setAnchor({...(cfg.anchor||{}),day:Number(e.target.value)})} style={{maxWidth:100}}>{Array.from({length:cfg.cycleDays||7},(_,i)=><option key={i+1} value={i+1}>Day {i+1}</option>)}</select></div></div>
+      {isDraft&&<label style={{display:"flex",gap:8,alignItems:"center",marginTop:12,fontSize:"var(--fs-body)",color:"var(--text)",cursor:"pointer"}}><input type="checkbox" checked={anchorOk} onChange={e=>setAnchorOk(e.target.checked)}/>I have checked this against the school calendar</label>}</div>
 
-    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Statutory Holidays</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",marginBottom:8}}>Click dates to toggle. These auto-add as Day 0s.</div><HolidayPicker holidays={cfg.holidays||[]} onChange={hols=>up({holidays:hols})} startHint={termHint}/></div>
+    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>{step(4,"Statutory Holidays")}</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",marginBottom:8}}>Click dates to toggle. These auto-add as Day 0s.</div><HolidayPicker holidays={cfg.holidays||[]} onChange={hols=>up({holidays:hols})} startHint={termHint}/></div>
 
-    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Day 0 Dates</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",marginBottom:8}}>Statutory holidays appear locked {"\u{1F512}"}. Add manual Day 0s by clicking dates.</div><DayZeroPicker dayZeros={cfg.dayZeros||[]} onChange={dz=>setCfg(c=>({...c,dayZeros:dz}))} holidays={cfg.holidays||[]} startHint={termHint}/></div>
+    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>{step(5,"Day 0 Dates")}</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",marginBottom:8}}>Statutory holidays appear locked {"\u{1F512}"}. Add manual Day 0s by clicking dates.</div><DayZeroPicker dayZeros={cfg.dayZeros||[]} onChange={dz=>setCfg(c=>({...c,dayZeros:dz}))} holidays={cfg.holidays||[]} startHint={termHint}/></div>
 
-    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Classes</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",marginBottom:10}}>Define your classes with codes, descriptions, and colours.</div>
+    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>{step(6,"Classes")}</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",marginBottom:10}}>Define your classes with codes, courses, descriptions and colours. The course (the small field after the code, e.g. 9SCI) links a class with the same course in other years; left blank, it is the code without its class number.</div>
       {classes.map((c,i)=><div key={i} style={{marginBottom:10,padding:10,background:"var(--surface)",borderRadius:"var(--radius-md)",border:"1px solid var(--border)"}}><div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:4}}><button className="btn" onClick={()=>{const cls=[...classes];const ni=i-1;if(ni<0)return;[cls[i],cls[ni]]=[cls[ni],cls[i]];up({classes:cls})}} disabled={i===0} style={{padding:"2px 6px",fontSize:"var(--fs-micro)"}}>{"\u25B2"}</button><button className="btn" onClick={()=>{const cls=[...classes];const ni=i+1;if(ni>=cls.length)return;[cls[i],cls[ni]]=[cls[ni],cls[i]];up({classes:cls})}} disabled={i===classes.length-1} style={{padding:"2px 6px",fontSize:"var(--fs-micro)"}}>{"\u25BC"}</button></div>
         <div style={{flex:"0 0 100px"}}><input className="inp mn" value={c.code} onChange={e=>updateClass(i,"code",e.target.value.trim())} placeholder="e.g. 9SCI3" style={{fontSize:"var(--fs-body)",fontWeight:700,textAlign:"center",background:c.colour,color:TEXT_FOR_BG[c.colour]||"#000"}}/></div>
+        <div style={{flex:"0 0 92px"}}><input className="inp mn" value={c.course||""} onChange={e=>updateClass(i,"course",e.target.value.trim())} placeholder={String(c.code||"").replace(/\d+$/,"")||"Course"} aria-label={`Course for ${c.code||"this class"}`} title="Course: links this class with the same course in other years, e.g. 9SCI" style={{fontSize:"var(--fs-caption)",textAlign:"center"}}/></div>
         <div style={{flex:1,minWidth:140}}><input className="inp" value={c.description} onChange={e=>updateClass(i,"description",e.target.value)} placeholder="Description" style={{fontSize:"var(--fs-caption)"}}/></div>
         {cfg.semesterBoundary&&<div style={{flex:"0 0 110px"}}><select className="inp" value={c.semester||"full"} onChange={e=>updateClass(i,"semester",e.target.value)} title="Which semester this class runs" style={{fontSize:"var(--fs-caption)"}}><option value="full">Full year</option><option value="S1">Semester 1</option><option value="S2">Semester 2</option></select></div>}
         <button className="btn" onClick={()=>up({classes:classes.filter((_,j)=>j!==i)})} style={{padding:"2px 8px",color:"var(--error)",fontSize:"var(--fs-caption)"}}>{"\u2715"}</button></div>
         <ColourPicker value={c.colour} onChange={col=>updateClass(i,"colour",col)} usedColours={usedColours}/></div>)}
       <button className="btn" onClick={addClass}>+ Add Class</button>{classes.length===0&&<div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)",marginTop:8,fontStyle:"italic"}}>No classes defined yet.</div>}</div>
 
-    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Timetable</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",marginBottom:10}}>Click a teaching-period cell to set a class (type "nc" for non-contact). Click a B-slot cell to set a morning structure, duty, or activity. The day with FSA picks up the assembly bell schedule automatically.</div>
+    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>{step(7,"Timetable")}</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",marginBottom:10}}>Click a teaching-period cell to set a class (type "nc" for non-contact). Click a B-slot cell to set a morning structure, duty, or activity. The day with FSA picks up the assembly bell schedule automatically.</div>
       {cfg.semesterBoundary&&<div style={{display:"flex",gap:6,marginBottom:10,alignItems:"center",flexWrap:"wrap"}}>
         <button onClick={()=>setTtTab("S1")} style={{padding:"4px 12px",borderRadius:4,border:ttTab==="S1"?"2px solid var(--accent)":"1px solid var(--border)",background:ttTab==="S1"?"var(--accent-light)":"var(--surface)",cursor:"pointer",fontSize:"var(--fs-caption)",color:ttTab==="S1"?"var(--accent)":"var(--text-secondary)",fontWeight:ttTab==="S1"?600:400,fontFamily:"inherit"}}>Semester 1</button>
         {cfg.timetableS2?<>
@@ -2429,7 +2488,7 @@ function SettingsView({year,onSave,displayMode,setDisplayMode}){
       })()}
     </div>
 
-    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Duties</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",marginBottom:10}}>Duty codes appear as pill chips in the B-slot popup above. Code is short (e.g. "GD"); description shows in Day View.</div>
+    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>{step(8,"Duties")}</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",marginBottom:10}}>Duty codes appear as pill chips in the B-slot popup above. Code is short (e.g. "GD"); description shows in Day View.</div>
       {duties.map((d,i)=><div key={i} style={{marginBottom:10,padding:10,background:"var(--surface)",borderRadius:"var(--radius-md)",border:"1px solid var(--border)"}}><div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:4}}><button className="btn" onClick={()=>moveDuty(i,-1)} disabled={i===0} style={{padding:"2px 6px",fontSize:"var(--fs-micro)"}}>{"\u25b2"}</button><button className="btn" onClick={()=>moveDuty(i,1)} disabled={i===duties.length-1} style={{padding:"2px 6px",fontSize:"var(--fs-micro)"}}>{"\u25bc"}</button></div>
         <div style={{flex:"0 0 84px"}}><input className="inp mn" value={d.code} onChange={e=>updateDuty(i,"code",e.target.value.toUpperCase().replace(/\s/g,""))} placeholder="GD" style={{fontSize:"var(--fs-body)",fontWeight:700,textAlign:"center",background:d.color,color:d.textColor||TEXT_FOR_BG[d.color]||"#000",borderRadius:10}}/></div>
@@ -2438,7 +2497,7 @@ function SettingsView({year,onSave,displayMode,setDisplayMode}){
         <ColourPicker value={d.color} onChange={col=>updateDuty(i,"color",col)} usedColours={usedDutyColours}/></div>)}
       <button className="btn" onClick={addDuty}>+ Add duty</button>{duties.length===0&&<div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)",marginTop:8,fontStyle:"italic"}}>No duties defined yet.</div>}</div>
 
-    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>Weekly activities</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",marginBottom:10}}>Activities that repeat on a weekday regardless of cycle day (e.g. Chess Club every Wednesday). Each entry occupies one B-slot on one weekday. To repeat the same activity across multiple weekdays, add separate entries.</div>
+    <div className="card" style={{padding:18,marginBottom:14}}><div className="sl" style={{marginBottom:8}}>{step(9,"Weekly activities")}</div><div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",marginBottom:10}}>Activities that repeat on a weekday regardless of cycle day (e.g. Chess Club every Wednesday). Each entry occupies one B-slot on one weekday. To repeat the same activity across multiple weekdays, add separate entries.</div>
       {weeklyEvents.map((e,i)=><div key={i} style={{marginBottom:10,padding:10,background:"var(--surface)",borderRadius:"var(--radius-md)",border:"1px solid var(--border)",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         <select className="inp" value={e.weekday} onChange={ev=>updateWeekly(i,"weekday",Number(ev.target.value))} style={{flex:"0 0 110px",fontSize:"var(--fs-body)"}}>
           {[[1,"Monday"],[2,"Tuesday"],[3,"Wednesday"],[4,"Thursday"],[5,"Friday"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
@@ -2451,7 +2510,11 @@ function SettingsView({year,onSave,displayMode,setDisplayMode}){
       </div>)}
       <button className="btn" onClick={addWeekly}>+ Add weekly activity</button>{weeklyEvents.length===0&&<div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)",marginTop:8,fontStyle:"italic"}}>No weekly activities defined yet.</div>}</div>
 
-    <div style={{display:"flex",gap:8,alignItems:"center"}}><button className="btn-a" onClick={doSave}>Save Configuration</button>{saved&&<span style={{fontSize:"var(--fs-body)",color:"var(--success)",fontWeight:600}}>{"\u2713"} Saved</span>}</div>
+    {isDraft?<div className="card" style={{padding:18,marginBottom:14,border:"1px solid var(--accent)"}}><div className="sl" style={{marginBottom:8}}>{step(10,`Create ${cfg.year}`)}</div>
+      <div style={{fontSize:"var(--fs-body)",color:"var(--text-secondary)",marginBottom:12,lineHeight:1.5}}>Adds {cfg.year} with {(cfg.terms||[]).length} {(cfg.terms||[]).length===1?"term":"terms"} and {(cfg.classes||[]).length} {(cfg.classes||[]).length===1?"class":"classes"}. {cfg.year-1} is not changed. Everything can still be edited afterwards here in Setup.</div>
+      {missing.length>0&&<div role="status" style={{fontSize:"var(--fs-caption)",color:"var(--flag)",marginBottom:10}}>Still needed: {missing.join("; ")}.</div>}
+      <button className="btn-a" onClick={doSave} disabled={missing.length>0} style={missing.length?{opacity:.5,cursor:"not-allowed"}:{}}>Create {cfg.year}</button></div>
+    :<div style={{display:"flex",gap:8,alignItems:"center"}}><button className="btn-a" onClick={doSave}>Save Configuration</button>{saved&&<span style={{fontSize:"var(--fs-body)",color:"var(--success)",fontWeight:600}}>{"\u2713"} Saved</span>}</div>}
     {showFab&&<button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} title="Back to top" aria-label="Back to top" style={{position:"fixed",bottom:24,right:24,width:44,height:44,borderRadius:"50%",background:"var(--accent)",color:"var(--on-accent,#fff)",border:"none",cursor:"pointer",fontSize:"var(--fs-title)",fontWeight:700,boxShadow:"0 4px 12px rgba(0,0,0,.18)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>{"\u2191"}</button>}
     </div>;
 }
@@ -2634,26 +2697,26 @@ function SearchOverlay({engOf,onGo,onClose}){
 // Below this width the wrapper is capped by the viewport, so phones/tablets are unchanged.
 const CONTENT_MAX=1000;
 
-/* ═══ DEFAULT YEAR SEED ═══════════════════════════════════════════════════════
- * The config a brand-new profile starts with (no saved data yet): Dio's calendar
- * for the seed year, so a first-time user lands ready to plan without touching Setup.
- * Only the classes and timetable are left blank (those are personal).
+/* ═══ YEAR SEEDS ═══════════════════════════════════════════════════════════════
+ * Dio's school calendar, one entry per year the app ships one for. Two uses:
+ *   - a brand-new profile starts with the current year's calendar (or the latest
+ *     shipped one), so a first-time user lands ready to plan without touching Setup;
+ *   - Setup's "Start <year>" pre-fills that year's calendar when there is a seed for it.
+ * Calendar fields only: classes and timetable are personal and never seeded.
  *
- * UPDATE EACH JANUARY for the new school year. Four fields carry dates:
+ * ADD AN ENTRY EACH YEAR, once the school publishes its calendar. Four fields carry dates:
  *   - terms      : the four term start/end dates
  *   - holidays   : public holidays that fall in term time
  *   - dayZeros   : holidays (statutory) + school events that pause the cycle
  *                  (Orientation, EOTC, Athletics, Teacher Only Days, House Music, ...)
- *   - anchor     : one known {date, cycle-day} to peg the 7-day rotation. Pick any
- *                  teaching day and its real cycle day from the school's calendar.
- * Leave school / cycleDays / theme / exportStyle as they are.
+ *   - anchor     : one known {date, cycle-day} to peg the rotation. Pick any teaching
+ *                  day and its real cycle day from the school's calendar. Not always Day 1.
  *
  * NZ term dates: Ministry of Education (education.govt.nz, "school terms and holidays").
  * Public holidays: govt.nz / employment.govt.nz. Auckland Anniversary + Dio's own event
- * dates come from the school calendar. Bump SEED_YEAR below to match so the staleness
- * warning stays useful.
+ * dates come from the school calendar.
  * ════════════════════════════════════════════════════════════════════════════ */
-const DEFAULT_YEAR_SEED={school:"Dio",cycleDays:7,terms:[
+const YEAR_SEEDS={2026:{cycleDays:7,terms:[
     {n:1,start:"2026-01-27",end:"2026-04-03"},{n:2,start:"2026-04-20",end:"2026-07-03"},
     {n:3,start:"2026-07-27",end:"2026-09-25"},{n:4,start:"2026-10-12",end:"2026-12-08"}],
     holidays:[
@@ -2678,10 +2741,15 @@ const DEFAULT_YEAR_SEED={school:"Dio",cycleDays:7,terms:[
       {date:"2026-08-31",label:"Teacher Only Day 2",source:"manual"},
       {date:"2026-10-26",label:"Labour Day",source:"statutory"},
       {date:"2026-12-07",label:"Final Days",source:"manual"},{date:"2026-12-08",label:"Final Days",source:"manual"}],
-    anchor:{date:"2026-04-02",day:2},timetable:{},classes:[],duties:[],theme:"coffee",exportStyle:"plain",userName:""};
-// The school year the seed above describes. If the app is first opened in a later year with
-// no saved config, the seed is stale (dates from the wrong year); warn in the console then.
-const SEED_YEAR=+DEFAULT_YEAR_SEED.terms[0].start.slice(0,4);
+    anchor:{date:"2026-04-02",day:2}}};
+// Shared settings for a brand-new profile.
+const DEFAULT_PROFILE={school:"Dio",theme:"coffee",exportStyle:"plain",userName:""};
+// The latest year with a shipped calendar. A fresh profile opened in a later year gets
+// this one (dates from the wrong year), with a console warning.
+const SEED_YEAR=Math.max(...Object.keys(YEAR_SEEDS).map(Number));
+// seedConfig: the config a brand-new profile starts with: the current year's calendar if
+// the app ships one, else the latest, with blank classes and timetable.
+function seedConfig(nowYear){const y=YEAR_SEEDS[nowYear]?nowYear:SEED_YEAR;return upgradeConfig({...DEFAULT_PROFILE,...JSON.parse(JSON.stringify(YEAR_SEEDS[y])),timetable:{},classes:[],duties:[]})}
 
 // ErrorBoundary: wraps the active view only (NOT the whole app), so a render crash in one
 // view degrades to a recovery card while the header and tabs keep working. React error
@@ -2931,6 +2999,19 @@ function App(){
   const onMS=useCallback((key,m)=>{mcR.current={...mcR.current,[key]:m};setMC(c=>({...c,[key]:m}));triggerSync()},[triggerSync]);
   const goDay=(d,pid)=>{setPrevV(view);setDetDate(d);setFP(pid||null);setView("day")};
   const goWk=d=>{setBase(d);setView("week")};
+  // ── Starting a new year (YEAR_MODEL_DESIGN.md section 8). The draft lives here, not in
+  // Setup, so it survives switching views; nothing is written until createYear.
+  const[yearDraft,setYearDraft]=useState(null);const[showDraft,setShowDraft]=useState(false);
+  const startYear=y=>{if(!(yearDraft&&yearDraft.year===y))setYearDraft(buildYearDraft(cfg,y,YEAR_SEEDS[y]));setShowDraft(true);setView("setup")};
+  const discardDraft=()=>{setYearDraft(null);setShowDraft(false)};
+  // Only the draft's YEAR fields are written: its copy of the shared settings was taken
+  // when the draft began and may be stale by now.
+  const createYear=flat=>{const raw=writeConfig({...sharedPart(cfg),...pickFields(flat,YEAR_FIELDS),year:flat.year},cfg);if(!raw)return;setCfg(raw);setYearDraft(null);setShowDraft(false);setSelYear(flat.year);setGR(r=>r+1);triggerSync()};
+  // Week and Day View on a date whose year is not configured show a card instead of the
+  // view: set that year up, or go back to the latest configured one.
+  const dateYear=view==="week"?base.getFullYear():view==="day"&&detDate?detDate.getFullYear():null;
+  const notSetUp=dateYear!=null&&yearList.length>0&&!yearList.includes(dateYear);
+  const goLatestYear=()=>{const y=pickYear(cfg,dateYear),e=engFor(y),last=e&&e.terms[e.terms.length-1];goWk(getPlanMon(last?last.end:new Date(y,11,1)))};
   const goDayTab=()=>{if(!detDate){let target;if(view==="week"){target=getMon(base).toDateString()===getMon(today).toDateString()?today:getMon(base)}else{target=planMon}if(eng&&!eng.isSchoolDay(target))target=eng.nearestSchoolDay(target,1)||target;setDetDate(target)}setFP(null);setPrevV(view);setView("day")};
   // handleImport runs after a backup-file import lands. We build a fresh engine
   // from the just-imported config rather than using the closed-over `eng` (which
@@ -2939,10 +3020,8 @@ function App(){
   const onWE=isWE(today);
 
   useEffect(()=>{if(!cfg){
-    if(new Date().getFullYear()>SEED_YEAR)console.warn(`Lesson planner: the built-in default calendar is for ${SEED_YEAR}; seeding this fresh profile with ${SEED_YEAR} dates. Update DEFAULT_YEAR_SEED in index.html for the current year (see its comment).`);
-    // Deep-clone so the shared constant is never mutated by later edits to cfg.
-    // upgradeConfig deep-copies, so the shared constant is never mutated by later edits.
-    const blank=upgradeConfig(DEFAULT_YEAR_SEED);storageSet("planner-config",blank);setCfg(blank)}},[cfg]);
+    if(new Date().getFullYear()>SEED_YEAR)console.warn(`Lesson planner: the built-in calendar is for ${SEED_YEAR}; seeding this fresh profile with ${SEED_YEAR} dates. Add the current year to YEAR_SEEDS in index.html (see its comment).`);
+    const blank=seedConfig(new Date().getFullYear());storageSet("planner-config",blank);setCfg(blank)}},[cfg]);
   if(!cfg||!eng)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>Loading...</div>;
 
   // ── Compact phone nav (v2.13.0): below 800px the view tabs shrink to icons (the active
@@ -3017,17 +3096,22 @@ function App(){
       </div>
     </div>
     {storageFailed&&<div className="card" style={{padding:"12px 16px",marginBottom:14,border:"1px solid var(--error)",background:"var(--surface)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:"var(--fs-title)"}}>{"⚠"}</span><div style={{flex:1,minWidth:200}}><div className="hd" style={{fontSize:"var(--fs-emph)",fontWeight:600,color:"var(--error)"}}>Browser storage is full</div><div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",lineHeight:1.5}}>Recent changes have not been saved. Cloud sync is paused while this is unresolved. Open the Data Panel to download a backup, then clear old data in your browser settings.</div></div><button className="btn-a" onClick={()=>setShowDP(true)} style={{padding:"6px 14px",fontSize:"var(--fs-body)"}}>Open Data Panel</button><button className="btn" onClick={()=>{storageFailedRef.current=false;setStorageFailed(false)}} style={{padding:"4px 10px",fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}>Dismiss</button></div>}
-    {(ycfg&&(!ycfg.classes||ycfg.classes.length===0||!ycfg.timetable||Object.keys(ycfg.timetable).length===0))&&<div className="card" style={{padding:"14px 18px",marginBottom:14,border:"1px solid var(--dz-border)",background:"var(--dz-bg)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:"var(--fs-title)"}}>{"\u{1F44B}"}</span><div style={{flex:1,minWidth:200}}><div className="hd" style={{fontSize:"var(--fs-emph)",fontWeight:600,color:"var(--dz-text)"}}>Welcome! Add your classes and timetable</div><div style={{fontSize:"var(--fs-caption)",color:"var(--dz-text)",opacity:.8}}>Term dates and holidays are already set up. Head to Setup to add your classes and timetable.</div></div><button className="btn-a" onClick={()=>{setView("setup");setGR(r=>r+1)}} style={{padding:"6px 14px",fontSize:"var(--fs-body)"}}>Go to Setup {"\u2192"}</button></div>}
+    {/* First run (no year has any classes yet): the welcome. A later year that has no
+        timetable yet, typically one just created: a reminder for that year instead.
+        Neither shows inside Setup, which is where both point, nor over the "not set up
+        yet" card, which speaks for its own year. */}
+    {ycfg&&view!=="setup"&&!notSetUp&&(!ycfg.classes||ycfg.classes.length===0||!ycfg.timetable||Object.keys(ycfg.timetable).length===0)&&(()=>{const firstRun=!yearsOf(cfg).some(y=>(y.classes||[]).length);return<div className="card" style={{padding:"14px 18px",marginBottom:14,border:"1px solid var(--dz-border)",background:"var(--dz-bg)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:"var(--fs-title)"}}>{firstRun?"\u{1F44B}":"\u{1F4C5}"}</span><div style={{flex:1,minWidth:200}}><div className="hd" style={{fontSize:"var(--fs-emph)",fontWeight:600,color:"var(--dz-text)"}}>{firstRun?"Welcome! Add your classes and timetable":`${ycfg.year} has no timetable yet`}</div><div style={{fontSize:"var(--fs-caption)",color:"var(--dz-text)",opacity:.8}}>{firstRun?"Term dates and holidays are already set up. Head to Setup to add your classes and timetable.":`Add ${ycfg.year}'s timetable in Setup to see its lessons here.`}</div></div><button className="btn-a" onClick={()=>{setView("setup");setGR(r=>r+1)}} style={{padding:"6px 14px",fontSize:"var(--fs-body)"}}>Go to Setup {"\u2192"}</button></div>})()}
     {showSearch&&<SearchOverlay engOf={d=>engFor(d.getFullYear())} onGo={goDay} onClose={()=>setShowSearch(false)}/>}
     {showHelp&&<HotkeyHelp onClose={()=>setShowHelp(false)}/>}
     {showDP&&<DataPanel onClose={()=>setShowDP(false)} onImported={handleImport} onSync={syncNow} onSyncConn={(tok,gid)=>{setGhToken(tok);setGhGistId(gid);triggerSync()}} onSyncDisc={()=>{setGhToken("");setGhGistId("");clearTimeout(syncTimer.current);setSyncSt("idle");setLastSync(null)}} lastSync={lastSync} token={ghToken} gistId={ghGistId} setToken={setGhToken} setGistId={setGhGistId}/>}
     <ErrorBoundary key={view}>
     {view==="term"&&<TermView key={workYear} onDay={goDay} onWk={goWk} metaCache={metaCache} gam={gam} cfg={ycfg} years={yearList} year={workYear} onYear={setSelYear}/>}
-    {view==="week"&&<WeekView base={base} setBase={setBase} onDet={(d,pid)=>goDay(d,pid)} metaCache={metaCache} updateMeta={updateMeta} gam={gam} onUpdateCfg={onUpdateCfg} cfg={ycfg}/>}
-    {view==="day"&&detDate&&<DayView date={detDate} setDate={d=>{setDetDate(d);setFP(null);setView("day")}} onBack={()=>{setFP(null);setGR(r=>r+1);setView(prevV==="day"?"week":prevV)}} metaCache={metaCache} onMS={onMS} fp={fp} gam={gam} onUpdateCfg={onUpdateCfg} cfg={ycfg}/>}
+    {notSetUp&&<div className="card" role="region" aria-label={`${dateYear} is not set up`} style={{padding:"24px 26px",textAlign:"center",marginTop:10}}><div className="hd" style={{fontSize:"var(--fs-title)",fontWeight:600,color:"var(--text)",marginBottom:8}}>{dateYear} isn't set up yet</div><div style={{fontSize:"var(--fs-body)",color:"var(--text-secondary)",marginBottom:16,lineHeight:1.55,maxWidth:520,marginLeft:"auto",marginRight:"auto"}}>Set up {dateYear} in Setup. Your classes, cycle length, duties and weekly activities carry over from {pickYear(cfg,dateYear)}, and nothing is saved until you press Create.</div><div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}><button className="btn-a" onClick={()=>startYear(dateYear)}>Set up {dateYear}</button><button className="btn" onClick={goLatestYear}>Go to {pickYear(cfg,dateYear)}</button></div></div>}
+    {view==="week"&&!notSetUp&&<WeekView base={base} setBase={setBase} onDet={(d,pid)=>goDay(d,pid)} metaCache={metaCache} updateMeta={updateMeta} gam={gam} onUpdateCfg={onUpdateCfg} cfg={ycfg}/>}
+    {view==="day"&&detDate&&!notSetUp&&<DayView date={detDate} setDate={d=>{setDetDate(d);setFP(null);setView("day")}} onBack={()=>{setFP(null);setGR(r=>r+1);setView(prevV==="day"?"week":prevV)}} metaCache={metaCache} onMS={onMS} fp={fp} gam={gam} onUpdateCfg={onUpdateCfg} cfg={ycfg}/>}
     {view==="class"&&<ClassView key={workYear} onDet={(d,pid)=>goDay(d,pid)} gam={gam} years={yearList} year={workYear} onYear={setSelYear}/>}
     {view==="lab"&&<LabView gam={gam}/>}
-    {view==="setup"&&<SettingsView year={defaultYear} onSave={newCfg=>{setCfg(newCfg);setGR(r=>r+1)}} displayMode={dispMode} setDisplayMode={setDispMode}/>}
+    {view==="setup"&&<SettingsView key={showDraft&&yearDraft?"draft":"y"+workYear} year={workYear} years={yearList} draft={showDraft?yearDraft:null} draftYear={yearDraft&&yearDraft.year} onDraft={setYearDraft} onCreate={createYear} onDiscard={discardDraft} onPickYear={y=>{setShowDraft(false);setSelYear(y)}} onShowDraft={()=>setShowDraft(true)} onStartYear={startYear} onSave={newCfg=>{setCfg(newCfg);setGR(r=>r+1)}} displayMode={dispMode} setDisplayMode={setDispMode}/>}
     </ErrorBoundary>
   </div></div></CfgCtx.Provider>;
 }
