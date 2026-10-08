@@ -726,6 +726,14 @@ async function runSmoke(){
     // 3.3.0: XP lives in the header line and opens the Lab; the badge row is Lab-only.
     await step(D,"no badge row or XP strip above the views",()=>D.key("w"),()=>D.view()==="Week"&&!D.q(".bm")&&!D.q(".xps"));
     await step(D,"XP sits in the header and opens the Lab",()=>{const x=D.q(".xpmini");if(!/\d+ XP/.test(x.textContent))throw new Error("no XP figure");x.click()},()=>D.view()==="Lab");
+    // 3.5.0: one button system. Every button on every view carries one of its classes, and
+    // every toggle says whether it is chosen, so the look and the screen reader agree.
+    {const SYS=/^(btn|btn-a|btn-ghost|btn-link|btn-x|btn-add|tog|opt|fab|vtab|xpmini|navmenu-item|bs-[\w-]+)$/,stray=[],mute=[];
+      for(const[k,name]of[["w","Week"],["d","Day"],["t","Term"],["c","Class"],["l","Lab"],["s","Setup"]]){D.key(k);await waitFor(()=>D.view()===name);await sleep(60);
+        for(const b of D.qa("button")){if(![...b.classList].some(c=>SYS.test(c)))stray.push(name+": "+(b.textContent.trim().slice(0,30)||b.title||b.getAttribute("aria-label")));
+          if(b.matches(".tog,.opt")&&!/^(true|false)$/.test(b.getAttribute("aria-pressed")||""))mute.push(name+": "+b.textContent.trim().slice(0,30))}}
+      assert("every button belongs to the button system",!stray.length,stray.slice(0,12).join("\n"));
+      assert("every toggle reports whether it is chosen (aria-pressed)",!mute.length,mute.slice(0,12).join("\n"))}
 
     G("Smoke: Week View");
     await step(D,"Week View opens on the fixture week",()=>D.key("w"),()=>D.view()==="Week"&&D.text().includes("17 Aug"));

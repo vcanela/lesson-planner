@@ -6,6 +6,25 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.5.0 — 2026-10-08
+
+### Visual audit, part 3b: buttons, corners and shadows
+- **One button system.** Of 103 buttons, only 31 used the two shared styles; the rest each carried their own. Every button now belongs to one of a few kinds: plain, primary (accent), quiet text, a link inside a sentence, close (✕), dashed "add something", and red for removing, in a normal and a compact size. Hover, disabled and keyboard focus behave the same everywhere.
+- **Choosing one option looks the same everywhere.** The Term picker, year switch, Quick/Detailed, bell times, Semester 1/2 and the Class View term filter had four different "chosen" looks between them. They are now one: the chosen option is filled with the accent. Setup's choice cards (display mode, gamification, export format, theme) have their own consistent look: an accent edge on an accent tint. Every one of these now tells a screen reader whether it is chosen.
+- **The dashed "add" buttons have outlines again.** "+ Before school", "+ After school", "+ Create Semester 2 variant" and others were drawn with a border colour that no theme defined, so they showed no border at all. That colour (`--border-strong`) is now defined for all four display modes, which also gives the bell-slot popups their intended edge. The "Add", "Set" and "Save today" buttons in those popups used white text, unreadable on the light accent of the dark themes; they now use the theme's on-accent colour.
+- "+ Add Term", "+ Add Class", "+ Add duty" and "+ Add weekly activity" in Setup are dashed "add" buttons, like the rest.
+- **Term buttons stay whole on phones.** "Term 1" no longer breaks over two lines; when the row runs out of room, the buttons wrap to a second line instead.
+- **Corners and shadows come from tokens.** A new `--radius-xs` (4px) for badges, chips and small marks joins sm, md and lg; about 50 corner radii written directly in the code now use the four tokens. Three shadows: sm for floating buttons, md for popovers, menus and dropdowns, lg for dialogs, with deeper versions in dark themes. Dialogs now sit visibly above popovers.
+
+### Implementation
+- Classes: `.btn`, `.btn-a`, `.btn-ghost`, `.btn-link`, `.btn-x`, `.btn-add`, `.btn-danger`, `.btn-sm`, `.btn-icon`; `.tog` (with `.tog-sm`, `.tog-draft`) and `.opt`, both styled from `aria-pressed`; `.fab` for the floating buttons. The unused `.pill` and `.tt-add-row-btn` rules, the `pill()` helper and `utilBtnStyle` are gone.
+- Term View's 8px dots and the timetable's colour swatches keep their 2px corners on purpose: the 4px token would round them into circles.
+- The empty break cells in the Setup timetable ("—") were coloured with the undefined border colour and so inherited the text colour; defining it would have made them faint (1.95:1), so they now use the muted text colour.
+- No spacing tokens: margins and gaps already sit on 4, 6, 8, 10, 12 and 14px, and converting them would be churn with nothing to see.
+- Tests: two smoke checks (every button on every view belongs to the system; every toggle reports aria-pressed). 259 assertions.
+
+---
+
 ## 3.4.0 — 2026-10-08
 
 ### Visual audit, part 3a: typography
