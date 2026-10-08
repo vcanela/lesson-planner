@@ -6,6 +6,21 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.3.0 — 2026-10-08
+
+### Visual audit, part 2: hierarchy
+- **XP moves into the header line; badges live in the Lab.** The XP strip and the row of achievement badges sat above the content in Term, Week, Day and Class View: about 80px of the most valuable space, and ten faded emoji that read as clutter. Your level was already in the header, so the header line now adds a slim progress bar and your XP total after it; clicking them opens the Lab, where every achievement already has its own card. Gamification off still hides the XP.
+- **Phones show the whole week on the first screen.** With the strip and badges gone, a tighter header (smaller gaps, and the version, Guide and Changelog line moved into the ⋯ menu), the first lesson in Week View starts at 322px on a 390 by 844 phone instead of 434px, and all six periods of all five days fit before you scroll. Laptops keep the version line.
+- **Day View's empty break rows are quiet.** "after 2", "before 3", "after 4" and "before 5" are real break windows and the way to add a duty or activity to one, so they stay, but when empty they are thin separators (22px against a period's 43px) in smaller italic type.
+- Guide: the Lab section now says where XP and achievements are.
+
+### Implementation
+- `XpStrip` and `Badges` are deleted along with their CSS; the header's `xpmini` button replaces them, keyboard-reachable with a label that says it opens the Lab.
+- A correction to the audit: it said the phone's first screen showed no lessons. That came from reading a double-resolution screenshot at the wrong scale. Measured properly the first lesson started 434px down, so half of the first screen was chrome rather than all of it. The fix stands; the claim did not.
+- Tests: two smoke checks (no badge row or XP strip above the views; XP in the header opens the Lab). 255 assertions, the legibility checks included.
+
+---
+
 ## 3.2.1 — 2026-10-08
 
 ### Visual audit, part 1: legibility

@@ -716,6 +716,9 @@ async function runSmoke(){
     G("Smoke: every view");
     await visitViews(D,"fixture",true);
     assert("Setup shows the year it is editing",D.qa(".hd").some(h=>h.textContent.includes("School Setup")&&h.textContent.includes("2026")));
+    // 3.3.0: XP lives in the header line and opens the Lab; the badge row is Lab-only.
+    await step(D,"no badge row or XP strip above the views",()=>D.key("w"),()=>D.view()==="Week"&&!D.q(".bm")&&!D.q(".xps"));
+    await step(D,"XP sits in the header and opens the Lab",()=>{const x=D.q(".xpmini");if(!/\d+ XP/.test(x.textContent))throw new Error("no XP figure");x.click()},()=>D.view()==="Lab");
 
     G("Smoke: Week View");
     await step(D,"Week View opens on the fixture week",()=>D.key("w"),()=>D.view()==="Week"&&D.text().includes("17 Aug"));

@@ -132,6 +132,11 @@ textarea,input,button,select{font-family:'Inter',system-ui,sans-serif}
 .vtab:hover{background:var(--surface)}
 .vtab.on{font-weight:600;background:var(--accent);color:var(--on-accent)}
 /* Compact phone nav (v2.13.0): the ⋯ overflow menu shown below 800px. */
+/* XP in the header line (V2): a slim bar and the total after the level; opens the Lab. */
+.xpmini{display:inline-flex;align-items:center;gap:6px;margin-left:8px;background:none;border:none;padding:0;cursor:pointer;font:inherit;color:var(--text-muted)}
+.xpmini:hover{color:var(--accent)}
+.xpmini-bar{display:inline-block;width:56px;height:5px;border-radius:3px;background:var(--xp-bar-bg);overflow:hidden}
+.xpmini-bar>span{display:block;height:100%;background:var(--xp-bar)}
 .navmenu{position:absolute;right:0;top:calc(100% + 4px);z-index:60;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:0 8px 24px rgba(0,0,0,.18);padding:4px;min-width:180px;display:flex;flex-direction:column;gap:2px}
 .navmenu-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:none;cursor:pointer;color:var(--text);font-family:inherit;font-size:var(--fs-body);padding:9px 10px;border-radius:var(--radius-sm)}
 .navmenu-item:hover{background:var(--surface)}
@@ -160,16 +165,6 @@ textarea,input,button,select{font-family:'Inter',system-ui,sans-serif}
 .cv:hover{background:var(--row-open)}
 /* Empty lessons used to be faded with opacity, which took all their text below legible
    contrast; the italic "Click to plan" marks them instead. */
-.xps{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:6px 12px;display:flex;align-items:center;gap:10px;font-size:var(--fs-micro);margin-bottom:8px}
-.xpbo{flex:1;height:6px;background:var(--xp-bar-bg);border-radius:3px;overflow:hidden;min-width:50px}
-.xpbf{height:100%;background:var(--xp-bar);border-radius:3px;transition:width .6s;box-shadow:0 0 8px var(--xp-glow)}
-.bs{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
-.bm{width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border-radius:var(--radius-sm);font-size:var(--fs-body);border:1px solid var(--border);cursor:pointer;position:relative}
-.bm:focus{outline:2px solid var(--accent);outline-offset:1px}
-/* Fade a locked badge's icon only: fading the whole button also faded its tooltip text. */
-.bm.lk>span:first-child{opacity:.35;filter:grayscale(1)}
-.bm .bt{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:6px 10px;font-size:var(--fs-nano);white-space:nowrap;z-index:10;color:var(--text-secondary);box-shadow:0 4px 16px rgba(0,0,0,.12)}
-.bm:hover .bt,.bm:focus .bt,.bm.open .bt{display:block}
 .srow:hover{background:var(--surface)}
 .fwb{font-size:var(--fs-nano);color:var(--text-muted);display:flex;flex-wrap:wrap;gap:4px;align-items:center}
 .fw{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-family:'JetBrains Mono',monospace;font-size:var(--fs-nano)}
@@ -222,7 +217,8 @@ textarea,input,button,select{font-family:'Inter',system-ui,sans-serif}
 .bs-chip-duty{border-radius:10px;border:1.5px solid currentColor}
 .bs-row{cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);user-select:none}
 .bs-row:hover{background:var(--surface)}
-.bs-row.gap{color:var(--text-muted)}
+.bs-row.gap{color:var(--text-muted);padding-top:2px;padding-bottom:2px}
+.bs-row.gap .bs-row-label{font-size:var(--fs-caption)}
 .bs-row .bs-row-label{font-weight:600;font-size:var(--fs-body);min-width:96px;flex-shrink:0}
 .bs-row.gap .bs-row-label{font-style:italic;font-weight:500}
 .bs-row .bs-row-time{min-width:64px;flex-shrink:0;font-size:var(--fs-nano);color:var(--text-muted)}
@@ -727,7 +723,7 @@ const SCHEMA_VERSION=3;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="3.2.1";
+const APP_VERSION="3.3.0";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -1163,8 +1159,8 @@ const normalizeMeta=v=>({...emptyMeta(),...(v||{})});
  *   pwn       — the "current" week number (used as the streak's reference week)
  *   themeKey  — which theme's level titles / achievement icons to use
  *
- * Returns a flat object consumed by XpStrip, Badges, TermView, ClassView,
- * and LabView:
+ * Returns a flat object consumed by the header (level and XP line), TermView,
+ * ClassView, and LabView:
  *   cum   — cumulative stats across all terms (tp planned, tl total, sk streak, ls longest)
  *   term  — same, but only for the active term, plus pw (perfect weeks) and per-class cd
  *   achs  — list of achievement objects with `unlocked` bool computed against state
@@ -1353,23 +1349,11 @@ const SvH=({saveStatus})=>{if(!saveStatus||saveStatus==="idle")return null;const
 const AInp=({data,field,updateField,handleFocus,handleBlur,ph,multi,rows})=>{const ref=useRef(null);const val=(data&&data[field])||"";useEffect(()=>{if(multi&&ref.current){ref.current.style.height="auto";ref.current.style.height=ref.current.scrollHeight+"px"}},[val,multi]);if(!multi)return<input className="inp" value={val} onChange={e=>updateField(field,e.target.value)} onFocus={handleFocus} onBlur={handleBlur} placeholder={ph||""}/>;return<textarea ref={ref} className="ta" value={val} onChange={e=>{updateField(field,e.target.value);if(ref.current){ref.current.style.height="auto";ref.current.style.height=ref.current.scrollHeight+"px"}}} onFocus={handleFocus} onBlur={handleBlur} placeholder={ph||""} rows={rows||3}/>};
 // CBadge: pill showing a class code with its theme colour. "nc" renders as "Non-contact".
 const CBadge=({cc,style={}})=>{const eng=useCfg();const nc=!cc||cc==="nc";const clr=nc?null:(eng&&eng.classMap[cc]);return<span className="mn" style={{padding:"2px 8px",borderRadius:4,fontSize:"var(--fs-body)",fontWeight:700,background:nc?"var(--nc-bg)":(clr&&clr.bg)||"var(--nc-bg)",color:nc?"var(--nc-text)":(clr&&clr.tx)||"var(--nc-text)",minWidth:84,textAlign:"center",flexShrink:0,...style}}>{nc?"Non-contact":cc}</span>};
-// XpStrip: level icon, level title, XP bar, total XP, and streak indicator.
-// Rendered at the top of every gamification-aware view (gated by gam.showGam).
-const XpStrip=({gam})=>{const prog=gam.nxt?(gam.xp-(gam.levXp||0))/((gam.nxtXp||1)-(gam.levXp||0))*100:100;return<div className="xps np"><span style={{fontSize:"var(--fs-emph)"}}>{gam.lev.icon}</span><span className="hd" style={{fontWeight:600,fontSize:"var(--fs-caption)",color:"var(--text)",whiteSpace:"nowrap"}}>{gam.lev.title}</span><div className="xpbo"><div className="xpbf" style={{width:Math.min(100,prog)+"%"}}/></div><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",whiteSpace:"nowrap"}}>{gam.xp} XP</span>{gam.sk>0&&<span style={{fontSize:"var(--fs-micro)",whiteSpace:"nowrap"}}>{"\u{1F525}"}{gam.sk}</span>}</div>};
-// kAct: keyboard activation for role="button" elements. Fires fn on Enter or Space and
-// stops Space from scrolling the page, so a mouse is never required to operate a row.
 // kAct: Enter/Space -> activate, the keyboard half of a role="button" div. The
 // event is passed through for handlers that need it (currentTarget geometry,
 // stopPropagation); handlers that ignore it are unaffected.
 const kAct=fn=>e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();fn(e)}};
 
-// Badges: row of achievement chips (locked/unlocked) shown below XpStrip.
-// Badges: tap a chip to toggle its tooltip (touch devices can't hover); mouse
-// hover and keyboard focus also reveal it. `open` tracks which chip is tapped open.
-function Badges({achs}){
-  const[open,setOpen]=useState(null);
-  return<div className="bs np">{achs.map((a,i)=><div key={a.id} role="button" tabIndex={0} aria-expanded={open===i} aria-label={`${a.title}${a.unlocked?" (unlocked)":` (locked): ${a.desc}`}`} onClick={()=>setOpen(open===i?null:i)} onKeyDown={kAct(()=>setOpen(open===i?null:i))} className={`bm${a.unlocked?"":" lk"}${open===i?" open":""}`} style={a.unlocked?{background:"var(--surface)",borderColor:"var(--accent)"}:{}}><span>{a.icon}</span><div className="bt"><strong>{a.title}</strong>{a.unlocked?" \u2713":` ${a.desc}`}</div></div>)}</div>;
-}
 // YearSwitch: one button per configured school year, for Term and Class View. Renders
 // nothing until a second year exists, so a single-year planner looks as it always has.
 const YearSwitch=({years,year,onPick})=>years&&years.length>1?<div role="group" aria-label="School year" style={{display:"flex",gap:4,alignItems:"center",marginRight:4,paddingRight:8,borderRight:"1px solid var(--border)"}}>{years.map(y=><button key={y} className="mn" aria-pressed={y===year} onClick={()=>onPick(y)} style={{padding:"4px 10px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:y===year?700:400,background:y===year?"var(--accent)":"var(--surface)",color:y===year?"var(--on-accent)":"var(--text-secondary)"}}>{y}</button>)}</div>:null;
@@ -1500,7 +1484,7 @@ function DayView({date,setDate,onBack,metaCache,onMS,fp,gam,onUpdateCfg,cfg}){
     updateField("overrides",next);
     setTimeout(save,0);
   };
-  return<div>{gam.showGam&&<><XpStrip gam={gam}/><Badges achs={gam.achs}/></>}
+  return<div>
     <div style={{marginBottom:12,marginTop:10}}><div className="hd" style={{fontSize:"var(--fs-display)",fontWeight:600,color:"var(--text)",lineHeight:1.2}}>{fmtF(date)}</div><div className="hd" style={{fontSize:"var(--fs-emph)",marginTop:4,color:isZ?"var(--dz-text)":sch?"var(--accent)":"var(--error)"}}>{isZ?"Day 0 \u2014 no class structure":sch?`Day ${cd} rotation`:eng.inT(date)?"Holiday / Weekend":"School Holiday"}{twn&&<span style={{color:"var(--text-secondary)",fontWeight:400}}> {"\u00B7"} Term {twn.tn}, Week {twn.wk}</span>}</div></div>
     <div className="np" style={{display:"flex",alignItems:"center",gap:7,marginBottom:14,flexWrap:"wrap"}}><Btn onClick={onBack}>{"\u2190"} Back</Btn><Btn onClick={()=>prev&&setDate(prev)} disabled={!prev}>{"\u2039"} Prev</Btn><Btn onClick={()=>next&&setDate(next)} disabled={!next}>Next {"\u203A"}</Btn><Btn onClick={()=>todayTarget&&setDate(todayTarget)} disabled={!todayTarget}>Today</Btn><div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}><SvH saveStatus={saveStatus}/><Btn onClick={()=>window.print()}>{"\u{1F5A8}"} Print</Btn></div></div>
     {!sch?<div style={{color:"var(--text-secondary)",padding:30,textAlign:"center",fontSize:"var(--fs-emph)"}}>No classes scheduled.</div>
@@ -1564,7 +1548,7 @@ function TermView({onDay,onWk,metaCache,gam,cfg,years,year,onYear}){
     return()=>{window.removeEventListener("scroll",off);window.removeEventListener("resize",off);window.removeEventListener("keydown",key)}},[peek]);
   const coarse=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(pointer: coarse)").matches;
   if(!term)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>No terms configured. Head to Setup to get started.</div>;
-  return<div>{gam.showGam&&<><XpStrip gam={gam}/><Badges achs={gam.achs}/></>}
+  return<div>
     <div style={{marginBottom:14,marginTop:10}}><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4}}><YearSwitch years={years} year={year} onPick={onYear}/>{eng.terms.map((t,i)=><button key={i} className="hd" onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:termIdx===i?700:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div><div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}>{term.start.toLocaleDateString("en-NZ",{day:"numeric",month:"short"})} {"\u2013"} {term.end.toLocaleDateString("en-NZ",{day:"numeric",month:"short",year:"numeric"})}</div></div>
     <div style={{display:"grid",gridTemplateColumns:"58px repeat(5,1fr)",gap:3,marginBottom:4}}><div/>{["Mon","Tue","Wed","Thu","Fri"].map(d=><div key={d} className="hd" style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",textAlign:"center",fontWeight:600}}>{d}</div>)}</div>
     {weeks.map((days,wi)=><div key={wi} style={{display:"grid",gridTemplateColumns:"58px repeat(5,1fr)",gap:3,marginBottom:3,alignItems:"start"}}><div style={{paddingTop:2}}><Btn onClick={()=>onWk(days[0])} style={{padding:"3px 0",fontSize:"var(--fs-nano)",width:"100%",textAlign:"center",borderRadius:5}}>Wk {wi+1}</Btn></div>
@@ -1864,7 +1848,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
   const flags=useMemo(()=>{const fl=[];days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;const key=toDateKey(d);eng.PIDS.forEach(pid=>{const n=wNotes[`${key}:${pid}`];if(!n)return;const items=[...flagLines(n.subject),...flagLines(n.notes)];if(!items.length)return;const cls=eng.classAt(d,cd,pid);items.forEach(text=>fl.push({date:d,pid,cls,text}))})});return fl},[days,wNotes]);
   const spotHits=useMemo(()=>{if(!spot)return[];const h=[];days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{if(eng.classAt(d,cd,pid)===spot){const per=bldP(asmBellsForDate(cd,d,{timetable:eng.timetableForDate(d),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]})).find(p=>p.id===pid);h.push({d,per,cd})}})});return h},[spot,days]);
 
-  return<div>{gam.showGam&&<><XpStrip gam={gam}/><Badges achs={gam.achs}/></>}
+  return<div>
     <div className="np" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10,marginTop:10,flexWrap:"wrap"}}><div style={{display:"flex",alignItems:"center",gap:7}}><Btn onClick={()=>setBase(d=>addD(d,-7))} style={{padding:"4px 10px"}}>{"\u2039"}</Btn><div style={{textAlign:"center",width:"190px",flexShrink:0}}><div style={{fontSize:"var(--fs-body)",color:"var(--text-secondary)"}}>{wl}</div><div className="hd" style={{fontSize:"var(--fs-caption)",color:"var(--accent)",fontWeight:600}}>{wkLabel}</div></div><Btn onClick={()=>setBase(d=>addD(d,7))} style={{padding:"4px 10px"}}>{"\u203A"}</Btn></div><Btn onClick={()=>setBase(getPlanMon(today))} style={{padding:"4px 10px",fontSize:"var(--fs-caption)"}}>Today</Btn></div>
     <div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginBottom:10,padding:"6px 10px",background:"var(--surface)",borderRadius:"var(--radius-md)",display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}><span><strong className="mn" style={{color:sum.p===sum.t?"var(--success)":"var(--text)"}}>{sum.p}/{sum.t}</strong> planned</span>{sum.f>0&&<span style={{color:"var(--flag)"}}>{"\u2691"} {sum.f} flagged</span>}{sum.ud>0&&<span style={{color:"var(--dz-text)"}}>{"\u26A0"} {sum.ud} unlabelled D0</span>}<span style={{marginLeft:"auto"}}><FlagHint/></span></div>
     {eng.classCodes.length>0&&<div className="np" style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c];const activeThisWeek=eng.classActiveOn(c,days[0])||eng.classActiveOn(c,days[4]);return<span key={c} className="mn" title={activeThisWeek?undefined:"This class is not active this week (semester boundary)"} onClick={()=>setSpot(spot===c?null:c)} role="button" tabIndex={0} aria-pressed={spot===c} aria-label={`${c}, ${activeThisWeek?"":"not active this week, "}${spot===c?"hide":"show"} this week's lessons`} onKeyDown={kAct(()=>setSpot(spot===c?null:c))} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"3px 10px",borderRadius:4,fontSize:"var(--fs-caption)",fontWeight:700,cursor:"pointer",outline:spot===c?"2px solid var(--accent)":"none",opacity:activeThisWeek?1:.35}}>{c}</span>})}</div>}
@@ -2024,7 +2008,7 @@ function ClassView({onDet,gam,years,year,onYear}){
     if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh();
   };
   if(eng.classCodes.length===0)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>No classes configured. Head to Setup to add your classes.</div>;
-  return<div>{gam.showGam&&<><XpStrip gam={gam}/><Badges achs={gam.achs}/></>}
+  return<div>
     <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14,marginTop:10}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c],a=c===sel,sem=cl&&cl.semester;return<span key={c} className="mn" onClick={()=>{setSel(c);setQE(null)}} role="button" tabIndex={0} aria-pressed={a} aria-label={`${c}${sem&&sem!=="full"?", "+sem:""}, show this class`} onKeyDown={kAct(()=>{setSel(c);setQE(null)})} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"4px 12px",borderRadius:6,fontSize:"var(--fs-body)",fontWeight:700,cursor:"pointer",outline:a?"2px solid var(--accent)":"none",outlineOffset:2}}>{c}{sem&&sem!=="full"&&<span style={{fontSize:"var(--fs-nano)",fontWeight:600,marginLeft:5,opacity:.7}}>{sem}</span>}</span>})}</div>
     <div style={{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"}}><YearSwitch years={years} year={year} onPick={onYear}/><button onClick={()=>setTermIdx(-1)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:termIdx===-1?600:400,background:termIdx===-1?"var(--accent)":"var(--surface)",color:termIdx===-1?"var(--on-accent)":"var(--text-secondary)"}}>All terms</button>{eng.terms.map((t,i)=><button key={i} onClick={()=>setTermIdx(i)} style={{padding:"4px 12px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",fontSize:"var(--fs-body)",fontWeight:termIdx===i?600:400,background:termIdx===i?"var(--accent)":"var(--surface)",color:termIdx===i?"var(--on-accent)":"var(--text-secondary)"}}>Term {t.n}</button>)}</div>
     <div style={{marginBottom:14}}><div className="hd" style={{fontSize:"var(--fs-title)",fontWeight:600,color:clr.tx}}><span style={{background:clr.bg,padding:"2px 10px",borderRadius:5}}>{sel}</span></div>{(clr.desc||clr.course)&&<div style={{fontSize:"var(--fs-body)",color:"var(--text-secondary)",marginTop:4}}>{clr.desc}{clr.course&&<span className="mn" title="Course: links this class with the same course in other years" style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)",marginLeft:clr.desc?8:0}}>course {clr.course}</span>}</div>}<div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginTop:4}}>{lessons.length} lessons {"\u00B7"} <strong className="mn" style={{color:planned===lessons.length?"var(--success)":"var(--text)"}}>{planned} planned</strong> {"\u00B7"} {lessons.length-planned} empty{flagged>0&&<span style={{color:"var(--flag)",marginLeft:6}}>{"\u2691"} {flagged}</span>}</div></div>
@@ -3076,11 +3060,11 @@ function App(){
   };
 
   return<CfgCtx.Provider value={eng}><div style={{minHeight:"100vh",padding:16}}><div style={{maxWidth:CONTENT_MAX,margin:"0 auto"}}>
-    <div className="np" style={{marginBottom:16,borderBottom:"1px solid var(--border)",paddingBottom:14}}>
-      <div style={{marginBottom:10}}>
+    <div className="np" style={{marginBottom:compact?10:16,borderBottom:"1px solid var(--border)",paddingBottom:compact?8:14}}>
+      <div style={{marginBottom:compact?6:10}}>
         <div className="hd" style={{fontSize:"var(--fs-display)",fontWeight:400,color:"var(--accent)",letterSpacing:"-.3px"}}>{"\u{1F4C5}"} {eng.school} Planner</div>
-        <div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}>{cfg.userName&&<span style={{color:"var(--text-secondary)",fontWeight:500}}>{cfg.userName} {"\u00B7"} </span>}{gam.lev.icon} {gam.lev.title}{gam.sk>0&&<span style={{color:"var(--success)",marginLeft:8}}>{"\u{1F525}"} {gam.sk}wk streak</span>}{onWE&&<span style={{color:"var(--accent)",fontStyle:"italic",marginLeft:8}}>Weekend mode</span>}</div>
-        <div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",marginTop:3}}>v{APP_VERSION} {"·"} <a href="guide.html" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Guide</a> {"·"} <a href="https://github.com/vcanela/lesson-planner/blob/main/CHANGELOG.md" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Changelog</a>{!compact&&<>{" "}{"·"} <button onClick={()=>setShowHelp(true)} title="Keyboard shortcuts (or press ?)" style={{background:"none",border:"none",padding:0,font:"inherit",color:"var(--accent)",cursor:"pointer"}}>Shortcuts</button></>}</div>
+        <div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}>{cfg.userName&&<span style={{color:"var(--text-secondary)",fontWeight:500}}>{cfg.userName} {"\u00B7"} </span>}{gam.lev.icon} {gam.lev.title}{gam.showGam&&(()=>{const pct=gam.nxt?Math.max(0,Math.min(100,(gam.xp-(gam.levXp||0))/((gam.nxtXp||1)-(gam.levXp||0))*100)):100;return<button className="xpmini" onClick={()=>onTab("lab")} title={gam.nxt?`${gam.nxtXp-gam.xp} XP to ${gam.nxt.title}. Open the Lab`:"Top level. Open the Lab"} aria-label={`${gam.xp} XP, open the Lab`}><span className="xpmini-bar"><span style={{width:pct+"%"}}/></span><span className="mn">{gam.xp} XP</span></button>})()}{gam.sk>0&&<span style={{color:"var(--success)",marginLeft:8}}>{"\u{1F525}"} {gam.sk}wk streak</span>}{onWE&&<span style={{color:"var(--accent)",fontStyle:"italic",marginLeft:8}}>Weekend mode</span>}</div>
+        {!compact&&<div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",marginTop:3}}>v{APP_VERSION} {"·"} <a href="guide.html" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Guide</a> {"·"} <a href="https://github.com/vcanela/lesson-planner/blob/main/CHANGELOG.md" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Changelog</a>{!compact&&<>{" "}{"·"} <button onClick={()=>setShowHelp(true)} title="Keyboard shortcuts (or press ?)" style={{background:"none",border:"none",padding:0,font:"inherit",color:"var(--accent)",cursor:"pointer"}}>Shortcuts</button></>}</div>}
       </div>
       <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:3,background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-md)",padding:3}}>{TABS.map(tabBtn)}</div>
@@ -3091,6 +3075,7 @@ function App(){
             <button className="navmenu-item" onClick={toggleTheme}>{dispMode.startsWith("dark")?"\u2600\uFE0F":"\u{1F319}"} {dispMode.startsWith("dark")?"Day mode":"Night mode"}</button>
             <button className="navmenu-item" onClick={()=>{setShowDP(true);setNavMenu(false)}}>{"\u{1F4BE}"} Data & Sync</button>
             <div className="navmenu-note" style={{color:nudge.amber?"var(--error)":"var(--text-muted)"}}>{nudge.amber?"\u26A0 ":""}{nudge.text}</div>
+            <div className="navmenu-note">v{APP_VERSION} {"\u00B7"} <a href="guide.html" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Guide</a> {"\u00B7"} <a href="https://github.com/vcanela/lesson-planner/blob/main/CHANGELOG.md" target="_blank" rel="noopener" style={{color:"var(--accent)"}}>Changelog</a></div>
           </div>}
         </div>}
         {!compact&&<React.Fragment>
