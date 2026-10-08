@@ -6,6 +6,17 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.0.1 — 2026-10-08
+
+### Fixes
+- **The "Welcome! Add your classes" card no longer sticks on screen.** 3.0.0 moved classes and the timetable inside each year's entry, and every view was handed the working year's config, but the welcome check lives in the App itself and still read `cfg.classes` and `cfg.timetable` from the stored multi-year config, where they no longer exist. So it always concluded there were no classes. It now reads the working year's config like everything else. Display only: no data was affected.
+
+### Implementation
+- An audit of every read of a per-year field (`classes`, `timetable`, `terms`, `anchor` and the rest) on the stored config found this to be the only one; every other raw-config read is of a shared setting.
+- Why the tests missed it: the views under the card rendered perfectly, and no check asserted the card is absent when classes exist. Two smoke checks now do (the single-year and the two-year boot). Both failed against 3.0.0, reproducing the bug, before the fix; 184 assertions pass after it.
+
+---
+
 ## 3.0.0 — 2026-10-08
 
 ### Major: one config entry per school year (phase 1 of YEAR_MODEL_DESIGN.md)

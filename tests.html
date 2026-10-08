@@ -619,6 +619,9 @@ async function runSmoke(){
     const mig=JSON.parse(D.win.localStorage.getItem("planner-config")||"null");
     assert("the app migrates the old single-year config to schema 3 on boot",mig&&mig.schema===3&&mig.years.length===1&&mig.years[0].year===2026&&!mig.terms);
     assert("…keeping a verbatim copy of the old config",!!D.win.localStorage.getItem("planner-config-v2"));
+    // 3.0.0 shipped with the welcome card stuck on: it read classes from the stored
+    // config, where they no longer live. The views under it were fine, so nothing failed.
+    assert("no welcome card when classes and a timetable exist",!D.text().includes("Add your classes"));
 
     G("Smoke: every view");
     await visitViews(D,"fixture",true);
@@ -682,6 +685,7 @@ async function runSmoke(){
   D=await bootApp(smokeTwoYears(),new Date(2026,11,2,10,0,0).getTime());
   assert("app boots with a two-year config",D.booted&&!D.crashed(),D.S.errors.join("\n"));
   if(D.booted&&D.S.shadowed){
+    assert("no welcome card when classes and a timetable exist",!D.text().includes("Add your classes"));
     const has=code=>D.qa(".pb[aria-label]").some(e=>e.getAttribute("aria-label").split(", ")[1]===code);
     await step(D,"Week View opens on the frozen 2026 week with 2026's classes",()=>D.key("w"),()=>D.text().includes("30 Nov")&&has("9SCI1")&&!has("9SCI5"));
     await step(D,"] walks forward across New Year into 2027 Term 1",()=>pressUntil(D,"]",()=>D.text().includes("1 Feb")),()=>D.text().includes("1 Feb"));
