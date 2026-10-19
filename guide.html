@@ -463,7 +463,7 @@ a:hover{text-decoration:underline}
   <li>Which day of the cycle each date falls on</li>
   <li>Day 0 events (highlighted with their label)</li>
   <li>Holidays and weekends (greyed out)</li>
-  <li>A small fraction on each tile (e.g. <code>3/5</code>) showing how many teaching periods you've planned vs how many you have that day</li>
+  <li>A small fraction on each tile (e.g. <code>3/5</code>) showing how many lessons you've planned out of the lessons you're going to teach that day. Periods marked <em>No lesson</em> and lessons of a finished class aren't in either number.</li>
   <li>Coloured dots across the top of each tile representing your P1-P6 classes for that day</li>
 </ul>
 <p>The dots are laid out in three rows: P1 on its own, P2 to P5 in the middle, and P6 on its own, so the start and the end of the day are easy to pick out. A <strong>filled</strong> square means you are teaching that period, and the colour is the class. An <strong>empty</strong> square means you are not. A square with a <strong>dashed</strong> edge is a period you would have taught but which is marked <em>No lesson</em>: since nothing is being taught, it reads as empty like a free period, and the dashed edge is what separates a one-off cancellation from a period that is always free. So a dashed P1 tells you that day starts late, and a dashed P6 that it finishes early, at a glance across the whole term.</p>
@@ -472,7 +472,8 @@ a:hover{text-decoration:underline}
 
 <h2><svg class="ico" aria-hidden="true"><use href="#i-week"/></svg>Week View</h2>
 <p>This is your main workspace. It shows Monday to Friday with your full timetable laid out in a grid. Each column shows the date and the cycle day number (D3, D5, etc.). Each teaching-period cell shows the class code, the topic if entered, a flag icon if a line in your notes starts with an exclamation mark, and a green dot if the period has been planned.</p>
-<p>The fill tells you the state of a period at a glance. A solid class colour means a lesson is planned and going ahead. A faint diagonal hatch in the class colour, with the code struck through and an <strong>NL</strong> mark, means the period is set to <em>No lesson</em>: the class is still yours, but nothing is being taught. It uses the same recessive hatch as a free break slot, so it stays quiet on the page. A red outline with no fill is a teaching period you have not planned yet, and flat grey is a non-contact.</p>
+<p>The fill tells you the state of a period at a glance. A solid class colour means a lesson is planned and going ahead. A faint diagonal hatch in the class colour, with the code struck through and an <strong>NL</strong> mark, means the period is set to <em>No lesson</em>: the class is still yours, but nothing is being taught. It uses the same recessive hatch as a free break slot, so it stays quiet on the page. A lesson of a class you've finished teaching (see <em>Finishing a class</em> under Customising Setup) takes the same hatch, labelled <strong>Finished</strong> (<strong>Fin</strong> on a phone). A red outline with no fill is a teaching period you have not planned yet, and flat grey is a non-contact.</p>
+<p>The summary above the grid ("10/22 planned") counts only lessons you're going to teach: No lesson and finished lessons are left out of both numbers, as they are in Term View, Class View and the Lab.</p>
 <p>The <em>planned</em> count shown above the grid (e.g. <code>21/30</code>) only counts your teaching periods. Non-contacts are excluded.</p>
 <p><strong>Clicking any cell</strong> opens a quick-edit box at the bottom of the screen where you can type a topic and press Enter.</p>
 <p><strong>Clicking "Full detail"</strong> in the quick-edit box takes you to Day View for that specific period.</p>
@@ -872,6 +873,9 @@ a:hover{text-decoration:underline}
 
 <h2>Editing classes</h2>
 <p>To add a new class, click "+ Add Class" in the <strong>Classes</strong> section, enter the code, description, and colour. To edit, change the fields directly. To remove, click &#10005; on its card; this does not delete any lesson notes already written for that class. To reorder, use the up/down arrows.</p>
+
+<h3>Finishing a class</h3>
+<p>When you stop teaching a class before the end of the year, set <strong>Finished after</strong> on its card to the last day you teach it. Don't remove the class: its lessons after that date stay exactly where they were in Week, Day, Term and Class View, so you can still see when you would have had them (handy if students come to find you in that slot). They're drawn like No lesson and labelled <strong>Finished</strong>, they're left out of every count, and they never ask "How did it go?". You can still write a note in one. <strong>Still teaching</strong> clears the date and brings the class back.</p>
 
 <h2>Editing the timetable</h2>
 <p>If your timetable changes (e.g. a class swap, a new semester): click the cell you need to change in the <strong>Timetable</strong> section, then select a class, type a class code, or type <code>nc</code> for non-contact. Changing the timetable does not delete existing notes; it only changes what class the planner expects in that slot going forward.</p>

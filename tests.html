@@ -76,7 +76,7 @@ async function loadCore(ls){
     "NOTE_KEY_RE,META_KEY_RE,GC_HORIZON_MS,toDateKey,storageGet,storageSet,emptyNote,emptyMeta,normalizeMeta,getAllData,"+
     "flagLines,hasFlag,flagCount,hexAlpha,"+
     "SCHEMA_VERSION,yearsOf,flattenYear,pickYear,putYear,upgradeConfig,mergeConfig,writeConfig,sharedPart,stepSchoolDay,"+
-    "buildYearDraft,yearHasNotes,WENT,wentLabel,lessonEnd,askFrom,canReflect,lessonAsks,lastTimeNote,lastYearNote};");
+    "buildYearDraft,yearHasNotes,WENT,wentLabel,lessonEnd,askFrom,canReflect,lessonAsks,lastTimeNote,lastYearNote,toTeach,isPlanned};");
   return factory(ls,stub,stub);
 }
 // fresh isolated core+storage for tests that write to localStorage
@@ -315,6 +315,20 @@ try{
     eq("…then the lowest class code",ly2&&ly2.cls,"9SCI2");
     eq("…and nothing when last year left no trace",C.lastYearNote(e26,e25,"9SCI1",ctx,R({})),null);
     eq("…or when there is no last year",C.lastYearNote(e26,null,"9SCI1",ctx,R({})),null);
+  }
+
+  G("What counts (classFinished / toTeach)");
+  {
+    const e=C.makeDateEngine({cycleDays:1,anchor:{date:"2026-10-12",day:1},holidays:[],dayZeros:[],
+      terms:[{n:4,start:"2026-10-12",end:"2026-12-08"}],timetable:{1:{P1:"13CHM1",P2:"9SCI1"}},
+      classes:[{code:"13CHM1",colour:"#EDD9B5",finishedAfter:"2026-10-14"},{code:"9SCI1",colour:"#C5D9C0"}]});
+    eq("a class is taught up to and including its last day",e.classFinished("13CHM1",new Date(2026,9,14)),false);
+    eq("…and finished after it",e.classFinished("13CHM1",new Date(2026,9,15)),true);
+    eq("a class with no date never finishes",e.classFinished("9SCI1",new Date(2026,11,8)),false);
+    eq("a planned lesson counts",C.toTeach(e,"9SCI1",new Date(2026,9,15),{subject:"Forces"}),true);
+    eq("No lesson doesn't",C.toTeach(e,"9SCI1",new Date(2026,9,15),{status:"nl"}),false);
+    eq("a finished class's lesson doesn't, even with a note",C.toTeach(e,"13CHM1",new Date(2026,9,15),{notes:"Sam came to ask about titrations"}),false);
+    eq("non-contact doesn't",C.toTeach(e,"nc",new Date(2026,9,15),null),false);
   }
 
   // ══ FLAGS ══════════════════════════════════════════════════════════════════
@@ -742,7 +756,7 @@ async function step(D,name,act,check,ms){
 
 // The six views, the key that opens each, and what proves it rendered with content.
 const SMOKE_VIEWS=[
-  ["t","Term",D=>D.text().includes("fraction=planned/teaching")],
+  ["t","Term",D=>D.text().includes("fraction=planned/to teach")],
   ["w","Week",D=>D.q(".wk-grid .pb")],
   ["d","Day",D=>D.q(".pr")],
   ["c","Class",D=>D.q(".cv")],
@@ -794,7 +808,9 @@ async function runSmoke(){
 
     G("Smoke: Week View");
     await step(D,"Week View opens on the fixture week",()=>D.key("w"),()=>D.view()==="Week"&&D.text().includes("17 Aug"));
-    await step(D,"summary counts 4/17 planned and 2 flagged",null,()=>/4\s*\/\s*17/.test(D.text())&&D.text().includes("2 flagged"));
+    // 3.9.0: only lessons to teach count. The week's 17 class periods include one No lesson
+    // (Wed P2), which is in neither number: 3 of 16, not 4 of 17.
+    await step(D,"summary counts 3/16 planned (the No lesson isn't counted) and 2 flagged",null,()=>/3\s*\/\s*16/.test(D.text())&&D.text().includes("2 flagged"));
     await step(D,"Flagged Items lists both flagged lines",null,()=>D.text().includes("print the worksheet")&&D.text().includes("book the trolleys"));
     await step(D,"the no-lesson period is labelled as such",null,()=>D.q('.pb[aria-label^="P2, 10SCI2, Wed, 19 Aug, no lesson"]'));
     const cell=()=>D.q('.pb[aria-label^="P1, 9SCI1, Wed, 19 Aug"]');
@@ -812,7 +828,7 @@ async function runSmoke(){
 
     G("Smoke: Term View");
     const tile=()=>D.qa("[role=button]").find(e=>/^Wednesday, 19 August/.test(e.getAttribute("aria-label")||""));
-    await step(D,"the day tile reports 2 of 5 planned and 1 no lesson",()=>D.key("t"),()=>{const t=tile();return t&&/2 of 5 planned, 1 no lesson/.test(t.getAttribute("aria-label"))});
+    await step(D,"the day tile counts only lessons to teach: 1 of 4 planned, 1 not taught",()=>D.key("t"),()=>{const t=tile();return t&&/1 of 4 planned, 1 not taught/.test(t.getAttribute("aria-label"))});
     await step(D,"focusing a day opens the hover card for that day",()=>D.focus(tile()),()=>D.qa("div").find(d=>d.style.position==="fixed"&&d.style.pointerEvents==="none"&&d.textContent.includes("Wed, 19 Aug")&&d.textContent.includes("No lesson")));
     await step(D,"Esc closes the hover card",()=>D.key("Escape"),()=>!D.qa("div").some(d=>d.style.position==="fixed"&&d.style.pointerEvents==="none"));
 
@@ -842,7 +858,7 @@ async function runSmoke(){
     await step(D,"Week View's editor asks about an ended lesson",()=>{D.key("w");return waitFor(()=>D.view()==="Week").then(()=>{const c=wcell("P1, 9SCI1, Mon, 17 Aug");D.focus(c);D.key("Enter",c)})},
       ()=>D.q(".qe .went"));
     await step(D,"answering an unplanned lesson there doesn't count as planning it",()=>D.qa(".qe .went button").find(b=>b.textContent==="Mixed").click(),
-      ()=>JSON.parse(D.win.localStorage.getItem("note:2026-7-17:P1")||"{}").went==="mixed"&&/4\s*\/\s*17/.test(D.text()));
+      ()=>JSON.parse(D.win.localStorage.getItem("note:2026-7-17:P1")||"{}").went==="mixed"&&/3\s*\/\s*16/.test(D.text()));
     await step(D,"the editor stays open while moving to the Next time line",()=>{const t=D.q(".qe input"),n=D.q(".qe .went-next");D.focus(t);D.focus(n)},()=>D.q(".qe")&&D.q(".qe .went-next"));
     await step(D,"Esc closes it",()=>D.key("Escape",D.q(".qe .went-next")),()=>!D.q(".qe"));
     await step(D,"Week View's editor shows Last lesson too",()=>{const c=wcell("P6, 9SCI1, Wed, 19 Aug");D.focus(c);D.key("Enter",c)},()=>D.q(".qe .pay")&&D.q(".qe .pay").textContent.includes("Demo the trolleys first"));
@@ -861,6 +877,25 @@ async function runSmoke(){
     await step(D,"the Data and Sync panel opens",()=>D.q('button[title="Data & Sync"]').click(),()=>D.qa(".overlay").some(o=>o.textContent.includes("Data & Sync")));
     await step(D,"and closes",()=>D.qa(".overlay button").find(b=>b.textContent.trim()==="✕").click(),()=>!D.qa(".overlay").some(o=>o.textContent.includes("Data & Sync")));
     assert("no requests to other sites during the run",!D.S.blocked.length,D.S.blocked.join("\n"));
+
+    // 3.9.0: a finished class. 13CHM1 finishes after Tue 18 Aug: its Wed P5 and Thu P2 stay in
+    // the timetable, marked Finished, and leave the count (3 of 14).
+    G("Smoke: finished classes");
+    await step(D,"Setup takes the last day a class is taught",()=>{D.key("s");return waitFor(()=>D.view()==="Setup").then(()=>{
+        const row=D.qa(".fin-row").find(r=>r.parentElement.querySelector('input.mn')&&r.parentElement.querySelector('input.mn').value==="13CHM1");D.type(row.querySelector('input[type="date"]'),"2026-08-18")})},
+      ()=>D.qa(".fin-row").some(r=>r.textContent.includes("Still teaching")));
+    await step(D,"Week View still shows the lessons, marked Finished",()=>D.key("w"),
+      ()=>D.view()==="Week"&&D.q('.pb[aria-label^="P5, 13CHM1, Wed, 19 Aug, finished"]')&&D.q('.pb[aria-label^="P6, 13CHM1, Tue, 18 Aug, empty"]'));
+    await step(D,"…and they leave the count",null,()=>/3\s*\/\s*14/.test(D.text()));
+    await step(D,"Term View's tile drops them too",()=>D.key("t"),()=>{const t=tile();return t&&/1 of 3 planned, 2 not taught/.test(t.getAttribute("aria-label"))});
+    await step(D,"Class View lists them as not taught",()=>{D.key("c");return waitFor(()=>D.q('[role=button][aria-label^="13CHM1"]')).then(ch=>D.key("Enter",ch))},
+      ()=>D.qa(".cv").some(r=>/finished/.test(r.getAttribute("aria-label")||""))&&/\d+ not taught/.test(D.text()));
+    await step(D,"Still teaching brings the class back",()=>{D.key("s");return waitFor(()=>D.view()==="Setup").then(()=>D.qa(".fin-row button").find(b=>b.textContent==="Still teaching").click()).then(()=>{D.key("w")})},
+      ()=>D.view()==="Week"&&/3\s*\/\s*16/.test(D.text()));
+    // Finish it again so the legibility sweep below covers finished cells.
+    await step(D,"(finished again for the legibility sweep)",()=>{D.key("s");return waitFor(()=>D.view()==="Setup").then(()=>{
+        const row=D.qa(".fin-row").find(r=>r.parentElement.querySelector('input.mn')&&r.parentElement.querySelector('input.mn').value==="13CHM1");D.type(row.querySelector('input[type="date"]'),"2026-08-18")})},
+      ()=>D.qa(".fin-row").some(r=>r.textContent.includes("Still teaching")));
 
     // Legibility (3.2.1). Every view in every display mode on the fixture's theme, then the two
     // light modes on the other four themes, whose accents are the colours most likely to fail.

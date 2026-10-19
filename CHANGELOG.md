@@ -6,6 +6,24 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.9.0 — 2026-10-19
+
+### Counting only what you'll teach, and finishing a class
+- **Counts include only lessons you're going to teach.** No lesson used to count as planned, in both numbers: a day with five lessons, one of them No lesson and two planned, read "3/5". It now reads "2/4". This applies to the Term View tiles and hover card, the Week View summary, Class View's count and the Lab's coverage. The Term legend now says "fraction=planned/to teach". (This reverses the April change that made No lesson count as planned everywhere.)
+- **Finishing a class.** Each class in Setup has a **Finished after** date: the last day you teach it. Its later lessons stay where they were in Week, Day, Term and Class View, so you can still see when you would have had them, but they are drawn like No lesson and labelled **Finished** (**Fin** on a phone, struck-through code, dashed dots in Term View), left out of every count, and never ask "How did it go?". You can still write a note in one. **Still teaching** clears the date. Nothing is written into your lesson records, so it is fully reversible.
+- Class View says "N lessons · N planned · N empty · N not taught" for a class with No lesson or finished lessons.
+- **XP:** marking a No lesson still earns 10 XP, as before. Streaks, perfect weeks, coverage and the term achievements use the new count. A week with nothing left to teach (every lesson No lesson or finished) neither extends nor breaks a streak. XP can drop only if a finished class's later lessons were already planned, or if a week had nothing but No lesson lessons (it no longer earns the perfect-week bonus).
+- The "every class" achievements consider only classes with lessons to teach that term, so a finished class can't hold them back; the Lab's coverage list leaves out classes with nothing to teach this term.
+- The week export tags a finished class's lesson "Finished".
+- Guide: "Finishing a class" under Customising Setup; Term View and Week View describe the new counts.
+
+### Implementation
+- Engine: `classFinished(code, date)` from the class's `finishedAfter` (documented in `BACKUP_SCHEMA.md`). Core: `toTeach(eng, code, date, note)` and `isPlanned(note)`, the one rule every count now uses.
+- `calcStats` counts `tp`/`tl` with `toTeach`, and `nl` (No lesson marks) separately; XP is `(tp + nl) × 10` plus perfect weeks and achievements.
+- Tests: unit checks for `classFinished` and `toTeach`; the smoke checks for the fixture week now expect 3/16 and "1 of 4 planned, 1 not taught"; a smoke group finishes 13CHM1 in Setup and checks Week, Term and Class View and the count (3/14), then Still teaching; the contrast sweep runs with a finished class. 316 assertions.
+
+---
+
 ## 3.8.0 — 2026-10-09
 
 ### What you wrote comes back (lesson reflections, part 2)

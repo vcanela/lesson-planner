@@ -119,6 +119,7 @@ Pins one date to one cycle day. The planner walks the calendar from the anchor (
   Reuse is allowed but the colour picker dims used colours.
 - `semester` is optional, one of `"full"` / `"S1"` / `"S2"`. Defaults to full-year. When set to `"S1"` the class is active only before the year's `semesterBoundary`; `"S2"` only on or after. If no `semesterBoundary` is set, all classes are treated as full-year regardless. Lesson notes from past dates stay reachable even after a class is out of its active range.
 - `course` is optional: a short label shared by the same course across years, so this year's `9SCI5` and last year's `9SCI3` are known to be the same course. Defaults to the code without its trailing class number (`9SCI3` → `9SCI`, `13DPHY3` → `13DPHY`).
+- `finishedAfter` is optional (3.9.0): an ISO date, the last day you teach the class. Its lessons after that date stay in the timetable, marked Finished, but are not lessons to teach: they leave every count and never ask "How did it go?". Empty or absent means you still teach it.
 
 ### `duties`
 
