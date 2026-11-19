@@ -786,7 +786,7 @@ const SCHEMA_VERSION=3;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="3.10.0";
+const APP_VERSION="3.10.1";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -1506,8 +1506,21 @@ const kAct=fn=>e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();fn(e)}};
 // symbols such as ¡ and ™ on a Mac. Read from e.code, because e.key is that symbol.
 // useAltDigit calls fn(n, e) for ⌥1 to ⌥9, from anywhere, including inside a text field.
 const altDigit=e=>e.altKey&&!e.metaKey&&!e.ctrlKey&&/^Digit[1-9]$/.test(e.code||"")?+e.code.slice(5):0;
+// Dead keys (3.10.1). On some layouts ⌥ + a number is a dead key: it holds an accent (ˆ) for
+// the next letter. Browsers don't let a page cancel that, so the accent lands in the field
+// the jump just opened. While armed, the next composition is cleaned when it ends: a lone
+// accent is removed, and an accented letter it produced (ê) goes back to its base letter (e).
+let deadArm=0,deadComp=false;
+const deadClean=s=>s.normalize("NFD").replace(/\p{M}/gu,"").replace(/[\p{Sk}\p{Lm}]/gu,"");
+document.addEventListener("compositionstart",()=>{if(deadArm&&Date.now()-deadArm<500)deadComp=true;deadArm=0},true);
+document.addEventListener("compositionend",e=>{if(!deadComp)return;deadComp=false;const el=e.target,data=e.data||"";
+  if(!data||!el||typeof el.value!=="string")return;
+  setTimeout(()=>{const c=el.selectionStart,v=el.value;if(c==null||v.slice(c-data.length,c)!==data)return;const clean=deadClean(data);if(clean===data)return;
+    // Through the native setter and an input event, so React's onChange sees the change.
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),"value").set.call(el,v.slice(0,c-data.length)+clean+v.slice(c));
+    el.dispatchEvent(new Event("input",{bubbles:true}));const p=c-data.length+clean.length;try{el.setSelectionRange(p,p)}catch{}},0)},true);
 function useAltDigit(fn){const r=useRef(fn);r.current=fn;
-  useEffect(()=>{const h=e=>{const n=altDigit(e);if(n)r.current(n,e)};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h)},[])}
+  useEffect(()=>{const h=e=>{const n=altDigit(e);if(n){if(e.key==="Dead")deadArm=Date.now();r.current(n,e)}};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h)},[])}
 
 // YearSwitch: one button per configured school year, for Term and Class View. Renders
 // nothing until a second year exists, so a single-year planner looks as it always has.

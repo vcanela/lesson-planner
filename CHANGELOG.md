@@ -6,6 +6,17 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.10.1 — 2026-11-20
+
+### Fixed
+- **⌥6 left a stray ˆ in the period it opened.** On some keyboard layouts ⌥ + a number is a dead key: it holds an accent for the next letter (ˆ then e makes ê). The planner already blocks the symbols the other ⌥ + number keys type, but a browser doesn't let a page cancel a dead key, so the accent landed in the box the jump had just put the cursor in. Now, right after an ⌥ jump, a lone accent is removed from that box, and if it has already combined with your next letter (ê) you get the plain letter (e). Accents you type yourself afterwards are left alone.
+
+### Implementation
+- `useAltDigit` arms a guard when the key is `Dead`; the next composition (`compositionstart` within half a second) is cleaned on `compositionend` with `deadClean` (strip combining marks and lone spacing accents), written back through the native value setter and an input event so React sees it.
+- Tests: three smoke checks that simulate the browser's dead-key composition (lone accent removed; ê becomes e; a later é is kept). A real dead key can't be pressed from the test harness. 325 assertions.
+
+---
+
 ## 3.10.0 — 2026-11-20
 
 ### ⌥ + number: jump to a day or a period
