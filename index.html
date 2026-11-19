@@ -786,7 +786,7 @@ const SCHEMA_VERSION=3;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="3.9.0";
+const APP_VERSION="3.10.0";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -1501,6 +1501,13 @@ const CBadge=({cc,style={}})=>{const eng=useCfg();const nc=!cc||cc==="nc";const 
 // event is passed through for handlers that need it (currentTarget geometry,
 // stopPropagation); handlers that ignore it are unaffected.
 const kAct=fn=>e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();fn(e)}};
+// ⌥ (Alt) + number (3.10.0): jump straight to a day or a period. ⌘ + number belongs to the
+// browser (it switches tabs) and is never delivered to the page; ⌥ + number only types
+// symbols such as ¡ and ™ on a Mac. Read from e.code, because e.key is that symbol.
+// useAltDigit calls fn(n, e) for ⌥1 to ⌥9, from anywhere, including inside a text field.
+const altDigit=e=>e.altKey&&!e.metaKey&&!e.ctrlKey&&/^Digit[1-9]$/.test(e.code||"")?+e.code.slice(5):0;
+function useAltDigit(fn){const r=useRef(fn);r.current=fn;
+  useEffect(()=>{const h=e=>{const n=altDigit(e);if(n)r.current(n,e)};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h)},[])}
 
 // YearSwitch: one button per configured school year, for Term and Class View. Renders
 // nothing until a second year exists, so a single-year planner looks as it always has.
@@ -1589,7 +1596,7 @@ function Payoff({cc,dk,pid,ctx:ctx0}){
  * keep focus where it was (mousedown), so a quick editor's input doesn't blur and close. */
 function WentRow({went,onWent,children,strip}){
   return<div className={strip?"went went-strip":"went"}><span className="went-q">How did it go?</span><span role="group" aria-label="How did it go?" className="went-opts">{WENT.map(([v,l])=><button key={v} className="tog tog-sm" aria-pressed={went===v} onMouseDown={e=>e.preventDefault()} onClick={e=>{e.stopPropagation();onWent(went===v?"":v)}}>{l}</button>)}</span>{went&&children}</div>}
-function PCard({period,dateKey,cDay,date,initOpen}){
+function PCard({period,dateKey,cDay,date,initOpen,jump}){
   const eng=useCfg();const cc=cDay?eng.classAt(date,cDay,period.id):null;const isNc=cc==="nc";
   const[open,setOpen]=useState(initOpen||false);const[mode,setMode]=useState(initOpen?"detailed":"quick");
   const sk=(dateKey&&cDay)?`note:${dateKey}:${period.id}`:null;const as=useAutoSave(sk,emptyNote());
@@ -1605,8 +1612,10 @@ function PCard({period,dateKey,cDay,date,initOpen}){
   const end=useMemo(()=>{if(!period.end||!date)return null;const[h,m]=period.end.split(":").map(Number);const d=new Date(date);d.setHours(h,m,0,0);return d},[period.end,dateKey]);
   const now=new Date(),canR=!fin&&canReflect(cc,data,end,now),asks=!fin&&lessonAsks(cc,data,end,now);
   const setWent=v=>{updateField("went",v);setTimeout(save,0)};
+  const rootRef=useRef(null);
+  useEffect(()=>{if(!jump||!cDay)return;setOpen(true);setTimeout(()=>{const f=rootRef.current&&rootRef.current.querySelector(".prd input,.prd textarea");if(f){f.focus();const v=f.value.length;try{f.setSelectionRange(v,v)}catch{}}},0)},[jump]);
   if(period.brk)return<div className="brk"><span>{period.label}</span><span className="mn" style={{fontSize:"var(--fs-micro)"}}>{period.start}{"\u2013"}{period.end}</span></div>;
-  return<div style={{borderBottom:"1px solid var(--border)"}}><div className={`pr${open?" exp":""}`} onClick={()=>cDay&&setOpen(o=>!o)} role={cDay?"button":undefined} tabIndex={cDay?0:undefined} aria-expanded={cDay?open:undefined} aria-label={cDay?`${period.label}, ${isNc?"non-contact":cc}, ${isNl?"no lesson":fin?"finished":has?"planned":"empty"}${data&&data.went?", "+wentLabel(data.went).toLowerCase():""}, ${open?"collapse":"expand"}`:undefined} onKeyDown={cDay?kAct(()=>setOpen(o=>!o)):undefined} style={cDay?{}:{cursor:"default"}}><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",minWidth:64,flexShrink:0}}>{period.start}</span><span className="mn" style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",minWidth:24,flexShrink:0}}>{period.label}</span><CBadge cc={cc}/><span style={{fontSize:"var(--fs-body)",color:isNl||fin?"var(--text-muted)":"var(--text-secondary)",fontStyle:isNl||fin?"italic":"normal",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isNl?(data.subject?"No lesson \u2014 "+data.subject:"No lesson"):fin?(data&&data.subject?"Finished \u2014 "+data.subject:"Finished"):data&&data.subject||""}</span>{data&&data.went&&<span className="went-tag">{wentLabel(data.went)}</span>}{fl&&<span style={{color:"var(--flag)",fontSize:"var(--fs-micro)",flexShrink:0}}>{"\u2691"}</span>}{has&&!fl&&<span style={{width:5,height:5,borderRadius:"50%",background:"var(--success)",flexShrink:0}}/>}{cDay&&<span style={{color:"var(--text-muted)",fontSize:"var(--fs-caption)"}}>{open?"\u25B2":"\u25BC"}</span>}</div>
+  return<div ref={rootRef} style={{borderBottom:"1px solid var(--border)"}}><div className={`pr${open?" exp":""}`} onClick={()=>cDay&&setOpen(o=>!o)} role={cDay?"button":undefined} tabIndex={cDay?0:undefined} aria-expanded={cDay?open:undefined} aria-label={cDay?`${period.label}, ${isNc?"non-contact":cc}, ${isNl?"no lesson":fin?"finished":has?"planned":"empty"}${data&&data.went?", "+wentLabel(data.went).toLowerCase():""}, ${open?"collapse":"expand"}`:undefined} onKeyDown={cDay?kAct(()=>setOpen(o=>!o)):undefined} style={cDay?{}:{cursor:"default"}}><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",minWidth:64,flexShrink:0}}>{period.start}</span><span className="mn" style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",minWidth:24,flexShrink:0}}>{period.label}</span><CBadge cc={cc}/><span style={{fontSize:"var(--fs-body)",color:isNl||fin?"var(--text-muted)":"var(--text-secondary)",fontStyle:isNl||fin?"italic":"normal",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isNl?(data.subject?"No lesson \u2014 "+data.subject:"No lesson"):fin?(data&&data.subject?"Finished \u2014 "+data.subject:"Finished"):data&&data.subject||""}</span>{data&&data.went&&<span className="went-tag">{wentLabel(data.went)}</span>}{fl&&<span style={{color:"var(--flag)",fontSize:"var(--fs-micro)",flexShrink:0}}>{"\u2691"}</span>}{has&&!fl&&<span style={{width:5,height:5,borderRadius:"50%",background:"var(--success)",flexShrink:0}}/>}{cDay&&<span style={{color:"var(--text-muted)",fontSize:"var(--fs-caption)"}}>{open?"\u25B2":"\u25BC"}</span>}</div>
     {asks&&!open&&<WentRow strip went="" onWent={setWent}/>}
     {open&&data&&<div className="prd" onFocus={handleFocus} onBlur={handleBlur}><div style={{display:"grid",gap:9}}>{ctx&&<div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",background:"var(--surface)",padding:"4px 8px",borderRadius:"var(--radius-xs)",lineHeight:1.5}}>Lesson <span className="mn" style={{fontWeight:700}}>{ctx.num}/{ctx.total}</span> this term{ctx.prev&&<span> {"\u00B7"} prev: {fmtS(ctx.prev.date)}</span>}{ctx.next&&<span> {"\u00B7"} next: {fmtS(ctx.next.date)}</span>}</div>}{!isNc&&<Payoff cc={cc} dk={dateKey} pid={period.id} ctx={ctx}/>}{!isNc&&<div style={{display:"flex",gap:4}}>{["quick","detailed"].map(m=><button className="tog tog-sm" aria-pressed={mode===m} key={m} onClick={()=>setMode(m)}>{m==="quick"?"Quick":"Detailed"}</button>)}</div>}
       {(mode==="quick"||isNc)?<div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}><label className="fl" style={{marginBottom:0}}>{isNc?"Notes":isNl?"Reason (optional)":"Topic / Quick note"} <SvH saveStatus={saveStatus}/></label>{!isNc&&(nlConfirm?<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:"var(--fs-nano)",color:"var(--flag)"}}>Replace topic with No Lesson?<button className="btn-a btn-sm" onMouseDown={e=>{e.preventDefault();markNL()}}>Yes</button><button className="btn-ghost" onMouseDown={e=>{e.preventDefault();setNlConfirm(false)}}>Cancel</button></span>:<button className={`btn-ghost${isNl?" btn-danger":""}`} onMouseDown={e=>{e.preventDefault();isNl?clearNL():askNL()}}>{isNl?"\u2715 Remove no lesson":"No lesson"}</button>)}</div><AInp data={data} field={isNc?"notes":"subject"} updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph={isNc?"Meeting, marking, prep":isNl?"e.g. Class has an assembly":"e.g. Newton's 3rd Law"}/></div>:<><div><label className="fl">Topic / Subject <SvH saveStatus={saveStatus}/></label><AInp data={data} field="subject" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="e.g. Newton's 3rd Law"/></div><div><label className="flb">Notes & Tasks</label><AInp data={data} field="notes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Lesson plan, tasks. Start a line with ! to flag it" multi rows={3}/></div><div><label className="flb">Resources & Links</label><AInp data={data} field="resources" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="URLs, file names"/></div></>}
@@ -1622,6 +1631,9 @@ function PCard({period,dateKey,cDay,date,initOpen}){
  * ═══════════════════════════════════════════════════════════════════════
  */
 function DayView({date,setDate,onBack,metaCache,onMS,fp,gam,onUpdateCfg,cfg}){
+  // ⌥1 to ⌥6 (3.10.0): open that period with the cursor in its first field.
+  const[jump,setJump]=useState(null);
+  useAltDigit((n,e)=>{if(n>6)return;e.preventDefault();setJump({pid:"P"+n,t:Date.now()})});
   const eng=useCfg();const today=useToday();const cd=eng.cycleDayFor(date),dateKey=toDateKey(date),isZ=cd===0,sch=eng.isSchoolDay(date);
   const twn=eng.termWkN(getWDs(date));
   const prev=eng.nearestSchoolDay(date,-1),next=eng.nearestSchoolDay(date,1);
@@ -1671,7 +1683,7 @@ function DayView({date,setDate,onBack,metaCache,onMS,fp,gam,onUpdateCfg,cfg}){
     </div>}{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH saveStatus={saveStatus}/></label><AInp data={meta} field="dayNotes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Meetings, reminders, duty" multi rows={2}/></div>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>
   {!hasB0&&<div style={{padding:"6px 12px",borderBottom:"1px solid var(--border)"}}><button className="btn-add btn-sm" onClick={()=>setForceShow(s=>({...s,B0:true}))}>+ Before school</button></div>}
   {slots.map(s=>{
-    if(s.type==="period")return<PCard key={`${dateKey}-${s.id}`} period={s} dateKey={dateKey} cDay={cd} date={date} initOpen={fp===s.id}/>;
+    if(s.type==="period")return<PCard key={`${dateKey}-${s.id}`} period={s} dateKey={dateKey} cDay={cd} date={date} initOpen={fp===s.id} jump={jump&&jump.pid===s.id?jump.t:0}/>;
     const code=s.code;
     const cyc=((eng.timetableForDate(date)||{})[cd]||{})[code]||null;
     const current=s.type==="bslot"?s.value:null;
@@ -1878,6 +1890,21 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
   // doesn't pop the on-screen keyboard and resize the screen (matches Class View).
   const coarse=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(pointer: coarse)").matches;
   const[spot,setSpot]=useState(null);const[qe,setQE]=useState(null);const[qv,setQV]=useState("");const[qn,setQN]=useState("");const[nr,setNR]=useState(0);
+  // ⌥1 to ⌥5: Monday to Friday's notes. Once in a day (its notes or one of its periods),
+  // ⌥1 to ⌥6 opens that day's period instead; Esc steps back out to the grid. A Day 0 opens
+  // Day View, where its label lives; holidays and weekends do nothing.
+  useAltDigit((n,e)=>{if(n>6)return;e.preventDefault();
+    const ae=document.activeElement,dn=ae&&ae.dataset?ae.dataset.daynote:undefined;
+    const inQe=!!(qe&&ae&&ae.closest&&ae.closest(".qe"));
+    const di=dn!==undefined?+dn:inQe?days.findIndex(d=>toDateKey(d)===qe.dk):-1;
+    const focusQe=()=>{const i=document.querySelector(".qe input.inp");if(i){i.focus();const v=i.value.length;try{i.setSelectionRange(v,v)}catch{}}};
+    if(di<0){if(n>5)return;const d=days[n-1];if(!eng.isSchoolDay(d))return;
+      if(eng.cycleDayFor(d)===0){onDet(d);return}
+      const t=document.querySelector(`textarea[data-daynote="${n-1}"]`);if(t){t.focus();const v=t.value.length;t.setSelectionRange(v,v)}return}
+    const d=days[di],cd=eng.cycleDayFor(d),pid="P"+n;if(!cd||!eng.PIDS.includes(pid))return;const k=toDateKey(d);
+    if(qe&&qe.dk===k&&qe.pid===pid){focusQe();return}
+    // Moving between editors keeps the same input mounted, so it never blurs: save first.
+    if(qe)qeWrite();oQE(k,pid,eng.classAt(d,cd,pid),d);setTimeout(focusQe,0)});
   // On opening a quick-editor, bring the grid to the top of the viewport so the editor panel
   // (which renders just below the grid) comes into view without manual scrolling.
   const gridRef=useRef(null);
@@ -1944,7 +1971,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
     cells.push(<div key="ln" style={lS}><span style={lT} title="Day notes"><Icon n="note"/></span></div>);
     dd.forEach((x,i)=>{if(!x.sch){cells.push(<div key={`n${i}`} style={{background:"var(--surface)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",padding:4}}><span style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}>{isWE(x.d)?"Weekend":"Holiday"}</span></div>);return}
       if(x.isZ){cells.push(<div key={`n${i}`} onClick={()=>onDet(x.d)} role="button" tabIndex={0} onKeyDown={kAct(()=>onDet(x.d))} aria-label={`${fmtS(x.d)}, Day 0${x.meta.day0label?", "+x.meta.day0label:""}, open Day View`} style={{background:bg(x),border:bd(x),padding:4,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:"var(--fs-nano)",color:"var(--dz-text)",fontStyle:"italic"}}>{x.meta.day0label||"Day 0 \u2014 tap"}</span></div>);return}
-      const val=x.meta.dayNotes||"";cells.push(<div key={`n${i}`} style={{background:bg(x),border:bd(x),padding:"3px 4px",display:"flex",alignItems:"stretch"}}><textarea className="ta wk-daynote" value={val} onChange={e=>updateMeta(x.k,{dayNotes:e.target.value})} placeholder="Day notes" rows={1} style={{fontSize:"var(--fs-nano)",padding:"2px 4px",borderRadius:"var(--radius-xs)",background:val?"var(--surface-open)":"transparent",borderColor:val?"var(--accent)":"var(--border)",minHeight:28,lineHeight:1.3,width:"100%",maxWidth:"100%",boxSizing:"border-box"}}/><div className="wk-daynote-m" onClick={()=>onDet(x.d)} role="button" tabIndex={0} onKeyDown={kAct(()=>onDet(x.d))} aria-label={`Day notes for ${fmtS(x.d)}${val?", has notes":", empty"}, open Day View`} title="Open Day view to edit notes" style={{color:val?"var(--accent)":"var(--text-muted)",fontWeight:val?600:400}}>{val?"● notes":"notes"}</div></div>);
+      const val=x.meta.dayNotes||"";cells.push(<div key={`n${i}`} style={{background:bg(x),border:bd(x),padding:"3px 4px",display:"flex",alignItems:"stretch"}}><textarea className="ta wk-daynote" data-daynote={i} aria-label={`Day notes for ${fmtS(x.d)}`} value={val} onChange={e=>updateMeta(x.k,{dayNotes:e.target.value})} onKeyDown={e=>{if(e.key==="Escape"){e.preventDefault();focusNav()}}} placeholder="Day notes" rows={1} style={{fontSize:"var(--fs-nano)",padding:"2px 4px",borderRadius:"var(--radius-xs)",background:val?"var(--surface-open)":"transparent",borderColor:val?"var(--accent)":"var(--border)",minHeight:28,lineHeight:1.3,width:"100%",maxWidth:"100%",boxSizing:"border-box"}}/><div className="wk-daynote-m" onClick={()=>onDet(x.d)} role="button" tabIndex={0} onKeyDown={kAct(()=>onDet(x.d))} aria-label={`Day notes for ${fmtS(x.d)}${val?", has notes":", empty"}, open Day View`} title="Open Day view to edit notes" style={{color:val?"var(--accent)":"var(--text-muted)",fontWeight:val?600:400}}>{val?"● notes":"notes"}</div></div>);
     });
     // Resolve a B-slot value for one day. Shared resolveSlot helper handles
     // override > weekly > cycle default precedence. Local wrappers return the bits the
@@ -2982,6 +3009,8 @@ function HotkeyHelp({onClose}){
     ["Tab","Move between periods, days, lessons and settings"],
     ["Enter / Space","Open or activate whatever is focused"],
     ["← ↑ ↓ →","Move around the Week grid (Tab enters it once)"],
+    ["⌥1 to ⌥5","Week View: Monday to Friday's notes (Alt on Windows)"],
+    ["⌥1 to ⌥6","Then that day's period; in Day View, the period straight away"],
     ["Home / End","Monday / Friday of the current row"],
   ];
   const kbd={display:"inline-block",fontSize:"var(--fs-nano)",fontWeight:700,background:"var(--surface)",border:"1px solid var(--border-strong)",borderRadius:"var(--radius-xs)",padding:"1px 7px",margin:"0 2px 2px 0",color:"var(--text)"};
@@ -2993,11 +3022,11 @@ function HotkeyHelp({onClose}){
       </div>
       <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>
         {rows.map(([keys,desc],i)=><tr key={i}>
-          <td style={{whiteSpace:"nowrap",verticalAlign:"top",padding:"5px 12px 5px 0"}}>{keys.split(" ").map((kk,j)=><span key={j} className="mn" style={kbd}>{kk}</span>)}</td>
+          <td style={{whiteSpace:"nowrap",verticalAlign:"top",padding:"5px 12px 5px 0"}}>{keys.split(" ").map((kk,j)=>kk==="to"?<span key={j} style={{margin:"0 4px 0 2px"}}>to</span>:<span key={j} className="mn" style={kbd}>{kk}</span>)}</td>
           <td style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",verticalAlign:"top",padding:"5px 0",lineHeight:1.5}}>{desc}</td>
         </tr>)}
       </tbody></table>
-      <div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",marginTop:12}}>Shortcuts pause while you are typing in a field.</div>
+      <div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",marginTop:12}}>Single-key shortcuts pause while you are typing in a field; {"\u2325"} + number works anywhere.</div>
     </div>
   </div>;
 }

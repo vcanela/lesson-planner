@@ -868,6 +868,23 @@ async function runSmoke(){
     await step(D,"Class View shows the answer beside the lesson",()=>{D.key("c");return waitFor(()=>D.q('[role=button][aria-label^="9SCI1"]')).then(ch=>D.key("Enter",ch))},
       ()=>D.qa(".cv").some(r=>r.textContent.includes("Forces recap")&&r.textContent.includes("Went well")));
 
+    // 3.10.0: ⌥ + number. Mon 17 Aug is Day 1 (P3 and P6 non-contact, so typing there leaves
+    // the counts below alone); Fri 21 Aug is a Day 0; Wed 19 (today) has 12PHY1 in P4.
+    G("Smoke: ⌥ number shortcuts");
+    const alt=n=>(D.doc.activeElement||D.doc.body).dispatchEvent(new D.win.KeyboardEvent("keydown",{key:"\u00A1",code:"Digit"+n,altKey:true,bubbles:true,cancelable:true}));
+    const act=()=>D.doc.activeElement;
+    await step(D,"⌥1 puts the cursor in Monday's notes",()=>{D.key("w");return waitFor(()=>D.view()==="Week").then(()=>{D.key(".");D.focus(D.q('[data-nav="0-0"]'));alt(1)})},
+      ()=>act()&&act().dataset.daynote==="0");
+    await step(D,"then ⌥3 opens Monday P3 with the cursor in its topic",()=>alt(3),
+      ()=>D.q(".qe")&&/P3 · Mon,? 17 Aug/.test(D.q(".qe").textContent)&&act()===D.q(".qe input.inp"));
+    await step(D,"⌥6 saves what was typed and moves to Monday P6",()=>{D.type(D.q(".qe input.inp"),"Marking");alt(6)},
+      ()=>/P6 · Mon,? 17 Aug/.test(D.q(".qe").textContent)&&(JSON.parse(D.win.localStorage.getItem("note:2026-7-17:P3")||"{}").subject||"")==="Marking"&&act()===D.q(".qe input.inp"));
+    await step(D,"Esc steps back out to the grid",()=>D.key("Escape",D.q(".qe input.inp")),()=>!D.q(".qe")&&act()&&act().dataset.nav!==undefined);
+    await step(D,"⌥5 on a Day 0 opens it in Day View",()=>alt(5),()=>D.view()==="Day"&&D.text().includes("21 August"));
+    await step(D,"in Day View, ⌥4 opens P4 with the cursor in it",()=>{D.key(".");return waitFor(()=>D.text().includes("19 August")).then(()=>alt(4))},
+      ()=>{const x=D.q(".pr.exp");return x&&/^P4, 12PHY1/.test(x.getAttribute("aria-label"))&&act()&&act().closest&&act().closest(".prd")});
+    D.key("Enter",D.q(".pr.exp"));
+
     G("Smoke: panels");
     await step(D,"? opens the shortcuts list",()=>D.key("?"),()=>D.text().includes("Keyboard shortcuts"));
     await step(D,"Esc closes it",()=>D.key("Escape"),()=>!D.text().includes("Keyboard shortcuts"));

@@ -6,6 +6,23 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.10.0 — 2026-11-20
+
+### ⌥ + number: jump to a day or a period
+- **Week View: ⌥1 to ⌥5** put the cursor in Monday to Friday's day notes, ready to type (Alt on Windows).
+- **Once you are in a day** (its notes or one of its periods), **⌥1 to ⌥6** open that day's period in the quick editor with the cursor in the topic. ⌥1 then ⌥3 is Monday P3; ⌥5 from there moves to Monday P5. Whatever you typed is saved before each jump.
+- **Esc** steps back out to the grid (now also from a day's notes), so Wednesday P4 from anywhere is Esc, ⌥3, ⌥4.
+- A Day 0 opens in Day View, where its label lives; holidays and weekends do nothing. Non-contact periods open like any other period; break slots are not part of it.
+- **Day View: ⌥1 to ⌥6** open that period straight away, with the cursor in its first field.
+- Unlike the single-key shortcuts, these work while you are typing, which is the point. ⌘ + number is not used: the browser keeps it for switching tabs and never passes it to the page. On a Mac, ⌥ + number normally types symbols such as ¡ and ™; Week View and Day View take those keys over.
+- The ? shortcuts list and the Guide's keyboard section describe them.
+
+### Implementation
+- `altDigit(e)` reads the number from `e.code` (`e.key` is the symbol); `useAltDigit(fn)` listens on the window, so it works from inside fields. Week View works out the current day from the focused element (a `data-daynote` box or the quick editor) and saves the open editor with `qeWrite` before switching, because the editor's input stays mounted and never blurs. Day View passes a `jump` to the matching `PCard`, which opens and focuses its first field.
+- Tests: six smoke checks (⌥1 to Monday's notes, ⌥3 to Monday P3 with focus, ⌥6 saves and moves, Esc back to the grid, ⌥5 on a Day 0 opens Day View, ⌥4 in Day View). 322 assertions.
+
+---
+
 ## 3.9.0 — 2026-10-19
 
 ### Counting only what you'll teach, and finishing a class
