@@ -6,6 +6,20 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.10.3 — 2026-11-20
+
+### Fixed
+- **The stray ˆ from ⌥6, properly this time.** 3.10.1 and 3.10.2 were built on guesses about how Chrome delivers a dead key's accent, and both were wrong. A key log from Victor's Mac (Chrome 157, a layout where ⌥6 is ˆ) showed what really happens: a few milliseconds after the key goes down, Chrome starts the accent in the box that has the cursor, and commits it into that box when the cursor leaves. The planner was moving the cursor faster than that, so the accent started in the period it had just opened and sat there waiting for a letter. (A quick ⌥1 then ⌥6 never started an accent, because Chrome hadn't yet treated the notes box as somewhere to type, which is why speed mattered.)
+- Now a dead-key ⌥ press waits for the accent to start in the box being left (or a sixtieth of a second, or the next key), takes the cursor out of that box so the accent is committed there, removes it at once, and only then jumps. The box you land in starts clean, and the accent is never saved anywhere.
+- Removed 3.10.2's rule that cleaned the first text typed within a minute of a jump: it rested on the wrong guess and could have stripped an accent you meant to type.
+
+### Implementation
+- `useAltDigit` holds a dead-key jump in `deadPend` until an `insertCompositionText` input arrives in the focused box (then on the next tick), 60 ms pass, or another key is pressed. Week View and Day View blur the box before jumping; Week View blurs the quick editor's input without closing it (`skipBlur`) and saves the period without the accent (`deadValue`). The commit is cleaned synchronously in `compositionend`, because opening the editor rebuilds the notes boxes and a fix applied a tick later would land on a box that has gone.
+- Tests: four smoke checks imitate the logged sequence (accent started in the box being left, committed when it loses the cursor): from a period, from a day's notes, a quick press with no accent, and accents typed afterwards kept. 326 assertions. The test frame fires no focus events in a background pane, so the imitated commit is tied to `blur()`, which is how the planner leaves the box.
+- `keylog.html`, a throwaway page that records key, composition and input events, was used to get the log; it is not part of the planner.
+
+---
+
 ## 3.10.2 — 2026-11-20
 
 ### Fixed

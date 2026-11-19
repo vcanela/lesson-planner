@@ -879,21 +879,32 @@ async function runSmoke(){
       ()=>D.q(".qe")&&/P3 · Mon,? 17 Aug/.test(D.q(".qe").textContent)&&act()===D.q(".qe input.inp"));
     await step(D,"⌥6 saves what was typed and moves to Monday P6",()=>{D.type(D.q(".qe input.inp"),"Marking");alt(6)},
       ()=>/P6 · Mon,? 17 Aug/.test(D.q(".qe").textContent)&&(JSON.parse(D.win.localStorage.getItem("note:2026-7-17:P3")||"{}").subject||"")==="Marking"&&act()===D.q(".qe input.inp"));
-    // 3.10.1/3.10.2: where ⌥ + number is a dead key, Chrome drops its accent (ˆ) into the box
-    // the jump opened, either as an unfinished composition (a quick jump) or as plain typed
-    // text (when the cursor sat a moment first). Both routes are imitated here as the browser
-    // fires them: the value changes, then an input event that says how.
+    // 3.10.3: where ⌥ + number is a dead key (Victor's layout: ⌥6 is ˆ). Imitates what Chrome
+    // did in his key log: a few ms after keydown it starts the accent in the box that has the
+    // cursor (an insertCompositionText input), and commits it there when the cursor leaves.
     const box=()=>D.q(".qe input.inp");
-    const deadKey=()=>{box().dispatchEvent(new D.win.KeyboardEvent("keydown",{key:"Dead",code:"Digit6",altKey:true,bubbles:true,cancelable:true}));return sleep(30)};
-    const ins=(value,data,inputType,isComposing)=>{const i=box();Object.getOwnPropertyDescriptor(D.win.HTMLInputElement.prototype,"value").set.call(i,value);
-      i.dispatchEvent(new D.win.InputEvent("input",{bubbles:true,inputType,data,isComposing:!!isComposing}))};
-    await step(D,"a dead key's accent typed into the opened box is removed",()=>deadKey().then(()=>ins("\u02C6","\u02C6","insertText")),()=>box().value==="");
-    await step(D,"…and as an unfinished accent, the letter it makes goes back to plain (ê to e)",()=>deadKey().then(()=>{
-        ins("Notes on \u02C6","\u02C6","insertCompositionText",true);ins("Notes on \u00EA","\u00EA","insertCompositionText",true);
-        box().dispatchEvent(new D.win.CompositionEvent("compositionend",{bubbles:true,data:"\u00EA"}));return sleep(30)}),
-      ()=>box().value==="Notes on e");
-    await step(D,"ordinary accents typed later are left alone",()=>{ins("caf\u00E9","\u00E9","insertText");return sleep(30)},()=>box().value==="caf\u00E9");
-    D.type(D.q(".qe input.inp"),"");
+    const proto=el=>el.tagName==="TEXTAREA"?D.win.HTMLTextAreaElement.prototype:D.win.HTMLInputElement.prototype;
+    const deadPress=(n,accent)=>{const el=D.doc.activeElement;
+      el.dispatchEvent(new D.win.KeyboardEvent("keydown",{key:"Dead",code:"Digit"+n,altKey:true,bubbles:true,cancelable:true}));
+      if(!accent)return sleep(120);
+      // Chrome commits the accent into the box when the cursor leaves it, just before focusout.
+      // A background test frame fires no focus events, so the commit is tied to blur() itself,
+      // which is how the planner takes the cursor out before a dead-key jump.
+      const ob=el.blur;el.blur=function(){delete el.blur;el.dispatchEvent(new D.win.CompositionEvent("compositionend",{bubbles:true,data:accent}));ob.call(el)};
+      return sleep(5).then(()=>{el.dispatchEvent(new D.win.CompositionEvent("compositionstart",{bubbles:true,data:""}));
+        const c=el.selectionStart,v=el.value;Object.getOwnPropertyDescriptor(proto(el),"value").set.call(el,v.slice(0,c)+accent+v.slice(c));
+        el.dispatchEvent(new D.win.InputEvent("input",{bubbles:true,inputType:"insertCompositionText",data:accent,isComposing:true}));return sleep(120)})};
+    await step(D,"dead ⌥5 from a period: the accent doesn't reach the saved period or the next one",()=>{D.type(box(),"Prep");return deadPress(5,"\u02C6")},
+      ()=>/P5 · Mon,? 17 Aug/.test(D.q(".qe").textContent)&&box().value===""&&D.doc.activeElement===box()
+        &&(JSON.parse(D.win.localStorage.getItem("note:2026-7-17:P6")||"{}").subject||"")==="Prep");
+    await step(D,"dead ⌥6 from a day's notes after a pause: notes stay clean, P6 opens clean",()=>{D.key("Escape",box());return waitFor(()=>!D.q(".qe")).then(()=>{alt(1);return sleep(30)}).then(()=>deadPress(6,"\u02C6"))},
+      ()=>/P6 · Mon,? 17 Aug/.test(D.q(".qe").textContent)&&box().value==="Prep"&&D.doc.activeElement===box()
+        &&D.q('textarea[data-daynote="0"]').value===""&&(JSON.parse(D.win.localStorage.getItem("daymeta:2026-7-17")||"{}").dayNotes||"")==="");
+    await step(D,"a quick dead ⌥ press with no accent still jumps",()=>{D.key("Escape",box());return waitFor(()=>!D.q(".qe")).then(()=>{alt(1);return sleep(30)}).then(()=>deadPress(3))},
+      ()=>/P3 · Mon,? 17 Aug/.test(D.q(".qe").textContent)&&box().value==="Marking"&&D.doc.activeElement===box());
+    await step(D,"accents typed afterwards are kept",()=>{const i=box();Object.getOwnPropertyDescriptor(proto(i),"value").set.call(i,"Marking caf\u00E9");
+        i.dispatchEvent(new D.win.InputEvent("input",{bubbles:true,inputType:"insertText",data:"\u00E9"}));return sleep(30)},()=>box().value==="Marking caf\u00E9");
+    D.type(box(),"Marking");
     await step(D,"Esc steps back out to the grid",()=>D.key("Escape",D.q(".qe input.inp")),()=>!D.q(".qe")&&act()&&act().dataset.nav!==undefined);
     await step(D,"⌥5 on a Day 0 opens it in Day View",()=>alt(5),()=>D.view()==="Day"&&D.text().includes("21 August"));
     await step(D,"in Day View, ⌥4 opens P4 with the cursor in it",()=>{D.key(".");return waitFor(()=>D.text().includes("19 August")).then(()=>alt(4))},

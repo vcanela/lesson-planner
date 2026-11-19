@@ -786,7 +786,7 @@ const SCHEMA_VERSION=3;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="3.10.2";
+const APP_VERSION="3.10.3";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -1506,30 +1506,37 @@ const kAct=fn=>e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();fn(e)}};
 // symbols such as ¡ and ™ on a Mac. Read from e.code, because e.key is that symbol.
 // useAltDigit calls fn(n, e) for ⌥1 to ⌥9, from anywhere, including inside a text field.
 const altDigit=e=>e.altKey&&!e.metaKey&&!e.ctrlKey&&/^Digit[1-9]$/.test(e.code||"")?+e.code.slice(5):0;
-// Dead keys (3.10.1, reworked 3.10.2). On some layouts ⌥ + a number is a dead key: it holds an
-// accent (ˆ) for the next letter. Browsers don't let a page cancel it, and Chrome hands it over
-// in two ways: as an unfinished composition when the jump is quick, or as plain typed text in
-// the box the jump opened when the cursor has sat a moment first. So after a dead-key jump the
-// first text to arrive, by either route and however late, is cleaned: a lone accent is
-// removed, and an accented letter it made (ê) becomes the plain letter (e).
-let deadArm=0,deadComp=false;
-const deadArmed=()=>deadArm&&Date.now()-deadArm<60000;
+// Dead keys (3.10.3; measured on Victor's Mac, Chrome 157). On some layouts ⌥ + a number is a
+// dead key: it starts an accent (ˆ) for the next letter. Chrome begins that accent in the box
+// that has the cursor a few milliseconds after keydown, and commits it into that box when the
+// cursor leaves; a page cannot cancel it. So a dead-key jump waits for the accent to start in
+// the box being left (or 60 ms, or the next key), and only then moves. Leaving commits the
+// accent there, where it is removed at once; the box you land in starts clean. (A quick
+// ⌥1 then ⌥6 never starts an accent, because Chrome has not yet treated the box as typeable.)
+let deadPend=null,deadComp=null,deadData="";
 const deadClean=s=>s.normalize("NFD").replace(/\p{M}/gu,"").replace(/[\p{Sk}\p{Lm}]/gu,"");
-// Replace `data`, just before the caret in el, with its cleaned form. The native setter
-// leaves React's value tracker behind, so React still sees the change and runs onChange.
-function deadFix(el,data,notify){if(!el||typeof el.value!=="string"||!data)return;const c=el.selectionStart,v=el.value;
+const deadGo=()=>{const p=deadPend;if(!p)return;deadPend=null;clearTimeout(p.t);p.go()};
+// The value of el without an accent still being composed in it, for saving before a jump.
+const deadValue=el=>{if(!el)return"";const v=el.value;if(deadComp!==el||!deadData)return v;const c=el.selectionStart;
+  return c!=null&&v.slice(c-deadData.length,c)===deadData?v.slice(0,c-deadData.length)+v.slice(c):v};
+// Replace `data` just before the caret in el with its cleaned form, through the native setter
+// and an input event so React's onChange sees it.
+function deadFix(el,data){if(!el||typeof el.value!=="string"||!data)return;const c=el.selectionStart,v=el.value;
   if(c==null||v.slice(c-data.length,c)!==data)return;const clean=deadClean(data);if(clean===data)return;
   Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),"value").set.call(el,v.slice(0,c-data.length)+clean+v.slice(c));
-  const p=c-data.length+clean.length;try{el.setSelectionRange(p,p)}catch{}if(notify)el.dispatchEvent(new Event("input",{bubbles:true}))}
-// Capture phase, so the fix lands before React reads the value for this same event.
-document.addEventListener("input",e=>{if(!deadArmed())return;const t=e.inputType||"";if(!/^insert/.test(t))return;
-  if(t==="insertCompositionText"&&e.isComposing){deadComp=true;return}
-  deadArm=0;deadFix(e.target,e.data,false)},true);
-document.addEventListener("compositionend",e=>{if(!deadComp)return;deadComp=false;
-  if(!e.data)return; // cancelled (focus moved away): stay armed for the text that follows
-  deadArm=0;const el=e.target,data=e.data;setTimeout(()=>deadFix(el,data,true),0)},true);
+  const p=c-data.length+clean.length;try{el.setSelectionRange(p,p)}catch{}el.dispatchEvent(new Event("input",{bubbles:true}))}
+document.addEventListener("input",e=>{if(!deadPend||e.target!==deadPend.el||e.inputType!=="insertCompositionText")return;
+  deadComp=e.target;deadData=e.data||"";clearTimeout(deadPend.t);deadPend.t=setTimeout(deadGo,0)},true);
+// Cleaned at once, not on the next tick: the jump that follows may rebuild the box, and a fix
+// applied to a box that has gone never reaches the saved note.
+document.addEventListener("compositionend",e=>{if(e.target!==deadComp)return;deadComp=null;const data=e.data||deadData;deadData="";deadFix(e.target,data)},true);
+document.addEventListener("keydown",e=>{if(deadPend&&!["Alt","Shift","Meta","Control","Dead"].includes(e.key))deadGo()},true);
 function useAltDigit(fn){const r=useRef(fn);r.current=fn;
-  useEffect(()=>{const h=e=>{const n=altDigit(e);if(n){if(e.key==="Dead")deadArm=Date.now();r.current(n,e)}};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h)},[])}
+  useEffect(()=>{const h=e=>{const n=altDigit(e);if(!n)return;
+    const el=document.activeElement,typing=el&&(el.tagName==="INPUT"||el.tagName==="TEXTAREA");
+    if(e.key==="Dead"&&typing){e.preventDefault();deadPend={el,go:()=>r.current(n,e),t:setTimeout(deadGo,60)};return}
+    r.current(n,e)};
+    window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h)},[])}
 
 // YearSwitch: one button per configured school year, for Term and Class View. Renders
 // nothing until a second year exists, so a single-year planner looks as it always has.
@@ -1655,7 +1662,10 @@ function PCard({period,dateKey,cDay,date,initOpen,jump}){
 function DayView({date,setDate,onBack,metaCache,onMS,fp,gam,onUpdateCfg,cfg}){
   // ⌥1 to ⌥6 (3.10.0): open that period with the cursor in its first field.
   const[jump,setJump]=useState(null);
-  useAltDigit((n,e)=>{if(n>6)return;e.preventDefault();setJump({pid:"P"+n,t:Date.now()})});
+  useAltDigit((n,e)=>{if(n>6)return;e.preventDefault();
+    // After a dead key, end its accent in the field being left (see deadGo) before jumping.
+    if(e.key==="Dead"){const a=document.activeElement;if(a&&(a.tagName==="INPUT"||a.tagName==="TEXTAREA"))a.blur()}
+    setJump({pid:"P"+n,t:Date.now()})});
   const eng=useCfg();const today=useToday();const cd=eng.cycleDayFor(date),dateKey=toDateKey(date),isZ=cd===0,sch=eng.isSchoolDay(date);
   const twn=eng.termWkN(getWDs(date));
   const prev=eng.nearestSchoolDay(date,-1),next=eng.nearestSchoolDay(date,1);
@@ -1911,7 +1921,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
   // coarse = touch/stylus pointer; skip autoFocus when opening a cell so a glance
   // doesn't pop the on-screen keyboard and resize the screen (matches Class View).
   const coarse=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(pointer: coarse)").matches;
-  const[spot,setSpot]=useState(null);const[qe,setQE]=useState(null);const[qv,setQV]=useState("");const[qn,setQN]=useState("");const[nr,setNR]=useState(0);
+  const[spot,setSpot]=useState(null);const[qe,setQE]=useState(null);const[qv,setQV]=useState("");const[qn,setQN]=useState("");const[nr,setNR]=useState(0);const skipBlur=useRef(false);
   // ⌥1 to ⌥5: Monday to Friday's notes. Once in a day (its notes or one of its periods),
   // ⌥1 to ⌥6 opens that day's period instead; Esc steps back out to the grid. A Day 0 opens
   // Day View, where its label lives; holidays and weekends do nothing.
@@ -1924,9 +1934,20 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
       if(eng.cycleDayFor(d)===0){onDet(d);return}
       const t=document.querySelector(`textarea[data-daynote="${n-1}"]`);if(t){t.focus();const v=t.value.length;t.setSelectionRange(v,v)}return}
     const d=days[di],cd=eng.cycleDayFor(d),pid="P"+n;if(!cd||!eng.PIDS.includes(pid))return;const k=toDateKey(d);
+    // After a dead key the accent is being composed in the notes box. Opening the editor
+    // rebuilds that box, and a box that disappears never commits its accent, which then
+    // turns up in the period. So take the cursor out first: the accent commits there and
+    // is cleaned while the box still exists.
+    if(e.key==="Dead"&&dn!==undefined)ae.blur();
     if(qe&&qe.dk===k&&qe.pid===pid){focusQe();return}
-    // Moving between editors keeps the same input mounted, so it never blurs: save first.
-    if(qe)qeWrite();oQE(k,pid,eng.classAt(d,cd,pid),d);setTimeout(focusQe,0)});
+    // Moving between editors keeps the same input mounted, so it never blurs: save first. After
+    // a dead key the accent is still being composed in that input, so save without it and blur
+    // (without closing the editor) to end it there before the input shows the next period.
+    if(qe){if(e.key==="Dead"&&inQe){const nx=document.querySelector(".qe .went-next");
+        qeWrite({subject:deadValue(document.querySelector(".qe input.inp")),...(nx?{nextTime:deadValue(nx)}:{})});
+        skipBlur.current=true;ae.blur();skipBlur.current=false}
+      else qeWrite()}
+    oQE(k,pid,eng.classAt(d,cd,pid),d);setTimeout(focusQe,0)});
   // On opening a quick-editor, bring the grid to the top of the viewport so the editor panel
   // (which renders just below the grid) comes into view without manual scrolling.
   const gridRef=useRef(null);
@@ -1975,7 +1996,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
   // its own fields, so the Next time line can be reached from the topic.
   const qeWrite=(patch={})=>{if(!qe)return;const k=`note:${qe.dk}:${qe.pid}`;const ex=storageGet(k)||emptyNote();writeRecord(k,{...ex,subject:qv,status:ex.status||"",...(qn||ex.nextTime?{nextTime:qn}:{}),...patch});setNR(r=>r+1);if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh()};
   const sQE=()=>{if(!qe)return;qeWrite();setQE(null)};
-  const qeBlur=e=>{const box=e.currentTarget.closest(".qe");if(box&&e.relatedTarget&&box.contains(e.relatedTarget))qeWrite();else sQE()};
+  const qeBlur=e=>{if(skipBlur.current)return;const box=e.currentTarget.closest(".qe");if(box&&e.relatedTarget&&box.contains(e.relatedTarget))qeWrite();else sQE()};
   // sNL writes the no-lesson state with an explicit subject (so the confirm-flow can pass "" rather than reusing whatever was typed as a topic).
   // toggleNL: flip this slot between a normal lesson and No-lesson WITHOUT closing the editor,
   // so a reason can be typed straight after. The typed value (qv) is preserved as subject/reason;
