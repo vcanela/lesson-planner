@@ -786,7 +786,7 @@ const SCHEMA_VERSION=3;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="3.10.1";
+const APP_VERSION="3.10.2";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -1506,19 +1506,28 @@ const kAct=fn=>e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();fn(e)}};
 // symbols such as ¡ and ™ on a Mac. Read from e.code, because e.key is that symbol.
 // useAltDigit calls fn(n, e) for ⌥1 to ⌥9, from anywhere, including inside a text field.
 const altDigit=e=>e.altKey&&!e.metaKey&&!e.ctrlKey&&/^Digit[1-9]$/.test(e.code||"")?+e.code.slice(5):0;
-// Dead keys (3.10.1). On some layouts ⌥ + a number is a dead key: it holds an accent (ˆ) for
-// the next letter. Browsers don't let a page cancel that, so the accent lands in the field
-// the jump just opened. While armed, the next composition is cleaned when it ends: a lone
-// accent is removed, and an accented letter it produced (ê) goes back to its base letter (e).
+// Dead keys (3.10.1, reworked 3.10.2). On some layouts ⌥ + a number is a dead key: it holds an
+// accent (ˆ) for the next letter. Browsers don't let a page cancel it, and Chrome hands it over
+// in two ways: as an unfinished composition when the jump is quick, or as plain typed text in
+// the box the jump opened when the cursor has sat a moment first. So after a dead-key jump the
+// first text to arrive, by either route and however late, is cleaned: a lone accent is
+// removed, and an accented letter it made (ê) becomes the plain letter (e).
 let deadArm=0,deadComp=false;
+const deadArmed=()=>deadArm&&Date.now()-deadArm<60000;
 const deadClean=s=>s.normalize("NFD").replace(/\p{M}/gu,"").replace(/[\p{Sk}\p{Lm}]/gu,"");
-document.addEventListener("compositionstart",()=>{if(deadArm&&Date.now()-deadArm<500)deadComp=true;deadArm=0},true);
-document.addEventListener("compositionend",e=>{if(!deadComp)return;deadComp=false;const el=e.target,data=e.data||"";
-  if(!data||!el||typeof el.value!=="string")return;
-  setTimeout(()=>{const c=el.selectionStart,v=el.value;if(c==null||v.slice(c-data.length,c)!==data)return;const clean=deadClean(data);if(clean===data)return;
-    // Through the native setter and an input event, so React's onChange sees the change.
-    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),"value").set.call(el,v.slice(0,c-data.length)+clean+v.slice(c));
-    el.dispatchEvent(new Event("input",{bubbles:true}));const p=c-data.length+clean.length;try{el.setSelectionRange(p,p)}catch{}},0)},true);
+// Replace `data`, just before the caret in el, with its cleaned form. The native setter
+// leaves React's value tracker behind, so React still sees the change and runs onChange.
+function deadFix(el,data,notify){if(!el||typeof el.value!=="string"||!data)return;const c=el.selectionStart,v=el.value;
+  if(c==null||v.slice(c-data.length,c)!==data)return;const clean=deadClean(data);if(clean===data)return;
+  Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),"value").set.call(el,v.slice(0,c-data.length)+clean+v.slice(c));
+  const p=c-data.length+clean.length;try{el.setSelectionRange(p,p)}catch{}if(notify)el.dispatchEvent(new Event("input",{bubbles:true}))}
+// Capture phase, so the fix lands before React reads the value for this same event.
+document.addEventListener("input",e=>{if(!deadArmed())return;const t=e.inputType||"";if(!/^insert/.test(t))return;
+  if(t==="insertCompositionText"&&e.isComposing){deadComp=true;return}
+  deadArm=0;deadFix(e.target,e.data,false)},true);
+document.addEventListener("compositionend",e=>{if(!deadComp)return;deadComp=false;
+  if(!e.data)return; // cancelled (focus moved away): stay armed for the text that follows
+  deadArm=0;const el=e.target,data=e.data;setTimeout(()=>deadFix(el,data,true),0)},true);
 function useAltDigit(fn){const r=useRef(fn);r.current=fn;
   useEffect(()=>{const h=e=>{const n=altDigit(e);if(n){if(e.key==="Dead")deadArm=Date.now();r.current(n,e)}};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h)},[])}
 

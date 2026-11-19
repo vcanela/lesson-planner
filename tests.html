@@ -879,15 +879,20 @@ async function runSmoke(){
       ()=>D.q(".qe")&&/P3 · Mon,? 17 Aug/.test(D.q(".qe").textContent)&&act()===D.q(".qe input.inp"));
     await step(D,"⌥6 saves what was typed and moves to Monday P6",()=>{D.type(D.q(".qe input.inp"),"Marking");alt(6)},
       ()=>/P6 · Mon,? 17 Aug/.test(D.q(".qe").textContent)&&(JSON.parse(D.win.localStorage.getItem("note:2026-7-17:P3")||"{}").subject||"")==="Marking"&&act()===D.q(".qe input.inp"));
-    // 3.10.1: where ⌥ + number is a dead key, the browser drops its accent (ˆ) into the field
-    // the jump opened. Simulated here as the browser does it: a composition in that field.
-    const dead=async(data,keep)=>{D.q(".qe input.inp").dispatchEvent(new D.win.KeyboardEvent("keydown",{key:"Dead",code:"Digit6",altKey:true,bubbles:true,cancelable:true}));
-      await sleep(30);const i=D.q(".qe input.inp");i.dispatchEvent(new D.win.CompositionEvent("compositionstart",{bubbles:true,data:""}));
-      D.type(i,keep+data);i.dispatchEvent(new D.win.CompositionEvent("compositionend",{bubbles:true,data}))};
-    await step(D,"a dead key's lone accent is removed from the field the jump opened",()=>dead("\u02C6",""),()=>D.q(".qe input.inp").value==="");
-    await step(D,"…and an accented letter it made goes back to the plain letter",()=>dead("\u00EA","Notes on "),()=>D.q(".qe input.inp").value==="Notes on e");
-    await step(D,"ordinary accents typed later are left alone",()=>{const i=D.q(".qe input.inp");i.dispatchEvent(new D.win.CompositionEvent("compositionstart",{bubbles:true,data:""}));D.type(i,"caf\u00E9");i.dispatchEvent(new D.win.CompositionEvent("compositionend",{bubbles:true,data:"\u00E9"}));return sleep(60)},
-      ()=>D.q(".qe input.inp").value==="caf\u00E9");
+    // 3.10.1/3.10.2: where ⌥ + number is a dead key, Chrome drops its accent (ˆ) into the box
+    // the jump opened, either as an unfinished composition (a quick jump) or as plain typed
+    // text (when the cursor sat a moment first). Both routes are imitated here as the browser
+    // fires them: the value changes, then an input event that says how.
+    const box=()=>D.q(".qe input.inp");
+    const deadKey=()=>{box().dispatchEvent(new D.win.KeyboardEvent("keydown",{key:"Dead",code:"Digit6",altKey:true,bubbles:true,cancelable:true}));return sleep(30)};
+    const ins=(value,data,inputType,isComposing)=>{const i=box();Object.getOwnPropertyDescriptor(D.win.HTMLInputElement.prototype,"value").set.call(i,value);
+      i.dispatchEvent(new D.win.InputEvent("input",{bubbles:true,inputType,data,isComposing:!!isComposing}))};
+    await step(D,"a dead key's accent typed into the opened box is removed",()=>deadKey().then(()=>ins("\u02C6","\u02C6","insertText")),()=>box().value==="");
+    await step(D,"…and as an unfinished accent, the letter it makes goes back to plain (ê to e)",()=>deadKey().then(()=>{
+        ins("Notes on \u02C6","\u02C6","insertCompositionText",true);ins("Notes on \u00EA","\u00EA","insertCompositionText",true);
+        box().dispatchEvent(new D.win.CompositionEvent("compositionend",{bubbles:true,data:"\u00EA"}));return sleep(30)}),
+      ()=>box().value==="Notes on e");
+    await step(D,"ordinary accents typed later are left alone",()=>{ins("caf\u00E9","\u00E9","insertText");return sleep(30)},()=>box().value==="caf\u00E9");
     D.type(D.q(".qe input.inp"),"");
     await step(D,"Esc steps back out to the grid",()=>D.key("Escape",D.q(".qe input.inp")),()=>!D.q(".qe")&&act()&&act().dataset.nav!==undefined);
     await step(D,"⌥5 on a Day 0 opens it in Day View",()=>alt(5),()=>D.view()==="Day"&&D.text().includes("21 August"));

@@ -6,6 +6,17 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.10.2 — 2026-11-20
+
+### Fixed
+- **The stray ˆ from ⌥6 could still appear if you paused before pressing it.** 3.10.1 only caught the accent when Chrome delivered it as an unfinished accent waiting for its letter, which is what happens on a quick ⌥1 then ⌥6. When the cursor had sat in a day's notes for a moment, Chrome instead typed the ˆ into the newly opened box as ordinary text, and the fix never saw it. Now, after a dead-key jump, the first text to arrive is cleaned whichever way it comes and however late (within a minute): a lone accent is removed, and an accented letter it made (ê) becomes the plain letter (e).
+
+### Implementation
+- The clean-up now listens for `input` events (capture phase, so the value is fixed before React reads it) as well as `compositionend`. A cancelled composition keeps the guard armed for the text that follows. `deadFix` replaces the inserted text just before the caret with `deadClean`'s result.
+- Tests: the three simulated checks now imitate both routes with real `InputEvent`s (`insertText`, and `insertCompositionText` ending in `compositionend`). A real dead key still can't be pressed from the test harness. 325 assertions.
+
+---
+
 ## 3.10.1 — 2026-11-20
 
 ### Fixed
