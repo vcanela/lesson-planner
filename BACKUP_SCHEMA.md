@@ -189,6 +189,7 @@ Optional. One entry per saved lesson or B-slot note.
 - Slot key is `P1`-`P6` for periods or `B0/B1a/B1b/B2a/B2b/B3` for B-slots.
 - `status: "nl"` marks the slot as **No lesson** (e.g. teacher absent, class on excursion). All other status values are blank.
 - Optional, from 3.7.0: `went` (`"good"`, `"mixed"` or `"rough"`) is the answer to "How did it go?" after the lesson, and `nextTime` is the optional line written for the next time the lesson is taught. Both are absent on records written before 3.7.0 and are ignored by older versions. A record with only these fields is still a real record (not an empty tombstone), and neither field counts the lesson as planned.
+- Optional, from 3.11.0: `relief` (true) marks a slot you were used for relief in, with `reliefFor` (the class covered, e.g. `10ENG3`) and `reliefNote`. They sit alongside the rest of the record, so a No lesson (`status: "nl"`) keeps its reason, and they apply to break slots (`B0`…`B3`) as well as periods. A relief is not planning: it changes no count and earns no XP. A record with only these fields is a real record, not an empty tombstone.
 - Date format is **unpadded** (`2026-3-15`, not `2026-03-15`).
 
 ### `daymeta:<date>` entries

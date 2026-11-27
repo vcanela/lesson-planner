@@ -76,7 +76,7 @@ async function loadCore(ls){
     "NOTE_KEY_RE,META_KEY_RE,GC_HORIZON_MS,toDateKey,storageGet,storageSet,emptyNote,emptyMeta,normalizeMeta,getAllData,"+
     "flagLines,hasFlag,flagCount,hexAlpha,"+
     "SCHEMA_VERSION,yearsOf,flattenYear,pickYear,putYear,upgradeConfig,mergeConfig,writeConfig,sharedPart,stepSchoolDay,"+
-    "buildYearDraft,yearHasNotes,WENT,wentLabel,lessonEnd,askFrom,canReflect,lessonAsks,lastTimeNote,lastYearNote,toTeach,isPlanned};");
+    "buildYearDraft,yearHasNotes,WENT,wentLabel,lessonEnd,askFrom,canReflect,lessonAsks,lastTimeNote,lastYearNote,toTeach,isPlanned,reliefSubject,reliefEntries,reliefCsv,slotName};");
   return factory(ls,stub,stub);
 }
 // fresh isolated core+storage for tests that write to localStorage
@@ -329,6 +329,27 @@ try{
     eq("No lesson doesn't",C.toTeach(e,"9SCI1",new Date(2026,9,15),{status:"nl"}),false);
     eq("a finished class's lesson doesn't, even with a note",C.toTeach(e,"13CHM1",new Date(2026,9,15),{notes:"Sam came to ask about titrations"}),false);
     eq("non-contact doesn't",C.toTeach(e,"nc",new Date(2026,9,15),null),false);
+  }
+
+  G("Relief (reliefSubject / reliefEntries / reliefCsv)");
+  {
+    eq("a class code gives year and subject",JSON.stringify(C.reliefSubject("10ENG3")),'{"year":"10","subject":"ENG"}');
+    eq("free text gives neither",JSON.stringify(C.reliefSubject("Mr Smith")),'{"year":"","subject":""}');
+    // One week, 19 to 23 Oct 2026, a one-day cycle with 9SCI1 in P2 and P3 non-contact.
+    const e=C.makeDateEngine({cycleDays:1,anchor:{date:"2026-10-19",day:1},holidays:[],dayZeros:[],
+      terms:[{n:4,start:"2026-10-19",end:"2026-10-23"}],timetable:{1:{P2:"9SCI1",P3:"nc"}},classes:[{code:"9SCI1",colour:"#C5D9C0"}]});
+    const R={"note:2026-9-21:P3":{relief:true,reliefFor:"10ENG3",reliefNote:"for JB, room 12"},
+      "note:2026-9-21:P2":{subject:"Assembly",status:"nl",relief:true,reliefFor:"9MAT2"},
+      "note:2026-9-22:B1a":{relief:true},"note:2026-9-22:P1":{subject:"Forces"}};
+    const L=C.reliefEntries(e,k=>R[k]||null);
+    eq("every relief is listed, in day order",L.map(x=>`${x.date.getDate()} ${x.slot}`).join(", "),"21 P2, 21 P3, 22 B1a");
+    eq("a cancelled lesson keeps its No lesson and its class",[L[0].cancelled,L[0].own,L[0].subject,L[0].year].join("|"),"true|9SCI1|MAT|9");
+    eq("term, week and cycle day come with each",[L[1].tn,L[1].wk,L[1].cd].join("|"),"4|1|1");
+    const csv=C.reliefCsv(L).split("\n");
+    eq("the CSV has a header and one row each",csv.filter(Boolean).length,4);
+    eq("…with the slot named and the note quoted",csv[2],'2026-10-21,4,1,Wed,D1,P3,10ENG3,ENG,10,no,,"for JB, room 12"');
+    eq("a break slot reads as its label",csv[3].split(",")[5],"after 2");
+    eq("a relief alone is a real record, not an empty note",C.isEmptyRecord("note:2026-9-22:B1a",{relief:true}),false);
   }
 
   // ══ FLAGS ══════════════════════════════════════════════════════════════════
@@ -910,6 +931,26 @@ async function runSmoke(){
     await step(D,"in Day View, ⌥4 opens P4 with the cursor in it",()=>{D.key(".");return waitFor(()=>D.text().includes("19 August")).then(()=>alt(4))},
       ()=>{const x=D.q(".pr.exp");return x&&/^P4, 12PHY1/.test(x.getAttribute("aria-label"))&&act()&&act().closest&&act().closest(".prd")});
     D.key("Enter",D.q(".pr.exp"));
+
+    // 3.11.0: relief. Wed 19 Aug: P3 is non-contact, P2 is 10SCI2's No lesson (Assembly).
+    G("Smoke: relief");
+    const relBtn=root=>D.qa((root||"")+" .relief button").find(b=>b.textContent==="Relief");
+    const enter=el=>el.dispatchEvent(new D.win.KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));
+    const note=k=>JSON.parse(D.win.localStorage.getItem(k)||"{}");
+    await step(D,"Day View: Relief on a non-contact period, with the class covered",()=>{D.key("d");return waitFor(()=>D.view()==="Day").then(()=>{D.key(".");return sleep(60)}).then(()=>{
+        D.key("Enter",D.q('.pr[aria-label^="P3, non-contact"]'));return waitFor(()=>relBtn(".prd"))}).then(b=>{b.click();return waitFor(()=>D.q(".prd .relief-for"))}).then(i=>{D.type(i,"10ENG3");enter(i)})},
+      ()=>{const n=note("note:2026-7-19:P3");return n.relief===true&&n.reliefFor==="10ENG3"&&/Relief · 10ENG3/.test(D.q('.pr[aria-label^="P3, non-contact"]').textContent)});
+    D.key("Enter",D.q(".pr.exp"));
+    await step(D,"…and on a break slot",()=>{D.q('.bs-row[aria-label^="after 2"]').click();return waitFor(()=>relBtn(".bs-row-editor")).then(b=>b.click())},
+      ()=>note("note:2026-7-19:B1a").relief===true);
+    await step(D,"Week View: Relief on a cancelled lesson keeps its No lesson",()=>{D.key("w");return waitFor(()=>D.view()==="Week").then(()=>{const c=D.q('.pb[aria-label^="P2, 10SCI2, Wed, 19 Aug"]');D.focus(c);D.key("Enter",c);return waitFor(()=>relBtn(".qe"))}).then(b=>{b.click();return waitFor(()=>D.q(".qe .relief-for"))}).then(i=>{D.type(i,"9MAT2");enter(i)})},
+      ()=>{const n=note("note:2026-7-19:P2");return n.relief===true&&n.reliefFor==="9MAT2"&&n.status==="nl"&&n.subject==="Assembly"});
+    D.key("Escape",D.q(".qe input.inp"));
+    await step(D,"Week cells say relief, and the counts don't change",null,
+      ()=>/no lesson, relief/.test(D.q('.pb[aria-label^="P2, 10SCI2, Wed, 19 Aug"]').getAttribute("aria-label"))&&/non-contact, relief/.test(D.q('.pb[aria-label^="P3, non-contact, Wed, 19 Aug"]').getAttribute("aria-label"))&&/3\s*\/\s*16/.test(D.text()));
+    await step(D,"Class View's Relief chip lists all three with tallies",()=>{D.key("c");return waitFor(()=>D.q(".relief-chip")).then(ch=>D.key("Enter",ch))},
+      ()=>{const t=D.text();return/3 in Term 3/.test(t)&&D.qa(".cv").length===3&&t.includes("10ENG3")&&t.includes("9MAT2")&&t.includes("Class not recorded")&&t.includes("Your 10SCI2 was cancelled")&&t.includes("By subject covered")&&D.q("button")&&D.qa("button").some(b=>b.textContent.includes("Export CSV"))});
+    {const bad=contrastFailures(D);assert("the relief log is legible",!bad.length,bad.slice(0,6).join("\n"))}
 
     G("Smoke: panels");
     await step(D,"? opens the shortcuts list",()=>D.key("?"),()=>D.text().includes("Keyboard shortcuts"));

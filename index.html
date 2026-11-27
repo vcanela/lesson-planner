@@ -211,6 +211,21 @@ textarea,input,button,select{font-family:var(--font-sans)}
 .pay q{font-style:italic}
 .fin-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-top:8px}
 .fin-hint{font-size:var(--fs-micro);color:var(--text-muted)}
+/* Relief (3.11.0) */
+.relief{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.relief .inp{width:auto;flex:1 1 200px;min-width:0;padding:4px 8px;font-size:var(--fs-caption)}
+.relief .relief-for{flex:0 1 150px}
+.relief-tag{font-size:var(--fs-nano);font-weight:600;color:var(--accent);white-space:nowrap;flex-shrink:0}
+.relief-mark{font-size:var(--fs-nano);font-weight:700}
+.relief-chip{background:var(--surface);color:var(--text);border:1px dashed var(--border-strong);padding:3px 12px;border-radius:var(--radius-sm);font-size:var(--fs-body);font-weight:700;cursor:pointer;outline-offset:2px;display:inline-flex;align-items:center;gap:6px}
+.relief-chip-n{font-size:var(--fs-nano);background:var(--accent);color:var(--on-accent);border-radius:var(--radius-xs);padding:0 5px}
+.relief-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.relief-card{padding:12px 14px}
+.relief-bar{display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:var(--fs-caption)}
+.relief-bar-k{width:84px;flex-shrink:0;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.relief-bar-t{flex:1;height:8px;background:var(--xp-bar-bg);border-radius:var(--radius-xs);overflow:hidden}
+.relief-bar-t>span{display:block;height:100%;background:var(--accent);border-radius:var(--radius-xs)}
+.relief-bar-v{width:24px;text-align:right;font-weight:600}
 .went-tag{font-size:var(--fs-nano);color:var(--text-muted);white-space:nowrap;flex-shrink:0}
 .qe{background:var(--card);border:1.5px solid var(--accent);border-radius:var(--radius-lg);padding:14px 16px;margin-top:12px;display:flex;flex-direction:column;gap:10px}
 .cv{display:flex;gap:12px;padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
@@ -786,7 +801,7 @@ const SCHEMA_VERSION=3;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="3.10.3";
+const APP_VERSION="3.11.0";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -854,7 +869,7 @@ function recordTimestamp(r){const t=r&&r.updatedAt?Date.parse(r.updatedAt):NaN;r
 // record is a valid tombstone (a cleared note), so it is only GC'd once also old.
 function isEmptyRecord(key,r){
   if(!r||typeof r!=="object")return true;
-  if(key.slice(0,5)==="note:")return !(r.subject||r.notes||r.resources||r.went||r.nextTime)&&r.status!=="nl";
+  if(key.slice(0,5)==="note:")return !(r.subject||r.notes||r.resources||r.went||r.nextTime||r.relief||r.reliefFor||r.reliefNote)&&r.status!=="nl";
   if(key.slice(0,8)==="daymeta:")return !(r.dayNotes||r.reflections||r.day0label)&&!(r.overrides&&Object.keys(r.overrides).length);
   return false;
 }
@@ -1243,6 +1258,25 @@ const canReflect=(cc,note,end,now)=>!!(cc&&cc!=="nc"&&end&&end<=now&&!(note&&not
  * contact, No lesson and a finished class's lessons stay visible but leave both the planned
  * number and the total, everywhere: Term tiles, the Week summary, Class View and the Lab. */
 const isPlanned=n=>!!(n&&(n.subject||n.notes));
+/* Relief (3.11.0). A slot you were used for relief in carries `relief` (true), `reliefFor` (the
+ * class covered, e.g. 10ENG3) and `reliefNote`, alongside whatever else the slot holds, so a
+ * cancelled lesson keeps its No lesson and its reason. A record, not planning: no count or XP
+ * changes. reliefEntries lists one year's relief in day order; read(key) returns a record. */
+const RELIEF_ORDER=["B0","P1","P2","B1a","B1b","P3","P4","B2a","B2b","P5","P6","B3"];
+const slotName=code=>BSLOT_LABELS[code]||code;
+const reliefSubject=code=>{const m=/^\s*(\d{1,2})\s*([A-Za-z]+)/.exec(String(code||""));return m?{year:m[1],subject:m[2].toUpperCase()}:{year:"",subject:""}};
+function reliefEntries(eng,read){const out=[];if(!eng)return out;
+  eng.terms.forEach((term,ti)=>{eng.getTermWeeks(term).forEach((wk,wi)=>wk.forEach(d=>{
+    if(d<term.start||d>term.end||!eng.isSchoolDay(d))return;const cd=eng.cycleDayFor(d),dk=toDateKey(d);
+    RELIEF_ORDER.forEach(slot=>{const n=read(`note:${dk}:${slot}`);if(!n||!n.relief)return;
+      const own=slot[0]==="P"&&cd?eng.classAt(d,cd,slot):"";
+      out.push({date:new Date(d),dk,ti,tn:term.n,wk:wi+1,cd,slot,for:n.reliefFor||"",note:n.reliefNote||"",cancelled:n.status==="nl",own:own&&own!=="nc"?own:"",...reliefSubject(n.reliefFor)})})}))});
+  return out}
+// reliefCsv: one row per relief, for a spreadsheet. Quotes every field that needs it.
+function reliefCsv(list){const q=v=>{const t=String(v==null?"":v);return/[",\n]/.test(t)?`"${t.replace(/"/g,'""')}"`:t};
+  const WD=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const head=["date","term","week","weekday","cycle_day","slot","class_covered","subject","year_level","own_lesson_cancelled","own_class","note"];
+  return[head,...list.map(e=>[iso(e.date),e.tn,e.wk,WD[e.date.getDay()],e.cd===0?"D0":e.cd?`D${e.cd}`:"",slotName(e.slot),e.for,e.subject,e.year,e.cancelled?"yes":"no",e.own,e.note])].map(r=>r.map(q).join(",")).join("\n")+"\n"}
 const toTeach=(eng,cc,date,n)=>!!(cc&&cc!=="nc"&&!(n&&n.status==="nl")&&!(eng&&eng.classFinished&&eng.classFinished(cc,date)));
 const lessonAsks=(cc,note,end,now)=>canReflect(cc,note,end,now)&&!(note&&note.went)&&end>=askFrom(now);
 /* Showing the payoff (3.8.0): what you wrote comes back when you next plan. read(key) returns
@@ -1625,6 +1659,54 @@ function Payoff({cc,dk,pid,ctx:ctx0}){
  * keep focus where it was (mousedown), so a quick editor's input doesn't blur and close. */
 function WentRow({went,onWent,children,strip}){
   return<div className={strip?"went went-strip":"went"}><span className="went-q">How did it go?</span><span role="group" aria-label="How did it go?" className="went-opts">{WENT.map(([v,l])=><button key={v} className="tog tog-sm" aria-pressed={went===v} onMouseDown={e=>e.preventDefault()} onClick={e=>{e.stopPropagation();onWent(went===v?"":v)}}>{l}</button>)}</span>{went&&children}</div>}
+/* ReliefRow (3.11.0): the Relief toggle, then "Covering" and a note. rec is the slot's record;
+ * onPatch(fields) saves. The two boxes save when you leave them (or press Enter or Esc) and
+ * on unmount, so closing an editor never drops what was typed. onLeave lets a quick editor
+ * treat these boxes like its own. */
+function ReliefRow({rec,onPatch,onLeave}){
+  const on=!!(rec&&rec.relief),rf=(rec&&rec.reliefFor)||"",rn=(rec&&rec.reliefNote)||"";
+  const[f,setF]=useState(rf),[nt,setNt]=useState(rn);
+  useEffect(()=>{setF(rf);setNt(rn)},[rf,rn]);
+  const forRef=useRef(null),live=useRef({});live.current={f,nt,rf,rn,onPatch};
+  const commit=()=>{const L=live.current,p={};if(L.f.trim()!==L.rf)p.reliefFor=L.f.trim();if(L.nt.trim()!==L.rn)p.reliefNote=L.nt.trim();if(Object.keys(p).length)L.onPatch(p)};
+  useEffect(()=>()=>commit(),[]);
+  const keys=e=>{if(e.key==="Enter"||e.key==="Escape"){e.preventDefault();e.stopPropagation();commit();e.currentTarget.blur()}};
+  const leave=e=>{commit();if(onLeave)onLeave(e)};
+  return<div className="relief">
+    <button className="tog tog-sm" aria-pressed={on} onMouseDown={e=>e.preventDefault()} onClick={e=>{e.stopPropagation();onPatch({relief:!on});if(!on)setTimeout(()=>forRef.current&&forRef.current.focus(),0)}}>Relief</button>
+    {on&&<><input ref={forRef} className="inp mn relief-for" value={f} onChange={e=>setF(e.target.value)} onBlur={leave} onKeyDown={keys} placeholder="Covering, e.g. 10ENG3" aria-label="Class covered"/>
+      <input className="inp relief-note" value={nt} onChange={e=>setNt(e.target.value)} onBlur={leave} onKeyDown={keys} placeholder="Note (optional): teacher, room, how it went" aria-label="Relief note"/></>}
+  </div>}
+const ReliefTag=({rec})=>rec&&rec.relief?<span className="relief-tag">Relief{rec.reliefFor?" \u00B7 "+rec.reliefFor:""}</span>:null;
+/* ReliefLog (3.11.0): Class View's Relief chip. Every relief in the chosen term (or all terms),
+ * the tallies, and a CSV export for proper stats. */
+function ReliefLog({eng,termIdx,onDet,nr}){
+  const all=useMemo(()=>reliefEntries(eng,storageGet),[eng,nr]);
+  const list=termIdx===-1?all:all.filter(e=>e.ti===termIdx),scope=termIdx===-1?"this year":`in Term ${eng.terms[termIdx]&&eng.terms[termIdx].n}`;
+  const WD=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const count=(keyOf,order)=>{const m=new Map();(order||[]).forEach(k=>m.set(k,0));list.forEach(e=>{const k=keyOf(e);m.set(k,(m.get(k)||0)+1)});return[...m.entries()]};
+  const bySlot=count(e=>e.slot,RELIEF_ORDER).filter(([k,v])=>v>0||k[0]==="P").map(([k,v])=>[slotName(k),v]);
+  const nCycle=eng.nCycle||7,byDay=count(e=>e.cd===0?"D0":`D${e.cd}`,Array.from({length:nCycle},(_,i)=>`D${i+1}`)).filter(([k,v])=>k!=="D0"||v>0);
+  const byWd=count(e=>WD[e.date.getDay()],["Mon","Tue","Wed","Thu","Fri"]);
+  const sortDesc=a=>a.sort((x,y)=>y[1]-x[1]||String(x[0]).localeCompare(String(y[0])));
+  const bySubj=sortDesc(count(e=>e.subject||"not given")),byYear=count(e=>e.year?`Year ${e.year}`:"not given").sort((x,y)=>(parseInt(x[0].slice(5))||99)-(parseInt(y[0].slice(5))||99));
+  const Bars=({title,rows})=>{const mx=Math.max(1,...rows.map(r=>r[1]));return<div className="card relief-card"><div className="sl" style={{marginBottom:8}}>{title}</div>
+    {rows.length?rows.map(([k,v])=><div key={k} className="relief-bar"><span className="relief-bar-k">{k}</span><span className="relief-bar-t"><span style={{width:`${v/mx*100}%`}}/></span><span className="mn relief-bar-v">{v}</span></div>)
+      :<div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)",fontStyle:"italic"}}>Nothing yet</div>}</div>};
+  const cancelled=list.filter(e=>e.cancelled).length;
+  return<div>
+    <div style={{marginBottom:14}}><div className="mn" style={{fontSize:"var(--fs-title)",fontWeight:600}}>Relief</div>
+      <div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginTop:4,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        <span><strong className="mn">{list.length}</strong> {scope}{termIdx!==-1&&<span> {"\u00B7"} <strong className="mn">{all.length}</strong> this year</span>}{cancelled>0&&<span> {"\u00B7"} {cancelled} during your own cancelled lessons</span>}</span>
+        {list.length>0&&<button className="btn btn-sm" style={{marginLeft:"auto"}} onClick={()=>doDownload(reliefCsv(list),`relief-${eng.terms[0]?eng.terms[0].start.getFullYear():""}${termIdx===-1?"":"-term"+eng.terms[termIdx].n}.csv`)}><Icon n="download"/> Export CSV</button>}</div></div>
+    {list.length===0?<div className="card" style={{padding:18,fontSize:"var(--fs-body)",color:"var(--text-secondary)",lineHeight:1.6}}>No relief recorded {scope}. When you're used for relief, open the period or break slot (in Day View, or the Week and Class editors) and press <strong>Relief</strong>. Add the class you covered to see it by subject and year level here.</div>
+    :<><div className="relief-grid"><Bars title="By period" rows={bySlot}/><Bars title="By cycle day" rows={byDay}/><Bars title="By weekday" rows={byWd}/><Bars title="By subject covered" rows={bySubj}/><Bars title="By year level" rows={byYear}/></div>
+      <div className="card" style={{overflow:"hidden",marginTop:10}}>{list.slice().reverse().map(e=><div key={e.dk+e.slot} className="cv" role="button" tabIndex={0} onClick={()=>onDet(e.date,e.slot)} onKeyDown={kAct(()=>onDet(e.date,e.slot))} aria-label={`Relief, ${fmtS(e.date)}, ${slotName(e.slot)}${e.for?", covering "+e.for:""}, open Day View`}>
+        <div style={{minWidth:40,textAlign:"center",flexShrink:0}}><div style={{fontSize:"var(--fs-emph)",fontWeight:700}}>{e.date.getDate()}</div><div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}>{e.date.toLocaleDateString("en-NZ",{month:"short"})}</div></div>
+        <div style={{flex:1,minWidth:0}}><div className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-secondary)",fontWeight:600,marginBottom:2}}>{WD[e.date.getDay()]} {"\u00B7"} {e.cd===0?"D0":`D${e.cd}`} {"\u00B7"} {slotName(e.slot)} {"\u00B7"} Term {e.tn}, Week {e.wk}</div>
+          <div style={{fontSize:"var(--fs-body)",fontWeight:600}}>{e.for||<span style={{fontStyle:"italic",fontWeight:400,color:"var(--text-muted)"}}>Class not recorded</span>}</div>
+          {(e.note||e.cancelled)&&<div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginTop:2}}>{e.cancelled&&<span>Your {e.own||"lesson"} was cancelled{e.note?" \u00B7 ":""}</span>}{e.note}</div>}</div></div>)}</div></>}
+  </div>}
 function PCard({period,dateKey,cDay,date,initOpen,jump}){
   const eng=useCfg();const cc=cDay?eng.classAt(date,cDay,period.id):null;const isNc=cc==="nc";
   const[open,setOpen]=useState(initOpen||false);const[mode,setMode]=useState(initOpen?"detailed":"quick");
@@ -1641,13 +1723,15 @@ function PCard({period,dateKey,cDay,date,initOpen,jump}){
   const end=useMemo(()=>{if(!period.end||!date)return null;const[h,m]=period.end.split(":").map(Number);const d=new Date(date);d.setHours(h,m,0,0);return d},[period.end,dateKey]);
   const now=new Date(),canR=!fin&&canReflect(cc,data,end,now),asks=!fin&&lessonAsks(cc,data,end,now);
   const setWent=v=>{updateField("went",v);setTimeout(save,0)};
+  const reliefPatch=p=>{Object.entries(p).forEach(([k,v])=>updateField(k,v));setTimeout(save,0)};
   const rootRef=useRef(null);
   useEffect(()=>{if(!jump||!cDay)return;setOpen(true);setTimeout(()=>{const f=rootRef.current&&rootRef.current.querySelector(".prd input,.prd textarea");if(f){f.focus();const v=f.value.length;try{f.setSelectionRange(v,v)}catch{}}},0)},[jump]);
   if(period.brk)return<div className="brk"><span>{period.label}</span><span className="mn" style={{fontSize:"var(--fs-micro)"}}>{period.start}{"\u2013"}{period.end}</span></div>;
-  return<div ref={rootRef} style={{borderBottom:"1px solid var(--border)"}}><div className={`pr${open?" exp":""}`} onClick={()=>cDay&&setOpen(o=>!o)} role={cDay?"button":undefined} tabIndex={cDay?0:undefined} aria-expanded={cDay?open:undefined} aria-label={cDay?`${period.label}, ${isNc?"non-contact":cc}, ${isNl?"no lesson":fin?"finished":has?"planned":"empty"}${data&&data.went?", "+wentLabel(data.went).toLowerCase():""}, ${open?"collapse":"expand"}`:undefined} onKeyDown={cDay?kAct(()=>setOpen(o=>!o)):undefined} style={cDay?{}:{cursor:"default"}}><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",minWidth:64,flexShrink:0}}>{period.start}</span><span className="mn" style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",minWidth:24,flexShrink:0}}>{period.label}</span><CBadge cc={cc}/><span style={{fontSize:"var(--fs-body)",color:isNl||fin?"var(--text-muted)":"var(--text-secondary)",fontStyle:isNl||fin?"italic":"normal",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isNl?(data.subject?"No lesson \u2014 "+data.subject:"No lesson"):fin?(data&&data.subject?"Finished \u2014 "+data.subject:"Finished"):data&&data.subject||""}</span>{data&&data.went&&<span className="went-tag">{wentLabel(data.went)}</span>}{fl&&<span style={{color:"var(--flag)",fontSize:"var(--fs-micro)",flexShrink:0}}>{"\u2691"}</span>}{has&&!fl&&<span style={{width:5,height:5,borderRadius:"50%",background:"var(--success)",flexShrink:0}}/>}{cDay&&<span style={{color:"var(--text-muted)",fontSize:"var(--fs-caption)"}}>{open?"\u25B2":"\u25BC"}</span>}</div>
+  return<div ref={rootRef} style={{borderBottom:"1px solid var(--border)"}}><div className={`pr${open?" exp":""}`} onClick={()=>cDay&&setOpen(o=>!o)} role={cDay?"button":undefined} tabIndex={cDay?0:undefined} aria-expanded={cDay?open:undefined} aria-label={cDay?`${period.label}, ${isNc?"non-contact":cc}, ${isNl?"no lesson":fin?"finished":has?"planned":"empty"}${data&&data.went?", "+wentLabel(data.went).toLowerCase():""}${data&&data.relief?", relief":""}, ${open?"collapse":"expand"}`:undefined} onKeyDown={cDay?kAct(()=>setOpen(o=>!o)):undefined} style={cDay?{}:{cursor:"default"}}><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",minWidth:64,flexShrink:0}}>{period.start}</span><span className="mn" style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)",minWidth:24,flexShrink:0}}>{period.label}</span><CBadge cc={cc}/><span style={{fontSize:"var(--fs-body)",color:isNl||fin?"var(--text-muted)":"var(--text-secondary)",fontStyle:isNl||fin?"italic":"normal",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isNl?(data.subject?"No lesson \u2014 "+data.subject:"No lesson"):fin?(data&&data.subject?"Finished \u2014 "+data.subject:"Finished"):data&&data.subject||""}</span><ReliefTag rec={data}/>{data&&data.went&&<span className="went-tag">{wentLabel(data.went)}</span>}{fl&&<span style={{color:"var(--flag)",fontSize:"var(--fs-micro)",flexShrink:0}}>{"\u2691"}</span>}{has&&!fl&&<span style={{width:5,height:5,borderRadius:"50%",background:"var(--success)",flexShrink:0}}/>}{cDay&&<span style={{color:"var(--text-muted)",fontSize:"var(--fs-caption)"}}>{open?"\u25B2":"\u25BC"}</span>}</div>
     {asks&&!open&&<WentRow strip went="" onWent={setWent}/>}
     {open&&data&&<div className="prd" onFocus={handleFocus} onBlur={handleBlur}><div style={{display:"grid",gap:9}}>{ctx&&<div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",background:"var(--surface)",padding:"4px 8px",borderRadius:"var(--radius-xs)",lineHeight:1.5}}>Lesson <span className="mn" style={{fontWeight:700}}>{ctx.num}/{ctx.total}</span> this term{ctx.prev&&<span> {"\u00B7"} prev: {fmtS(ctx.prev.date)}</span>}{ctx.next&&<span> {"\u00B7"} next: {fmtS(ctx.next.date)}</span>}</div>}{!isNc&&<Payoff cc={cc} dk={dateKey} pid={period.id} ctx={ctx}/>}{!isNc&&<div style={{display:"flex",gap:4}}>{["quick","detailed"].map(m=><button className="tog tog-sm" aria-pressed={mode===m} key={m} onClick={()=>setMode(m)}>{m==="quick"?"Quick":"Detailed"}</button>)}</div>}
       {(mode==="quick"||isNc)?<div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}><label className="fl" style={{marginBottom:0}}>{isNc?"Notes":isNl?"Reason (optional)":"Topic / Quick note"} <SvH saveStatus={saveStatus}/></label>{!isNc&&(nlConfirm?<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:"var(--fs-nano)",color:"var(--flag)"}}>Replace topic with No Lesson?<button className="btn-a btn-sm" onMouseDown={e=>{e.preventDefault();markNL()}}>Yes</button><button className="btn-ghost" onMouseDown={e=>{e.preventDefault();setNlConfirm(false)}}>Cancel</button></span>:<button className={`btn-ghost${isNl?" btn-danger":""}`} onMouseDown={e=>{e.preventDefault();isNl?clearNL():askNL()}}>{isNl?"\u2715 Remove no lesson":"No lesson"}</button>)}</div><AInp data={data} field={isNc?"notes":"subject"} updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph={isNc?"Meeting, marking, prep":isNl?"e.g. Class has an assembly":"e.g. Newton's 3rd Law"}/></div>:<><div><label className="fl">Topic / Subject <SvH saveStatus={saveStatus}/></label><AInp data={data} field="subject" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="e.g. Newton's 3rd Law"/></div><div><label className="flb">Notes & Tasks</label><AInp data={data} field="notes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Lesson plan, tasks. Start a line with ! to flag it" multi rows={3}/></div><div><label className="flb">Resources & Links</label><AInp data={data} field="resources" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="URLs, file names"/></div></>}
+      {cDay&&<ReliefRow rec={data} onPatch={reliefPatch}/>}
       {canR&&<WentRow went={data.went||""} onWent={setWent}><div className="went-next"><label className="flb">Next time (optional)</label><AInp data={data} field="nextTime" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Advice for the next time you teach this"/></div></WentRow>}</div></div>}</div>;
 }
 
@@ -1745,9 +1829,9 @@ function TermView({onDay,onWk,metaCache,gam,cfg,years,year,onYear}){
   const cov=useMemo(()=>{const c={};weeks.flat().forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;const key=toDateKey(d);let p=0,t=0;const nl=new Set(),rows=[];
     // nl holds every class period that isn't being taught (No lesson or a finished class);
     // only lessons to teach count towards p/t.
-    eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,cd,pid);const n=cls==="nc"?null:storageGet(`note:${key}:${pid}`);const fin=cls!=="nc"&&eng.classFinished(cls,d);
+    eng.PIDS.forEach(pid=>{const cls=eng.classAt(d,cd,pid);const n=storageGet(`note:${key}:${pid}`);const fin=cls!=="nc"&&eng.classFinished(cls,d);
       if(toTeach(eng,cls,d,n)){t++;if(isPlanned(n))p++}else if(cls!=="nc")nl.add(pid);
-      rows.push({pid,cls,nl:!!(n&&n.status==="nl"),fin,subject:(n&&n.subject)||"",hasNotes:!!(n&&n.notes)})});
+      rows.push({pid,cls,nl:!!(n&&n.status==="nl"),fin,relief:!!(n&&n.relief),reliefFor:(n&&n.reliefFor)||"",subject:(n&&n.subject)||"",hasNotes:!!(n&&n.notes)})});
     c[key]={p,t,nl,rows}});return c},[weeks]);
   /* Hover card ("binoculars"): the whole teaching day, without leaving the term grid.
    * Replaces the per-square `title` tooltips, which took about a second to appear and
@@ -1817,6 +1901,7 @@ function TermView({onDay,onWk,metaCache,gam,cfg,years,year,onYear}){
             {cl?<span className="mn" style={{fontSize:"var(--fs-nano)",fontWeight:700,background:cl.bg,color:cl.tx,padding:"0 5px",borderRadius:"var(--radius-xs)",flexShrink:0,textDecoration:r.nl||r.fin?"line-through":"none"}}>{r.cls}</span>
                :<span style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)",fontStyle:"italic",flexShrink:0}}>free</span>}
             <span style={{fontSize:"var(--fs-nano)",color:r.nl||r.fin?"var(--text-muted)":"var(--text-secondary)",fontStyle:r.nl||r.fin||!r.subject?"italic":"normal",flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.cls==="nc"?(r.subject||r.hasNotes?r.subject||"notes":""):r.fin&&!r.nl?(r.subject?`Finished \u2014 ${r.subject}`:"Finished"):r.nl?(r.subject?`No lesson \u2014 ${r.subject}`:"No lesson"):r.subject||(r.hasNotes?"notes only":"\u2014")}</span>
+            {r.relief&&<span className="relief-tag">Relief{r.reliefFor?" \u00B7 "+r.reliefFor:""}</span>}
           </div>})}
       </div>;
     })()}</div>;
@@ -2041,14 +2126,15 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
         const ov=sl.isOverride;
         const cl=sl.clash;
         const isEmpty=v===null;
-        const hasNote=hasCellNote(x,code);
+        const hasNote=hasCellNote(x,code),bRel=!!(storageGet(`note:${x.k}:${code}`)||{}).relief;
         const handleClick=e=>{
           e.stopPropagation();
           const r=e.currentTarget.getBoundingClientRect();
           setBsEdit({date:x.d,dateKey:x.k,cycleDay:x.cd,slotCode:code,anchor:{top:r.top,left:r.left,bottom:r.bottom,right:r.right,width:r.width,height:r.height}});
         };
-        cells.push(<div key={ck} className={`wk-bcell${isEmpty?" empty-hatch":""}${x.isT?" today":""}`} onClick={handleClick} role="button" data-nav={`${r}-${i}`} tabIndex={nav.r===r&&nav.c===i?0:-1} onFocus={()=>setNav({r,c:i})} onKeyDown={navKey(r,i,handleClick)} aria-haspopup="dialog" aria-label={`${BSLOT_LABELS[code]}, ${fmtS(x.d)}, ${isEmpty?"empty":describeValue(v)}${ov?", override":""}${cl?", clash":""}${isEmpty&&hasNote?", has notes":""}, edit`}>
+        cells.push(<div key={ck} className={`wk-bcell${isEmpty?" empty-hatch":""}${x.isT?" today":""}`} onClick={handleClick} role="button" data-nav={`${r}-${i}`} tabIndex={nav.r===r&&nav.c===i?0:-1} onFocus={()=>setNav({r,c:i})} onKeyDown={navKey(r,i,handleClick)} aria-haspopup="dialog" aria-label={`${BSLOT_LABELS[code]}, ${fmtS(x.d)}, ${isEmpty?"empty":describeValue(v)}${ov?", override":""}${cl?", clash":""}${isEmpty&&hasNote?", has notes":""}${bRel?", relief":""}, edit`}>
           {v&&<BSlotChip value={v} duties={duties}/>}
+          {bRel&&<span className="relief-mark" title="Relief">R</span>}
           {ov&&<span className="bs-override-dot" title="Override"/>}
           {cl&&<span className="bs-clash" title="Weekly activity is hiding the cycle default for this slot. Open the editor to see what the cycle has scheduled.">{"⚠"}</span>}
           {isEmpty&&hasNote&&<span title="Has notes" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}><Icon n="note"/></span>}
@@ -2062,7 +2148,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
       dd.forEach((x,i)=>{const ck=`${pid}-${i}`;if(!x.sch||x.isZ){cells.push(<div key={ck} style={{background:bg(x),border:bd(x),borderRadius:lastP?`0 0 var(--radius-md) var(--radius-md)`:"0"}}/>);return}
         const cls=eng.classAt(x.d,x.cd,pid),isNc=cls==="nc",clr=isNc?null:eng.classMap[cls];const nk=`${x.k}:${pid}`,n=wNotes[nk];const isNl=!isNc&&n&&n.status==="nl";const fin=!isNc&&!isNl&&eng.classFinished(cls,x.d),off=isNl||fin;const filled=!isNc&&n&&(n.subject||n.notes||off),fl=n&&(hasFlag(n.notes)||hasFlag(n.subject));
         const isOpen=!!(qe&&qe.dk===x.k&&qe.pid===pid);
-        const state=isNc?"non-contact":isNl?"no lesson":fin?"finished":fl?"flagged":filled?`planned: ${n.subject||"no topic"}`:"empty";
+        const rel=!!(n&&n.relief);const state=(isNc?"non-contact":isNl?"no lesson":fin?"finished":fl?"flagged":filled?`planned: ${n.subject||"no topic"}`:"empty")+(rel?", relief":"");
         // No lesson is its own visual state, and a quiet one: a faint wash of the class
         // colour striped with the card behind it, the same recessive hatch the free
         // B-slots use, plus a dashed edge and the code struck through. Solid colour = a
@@ -2073,7 +2159,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
         const nlC=clr&&clr.colour||"var(--nc-bg)";
         // A finished class's lesson (3.9.0) takes the same quiet hatch: also not being taught.
         const pbStyle=isNc?{}:off?{background:`repeating-linear-gradient(-45deg,${hexAlpha(nlC,.3)} 0 5px,transparent 5px 10px)`,color:"var(--text)",border:`1px dashed ${hexAlpha(nlC,.85)}`}:filled?{background:clr?clr.bg:"",color:clr?clr.tx:""}:{"--cls-tx":clr?clr.tx:"var(--text)",background:"transparent"};
-        cells.push(<div key={ck} style={{background:bg(x),border:bd(x),padding:"0 4px",borderRadius:lastP?`0 0 var(--radius-md) var(--radius-md)`:"0",paddingBottom:lastP?4:0}}><div className={`pb${isNc?" pb-nc":""}${!isNc&&!filled&&!off?" pb-e":""}`} style={pbStyle} role="button" data-nav={`${r}-${i}`} tabIndex={nav.r===r&&nav.c===i?0:-1} onFocus={()=>setNav({r,c:i})} aria-expanded={isOpen} aria-label={`${pid}, ${isNc?"non-contact":cls}, ${fmtS(x.d)}, ${state}, ${isOpen?"close":"open"} quick editor`} onKeyDown={navKey(r,i,e=>{e.stopPropagation();isOpen?setQE(null):oQE(x.k,pid,cls,x.d)})} onMouseDown={()=>{qeAtMouseDownRef.current=qe}} onClick={e=>{e.stopPropagation();const wasOpen=qeAtMouseDownRef.current;qeAtMouseDownRef.current=null;if(wasOpen&&wasOpen.dk===x.k&&wasOpen.pid===pid){setQE(null)}else{oQE(x.k,pid,cls,x.d)}}}><div className="pb-top"><span className="mn" style={{fontSize:"var(--fs-nano)",fontWeight:700,textDecoration:off?"line-through":"none"}}>{isNc?"NC":cls}</span><span className="pb-marks">{fl&&<span style={{color:isNc?"var(--flag)":clr&&clr.tx,fontSize:"var(--fs-nano)"}}>{"\u2691"}</span>}{filled&&!fl&&!off&&<span style={{width:5,height:5,borderRadius:"50%",background:isNc?"var(--success)":clr&&clr.tx,opacity:.6}}/>}{isNl&&<span style={{fontSize:"var(--fs-nano)",fontWeight:700}}>NL</span>}</span></div><div className="pb-sub" style={{fontSize:"var(--fs-nano)",fontWeight:400,...(filled?{}:{color:"var(--text-secondary)"}),overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",width:"100%"}}>{isNl?(n&&n.subject?`No lesson \u2014 ${n.subject}`:"No lesson"):fin?(n&&n.subject?`Finished \u2014 ${n.subject}`:"Finished"):n&&n.subject||"\u2014"}</div><div className="pb-mark" style={{color:isNc?"var(--nc-text)":off?"var(--text)":filled?((clr&&clr.tx)||"var(--text)"):"var(--text-muted)",fontSize:"var(--fs-nano)",fontWeight:700}}>{isNc?"":isNl?"NL":fin?"Fin":fl?"\u2691":filled?"\u25cf":"\u2013"}</div></div></div>);
+        cells.push(<div key={ck} style={{background:bg(x),border:bd(x),padding:"0 4px",borderRadius:lastP?`0 0 var(--radius-md) var(--radius-md)`:"0",paddingBottom:lastP?4:0}}><div className={`pb${isNc?" pb-nc":""}${!isNc&&!filled&&!off?" pb-e":""}`} style={pbStyle} role="button" data-nav={`${r}-${i}`} tabIndex={nav.r===r&&nav.c===i?0:-1} onFocus={()=>setNav({r,c:i})} aria-expanded={isOpen} aria-label={`${pid}, ${isNc?"non-contact":cls}, ${fmtS(x.d)}, ${state}, ${isOpen?"close":"open"} quick editor`} onKeyDown={navKey(r,i,e=>{e.stopPropagation();isOpen?setQE(null):oQE(x.k,pid,cls,x.d)})} onMouseDown={()=>{qeAtMouseDownRef.current=qe}} onClick={e=>{e.stopPropagation();const wasOpen=qeAtMouseDownRef.current;qeAtMouseDownRef.current=null;if(wasOpen&&wasOpen.dk===x.k&&wasOpen.pid===pid){setQE(null)}else{oQE(x.k,pid,cls,x.d)}}}><div className="pb-top"><span className="mn" style={{fontSize:"var(--fs-nano)",fontWeight:700,textDecoration:off?"line-through":"none"}}>{isNc?"NC":cls}</span><span className="pb-marks">{fl&&<span style={{color:isNc?"var(--flag)":clr&&clr.tx,fontSize:"var(--fs-nano)"}}>{"\u2691"}</span>}{filled&&!fl&&!off&&<span style={{width:5,height:5,borderRadius:"50%",background:isNc?"var(--success)":clr&&clr.tx,opacity:.6}}/>}{isNl&&<span style={{fontSize:"var(--fs-nano)",fontWeight:700}}>NL</span>}{rel&&<span className="relief-mark" title="Relief">R</span>}</span></div><div className="pb-sub" style={{fontSize:"var(--fs-nano)",fontWeight:400,...(filled?{}:{color:"var(--text-secondary)"}),overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",width:"100%"}}>{isNl?(n&&n.subject?`No lesson \u2014 ${n.subject}`:"No lesson"):fin?(n&&n.subject?`Finished \u2014 ${n.subject}`:"Finished"):n&&n.subject||"\u2014"}</div><div className="pb-mark" style={{color:isNc?"var(--nc-text)":off?"var(--text)":filled?((clr&&clr.tx)||"var(--text)"):"var(--text-muted)",fontSize:"var(--fs-nano)",fontWeight:700}}>{isNc?"":isNl?"NL":fin?"Fin":fl?"\u2691":filled?"\u25cf":"\u2013"}</div></div></div>);
       });
     };
     // Interleave B-slot rows with P-rows: B0 above P1; B1a/B1b between P2/P3;
@@ -2106,7 +2192,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
     <div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginBottom:10,padding:"6px 10px",background:"var(--surface)",borderRadius:"var(--radius-md)",display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}><span><strong className="mn" style={{color:sum.p===sum.t?"var(--success)":"var(--text)"}}>{sum.p}/{sum.t}</strong> planned</span>{sum.f>0&&<span style={{color:"var(--flag)"}}>{"\u2691"} {sum.f} flagged</span>}{sum.ud>0&&<span style={{color:"var(--dz-text)"}}>{"\u26A0"} {sum.ud} unlabelled D0</span>}<span style={{marginLeft:"auto"}}><FlagHint/></span></div>
     {eng.classCodes.length>0&&<div className="np" style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c];const activeThisWeek=eng.classActiveOn(c,days[0])||eng.classActiveOn(c,days[4]);return<span key={c} className="mn" title={activeThisWeek?undefined:"This class is not active this week (semester boundary)"} onClick={()=>setSpot(spot===c?null:c)} role="button" tabIndex={0} aria-pressed={spot===c} aria-label={`${c}, ${activeThisWeek?"":"not active this week, "}${spot===c?"hide":"show"} this week's lessons`} onKeyDown={kAct(()=>setSpot(spot===c?null:c))} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"3px 10px",borderRadius:"var(--radius-xs)",fontSize:"var(--fs-caption)",fontWeight:700,cursor:"pointer",outline:spot===c?"2px solid var(--accent)":"none",opacity:activeThisWeek?1:.35}}>{c}</span>})}</div>}
     <div ref={gridRef} className="wk-grid" style={{marginBottom:10}}>{gridCells}</div>
-    {qe&&<div className="qe"><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}><div style={{display:"flex",alignItems:"center",gap:8}}><CBadge cc={qe.cc} style={{fontSize:"var(--fs-caption)",padding:"2px 6px",minWidth:0}}/><span style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)"}}>{qe.pid.toUpperCase()} {"\u00B7"} {fmtS(qe.date)}</span></div><div style={{display:"flex",gap:6}}><button className="btn-link" onMouseDown={e=>{e.preventDefault();onDet(qe.date,qe.pid)}} style={{fontSize:"var(--fs-caption)"}}>Full detail {"\u2192"}</button><button className="btn-x" onMouseDown={e=>{e.preventDefault();setQE(null)}}>{"\u2715"}</button></div></div><div style={{display:"flex",gap:6,alignItems:"center"}}><input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape"){setQE(null);focusNav()}}} onBlur={qeBlur} autoFocus={!coarse} placeholder={wNotes[`${qe.dk}:${qe.pid}`]?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/><button className="btn btn-sm" onMouseDown={e=>{e.preventDefault();toggleNL()}} style={{padding:"6px 10px",flexShrink:0}}>{storageGet(`note:${qe.dk}:${qe.pid}`)?.status==="nl"?"Remove no lesson":"No lesson"}</button></div><Payoff cc={qe.cc} dk={qe.dk} pid={qe.pid}/>{(()=>{const n=wNotes[`${qe.dk}:${qe.pid}`],cd=eng.cycleDayFor(qe.date),end=cd?lessonEnd(eng,qe.date,cd,qe.pid):null;
+    {qe&&<div className="qe"><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}><div style={{display:"flex",alignItems:"center",gap:8}}><CBadge cc={qe.cc} style={{fontSize:"var(--fs-caption)",padding:"2px 6px",minWidth:0}}/><span style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)"}}>{qe.pid.toUpperCase()} {"\u00B7"} {fmtS(qe.date)}</span></div><div style={{display:"flex",gap:6}}><button className="btn-link" onMouseDown={e=>{e.preventDefault();onDet(qe.date,qe.pid)}} style={{fontSize:"var(--fs-caption)"}}>Full detail {"\u2192"}</button><button className="btn-x" onMouseDown={e=>{e.preventDefault();setQE(null)}}>{"\u2715"}</button></div></div><div style={{display:"flex",gap:6,alignItems:"center"}}><input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape"){setQE(null);focusNav()}}} onBlur={qeBlur} autoFocus={!coarse} placeholder={wNotes[`${qe.dk}:${qe.pid}`]?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/><button className="btn btn-sm" onMouseDown={e=>{e.preventDefault();toggleNL()}} style={{padding:"6px 10px",flexShrink:0}}>{storageGet(`note:${qe.dk}:${qe.pid}`)?.status==="nl"?"Remove no lesson":"No lesson"}</button></div><ReliefRow rec={wNotes[`${qe.dk}:${qe.pid}`]} onPatch={p=>qeWrite(p)} onLeave={qeBlur}/><Payoff cc={qe.cc} dk={qe.dk} pid={qe.pid}/>{(()=>{const n=wNotes[`${qe.dk}:${qe.pid}`],cd=eng.cycleDayFor(qe.date),end=cd?lessonEnd(eng,qe.date,cd,qe.pid):null;
       return!eng.classFinished(qe.cc,qe.date)&&canReflect(qe.cc,n,end,new Date())&&<WentRow went={n&&n.went||""} onWent={v=>qeWrite({went:v})}><input className="inp went-next" value={qn} onChange={e=>setQN(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape"){setQE(null);focusNav()}}} onBlur={qeBlur} placeholder="Next time (optional): advice for future you"/></WentRow>})()}</div>}
     {flags.length>0&&<div className="card" style={{padding:"10px 14px",marginBottom:10}}><div className="sl" style={{marginBottom:8}}>{"\u2691"} Flagged Items {"\u00B7"} <span className="mn">{flags.length}</span></div>{flags.map((f,i)=>{const clr=f.cls!=="nc"&&eng.classMap[f.cls];return<div key={i} onClick={()=>onDet(f.date,f.pid)} role="button" tabIndex={0} onKeyDown={kAct(()=>onDet(f.date,f.pid))} aria-label={`Flag: ${f.text}, ${f.cls==="nc"?"non-contact":f.cls} ${fmtS(f.date)} ${f.pid.toUpperCase()}, open Day View`} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:i>0?"1px solid var(--border)":"none",cursor:"pointer"}}><span className="mn" style={{fontSize:"var(--fs-nano)",fontWeight:700,padding:"1px 6px",borderRadius:"var(--radius-xs)",background:clr?clr.bg:"var(--nc-bg)",color:clr?clr.tx:"var(--nc-text)"}}>{f.cls==="nc"?"NC":f.cls}</span><span style={{fontSize:"var(--fs-micro)",color:"var(--text-muted)"}}>{fmtS(f.date)} {f.pid.toUpperCase()}</span><span style={{fontSize:"var(--fs-micro)",color:"var(--text)",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.text}</span><span style={{color:"var(--flag)",fontSize:"var(--fs-micro)"}}>{"\u2691"}</span></div>})}</div>}
     <div className="card np" style={{padding:"10px 14px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6}}><div className="sl">Export week</div><div style={{display:"flex",gap:6}}>
@@ -2140,6 +2226,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
         <div onClick={()=>setBsEdit(null)} aria-hidden="true" style={{position:"fixed",inset:0,zIndex:299}}/>
         <div className="wk-overlay" role="dialog" aria-modal="true" aria-label={`Edit ${BSLOT_LABELS[bsEdit.slotCode]}, ${fmtS(bsEdit.date)}`} style={{top,left,width:W}} onClick={e=>e.stopPropagation()}>
           <BSlotEditor slot={slot} cycleDay={cd} current={current} cycleDefault={cyc} clash={clash} duties={duties} onSaveToday={saveToday} onClose={()=>setBsEdit(null)}/>
+          <div className="bs-note-area"><ReliefRow rec={storageGet(`note:${bsEdit.dateKey}:${bsEdit.slotCode}`)||emptyNote()} onPatch={p=>{const k=`note:${bsEdit.dateKey}:${bsEdit.slotCode}`;writeRecord(k,{...(storageGet(k)||emptyNote()),...p});setNR(r=>r+1);if(window._plannerSync)window._plannerSync()}}/></div>
         </div>
       </>;
     })()}
@@ -2188,6 +2275,7 @@ function DetailedNoteEditor({dateKey,pid,onSave}){
  * without leaving the Class View.
  * ═══════════════════════════════════════════════════════════════════════
  */
+const RELIEF_SEL="\u0000relief";
 function ClassView({onDet,gam,years,year,onYear}){
   const eng=useCfg();const today=useToday();const[sel,setSel]=useState(eng.classCodes[0]||"");
   const[termIdx,setTermIdx]=useState(()=>{if(!eng||!eng.terms)return 0;const now=new Date();now.setHours(0,0,0,0);let ati=0;for(let i=0;i<eng.terms.length;i++){if(now<=eng.terms[i].end){ati=i;break}else ati=i}return ati});
@@ -2195,6 +2283,7 @@ function ClassView({onDet,gam,years,year,onYear}){
   // Captures `qe` at mousedown time, before the input's blur handler clears it.
   // Used by the lesson row's onClick to make the same-row toggle robust.
   const qeAtMouseDownRef=useRef(null);
+  const reliefN=useMemo(()=>reliefEntries(eng,storageGet).length,[eng,nr]);
   const lessons=useMemo(()=>{
     if(termIdx===-1){const all=[];eng.terms.forEach((_,ti)=>{all.push(...eng.classLessons(sel,ti))});
       all.sort((a,b)=>a.date-b.date);return all.map(l=>{const n=storageGet(`note:${l.dk}:${l.pid}`);return{...l,notes:{...emptyNote(),...(n||{})}}});}
@@ -2266,9 +2355,14 @@ function ClassView({onDet,gam,years,year,onYear}){
     if(window._plannerSync)window._plannerSync();if(window._plannerGamRefresh)window._plannerGamRefresh();
   };
   if(eng.classCodes.length===0)return<div style={{padding:30,textAlign:"center",color:"var(--text-muted)"}}>No classes configured. Head to Setup to add your classes.</div>;
-  return<div>
-    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14,marginTop:10}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c],a=c===sel,sem=cl&&cl.semester;return<span key={c} className="mn" onClick={()=>{setSel(c);setQE(null)}} role="button" tabIndex={0} aria-pressed={a} aria-label={`${c}${sem&&sem!=="full"?", "+sem:""}, show this class`} onKeyDown={kAct(()=>{setSel(c);setQE(null)})} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"4px 12px",borderRadius:"var(--radius-sm)",fontSize:"var(--fs-body)",fontWeight:700,cursor:"pointer",outline:a?"2px solid var(--accent)":"none",outlineOffset:2}}>{c}{sem&&sem!=="full"&&<span style={{fontSize:"var(--fs-nano)",fontWeight:600,marginLeft:5,opacity:.7}}>{sem}</span>}</span>})}</div>
+  const head=<>
+    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14,marginTop:10}}>{eng.classCodes.map(c=>{const cl=eng.classMap[c],a=c===sel,sem=cl&&cl.semester;return<span key={c} className="mn" onClick={()=>{setSel(c);setQE(null)}} role="button" tabIndex={0} aria-pressed={a} aria-label={`${c}${sem&&sem!=="full"?", "+sem:""}, show this class`} onKeyDown={kAct(()=>{setSel(c);setQE(null)})} style={{background:cl&&cl.bg,color:cl&&cl.tx,padding:"4px 12px",borderRadius:"var(--radius-sm)",fontSize:"var(--fs-body)",fontWeight:700,cursor:"pointer",outline:a?"2px solid var(--accent)":"none",outlineOffset:2}}>{c}{sem&&sem!=="full"&&<span style={{fontSize:"var(--fs-nano)",fontWeight:600,marginLeft:5,opacity:.7}}>{sem}</span>}</span>})}<span className="mn relief-chip" onClick={()=>{setSel(RELIEF_SEL);setQE(null)}} role="button" tabIndex={0} aria-pressed={sel===RELIEF_SEL} aria-label={`Relief log, ${reliefN} this year`} onKeyDown={kAct(()=>{setSel(RELIEF_SEL);setQE(null)})} style={{outline:sel===RELIEF_SEL?"2px solid var(--accent)":"none"}}>Relief{reliefN>0&&<span className="relief-chip-n">{reliefN}</span>}</span></div>
     <div style={{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"}}><YearSwitch years={years} year={year} onPick={onYear}/><button className="tog" aria-pressed={termIdx===-1} onClick={()=>setTermIdx(-1)}>All terms</button>{eng.terms.map((t,i)=><button className="tog" aria-pressed={termIdx===i} key={i} onClick={()=>setTermIdx(i)}>Term {t.n}</button>)}</div>
+  </>;
+  // The Relief chip (3.11.0) shows the relief log in place of a class.
+  if(sel===RELIEF_SEL)return<div>{head}<ReliefLog eng={eng} termIdx={termIdx} onDet={onDet} nr={nr}/></div>;
+  return<div>
+    {head}
     <div style={{marginBottom:14}}><div className="mn" style={{fontSize:"var(--fs-title)",fontWeight:600,color:clr.tx}}><span style={{background:clr.bg,padding:"2px 10px",borderRadius:"var(--radius-sm)"}}>{sel}</span></div>{(clr.desc||clr.course)&&<div style={{fontSize:"var(--fs-body)",color:"var(--text-secondary)",marginTop:4}}>{clr.desc}{clr.course&&<span className="mn" title="Course: links this class with the same course in other years" style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)",marginLeft:clr.desc?8:0}}>course {clr.course}</span>}</div>}<div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginTop:4}}>{toT.length} lessons {"\u00B7"} <strong className="mn" style={{color:planned===toT.length?"var(--success)":"var(--text)"}}>{planned} planned</strong> {"\u00B7"} {toT.length-planned} empty{notT>0&&<span> {"\u00B7"} {notT} not taught</span>}{flagged>0&&<span style={{color:"var(--flag)",marginLeft:6}}>{"\u2691"} {flagged}</span>}</div></div>
     {shiftMsg&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 12px",marginBottom:10,borderRadius:"var(--radius-sm)",background:"var(--surface)",border:`1px solid ${shiftMsg.err?"var(--error)":"var(--border)"}`,fontSize:"var(--fs-caption)",color:shiftMsg.err?"var(--error)":"var(--text-secondary)"}}><span style={{flex:1,minWidth:120}}>{shiftMsg.text}</span>{shiftUndo&&!shiftMsg.err&&<button className="btn-a btn-sm" onClick={undoShift}>Undo</button>}<button className="btn-x" onClick={()=>{setShiftMsg(null);setShiftUndo(null)}}>{"✕"}</button></div>}
     <div className="card" style={{overflow:"hidden"}}>{lessons.map((l,i)=>{const ld=new Date(l.date);ld.setHours(0,0,0,0);const isT=ld.toDateString()===today.toDateString(),isPast=ld<today,isNl=l.notes.status==="nl",fin=!isNl&&eng.classFinished(sel,l.date),empty=!l.notes.subject&&!l.notes.notes&&!isNl&&!fin,fl=hasFlag(l.notes.notes)||hasFlag(l.notes.subject),isN=i===nxtI&&!isT,per=bldP(asmBellsForDate(l.cd,l.date,{timetable:eng.timetableForDate(l.date),weeklyEvents:[]})).find(p=>p.id===l.pid),isEd=qe&&qe.i===i;
@@ -2277,7 +2371,7 @@ function ClassView({onDet,gam,years,year,onYear}){
         <div ref={i===nxtI?todayRef:undefined} className={`cv${empty?" empty":""}`} role="button" tabIndex={0} aria-expanded={!!isEd} aria-label={`Lesson ${i+1}, ${fmtS(l.date)}${isT?", today":""}, Day ${l.cd} ${per?per.label:l.pid}, ${isNl?"no lesson":fin?"finished":fl?"flagged":empty?"empty":`planned: ${l.notes.subject||"no topic"}`}, ${isEd?"close":"open"} quick editor`} onKeyDown={kAct(()=>{isEd?setQE(null):oQE(i,l)})} onMouseDown={()=>{qeAtMouseDownRef.current=qe}} onClick={()=>{const wasOpen=qeAtMouseDownRef.current;qeAtMouseDownRef.current=null;if(wasOpen&&wasOpen.i===i){setQE(null)}else{oQE(i,l)}}} style={{background:isT?"var(--today-bg)":isN?"var(--surface-open)":"transparent",borderLeft:isT?"3px solid var(--today-border)":isN?"3px solid var(--accent)":"3px solid transparent"}}>
           <div style={{minWidth:40,textAlign:"center",flexShrink:0}}><div style={{fontSize:"var(--fs-emph)",fontWeight:700,color:isPast&&!isT?"var(--text-muted)":"var(--text)"}}>{l.date.getDate()}</div><div style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}>{l.date.toLocaleDateString("en-NZ",{month:"short"})}</div></div>
           <div style={{flex:1,minWidth:0}}><div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-secondary)",fontWeight:600}}>{l.date.toLocaleDateString("en-NZ",{weekday:"short"})} {"\u00B7"} D{l.cd} {"\u00B7"} {per&&per.label}</span><span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}>{per&&(per.start+"\u2013"+per.end)}</span>{isT&&<span style={{fontSize:"var(--fs-nano)",background:"var(--today-border)",color:"var(--on-accent)",padding:"1px 5px",borderRadius:"var(--radius-xs)",fontWeight:700}}>TODAY</span>}{isN&&<span style={{fontSize:"var(--fs-nano)",background:"var(--accent)",color:"var(--on-accent)",padding:"1px 5px",borderRadius:"var(--radius-xs)",fontWeight:700}}>NEXT</span>}</div>{empty?<div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)",fontStyle:"italic"}}>{isPast?"No notes":"Click to plan"}</div>:isNl||fin?<div style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)",fontStyle:"italic"}}>{isNl?(l.notes.subject?"No lesson \u2014 "+l.notes.subject:"No lesson"):(l.notes.subject?"Finished \u2014 "+l.notes.subject:"Finished")}</div>:<div><div style={{fontSize:"var(--fs-body)",color:"var(--text)",fontWeight:600}}>{l.notes.subject||"(no topic)"}</div>{l.notes.notes&&<div style={{fontSize:"var(--fs-micro)",color:"var(--text-secondary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginTop:1}}>{notesPreview(l.notes.notes)}</div>}</div>}</div>
-          <div style={{flexShrink:0,display:"flex",alignItems:"center",gap:4}}>{l.notes.went&&<span className="went-tag">{wentLabel(l.notes.went)}</span>}{fl&&<span style={{color:"var(--flag)",fontSize:"var(--fs-caption)"}}>{"\u2691"}</span>}<span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}>#{i+1}</span></div></div>
+          <div style={{flexShrink:0,display:"flex",alignItems:"center",gap:4}}><ReliefTag rec={l.notes}/>{l.notes.went&&<span className="went-tag">{wentLabel(l.notes.went)}</span>}{fl&&<span style={{color:"var(--flag)",fontSize:"var(--fs-caption)"}}>{"\u2691"}</span>}<span className="mn" style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}>#{i+1}</span></div></div>
         {isEd&&<div className="cv-ed" style={{padding:"8px 12px",background:"var(--surface-open)",borderBottom:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:6}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)"}}>{per&&per.label} {"\u00B7"} {fmtS(l.date)} {"\u00B7"} #{i+1}</span>
@@ -2309,6 +2403,7 @@ function ClassView({onDet,gam,years,year,onYear}){
               <input className="inp" value={qv} onChange={e=>setQV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null)}} onBlur={qeBlur} autoFocus={!coarse} placeholder={lessons[qe.i]?.notes?.status==="nl"?"Reason (optional) \u2014 press Enter":"Topic \u2014 press Enter"} style={{flex:1}}/>
               <button className="btn btn-sm" onMouseDown={e=>{e.preventDefault();toggleNL()}} style={{padding:"6px 10px",flexShrink:0}}>{lessons[qe.i]?.notes?.status==="nl"?"Remove no lesson":"No lesson"}</button>
             </div>
+            <ReliefRow rec={l.notes} onPatch={p=>qeWrite(p)} onLeave={qeBlur}/>
             <Payoff cc={sel} dk={l.dk} pid={l.pid}/>
             {(()=>{const end=lessonEnd(eng,l.date,l.cd,l.pid);return!eng.classFinished(sel,l.date)&&canReflect(sel,l.notes,end,new Date())&&<WentRow went={l.notes.went||""} onWent={v=>qeWrite({went:v})}><input className="inp went-next" value={qn} onChange={e=>setQN(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sQE();if(e.key==="Escape")setQE(null)}} onBlur={qeBlur} placeholder="Next time (optional): advice for future you"/></WentRow>})()}
             {(l.notes.subject||l.notes.notes||l.notes.resources)&&l.notes.status!=="nl"&&<button className="btn-link" onMouseDown={e=>{e.preventDefault();const k=`note:${qe.dk}:${qe.pid}`,ex=storageGet(k)||emptyNote();if(qv!==(ex.subject||""))writeRecord(k,{...ex,subject:qv,status:ex.status||""});setShiftReason("");setShiftConfirm(true)}} style={{fontSize:"var(--fs-micro)",padding:"2px 0"}}>{"\u2913"} Lesson bumped? Push the rest forward</button>}
@@ -2500,14 +2595,16 @@ function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,clash,d
   const noteKey=`note:${dateKey}:${slot.code}`;
   const as=useAutoSave(noteKey,emptyNote());
   const{data:note,updateField,saveStatus:noteSs}=as;
+  const reliefPatch=p=>{Object.entries(p).forEach(([k,v])=>updateField(k,v));setTimeout(as.save,0)};
   const hasNote=!!(note&&note.notes&&note.notes.trim());
   const isGap=!current;
-  const summary=<div className={`bs-row${isGap?" gap":""}`} onClick={()=>setExpanded(e=>!e)} role="button" tabIndex={0} aria-expanded={expanded} aria-label={`${slot.label}, ${current?"set":"free"}${hasNote?", has notes":""}, ${expanded?"collapse":"expand"}`} onKeyDown={kAct(()=>setExpanded(e=>!e))}>
+  const summary=<div className={`bs-row${isGap?" gap":""}`} onClick={()=>setExpanded(e=>!e)} role="button" tabIndex={0} aria-expanded={expanded} aria-label={`${slot.label}, ${current?"set":"free"}${hasNote?", has notes":""}${note&&note.relief?", relief":""}, ${expanded?"collapse":"expand"}`} onKeyDown={kAct(()=>setExpanded(e=>!e))}>
     <span className="bs-row-time mn">{slot.start}{slot.end?"–"+slot.end:""}</span>
     <span className="bs-row-label">{slot.label}</span>
     {current&&<BSlotChip value={current} duties={duties}/>}
     {isOverride&&<span className="bs-override-dot" title="Override (different from cycle default)"/>}
     {clash&&<span className="bs-clash" title="Weekly activity is hiding the cycle default for this slot. Expand the row for details.">{"⚠"}</span>}
+    <ReliefTag rec={note}/>
     {hasNote&&<span title="Has notes" style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}><Icon n="note"/></span>}
   </div>;
   if(!expanded)return summary;
@@ -2515,6 +2612,7 @@ function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,clash,d
     {summary}
     <div className="bs-row-editor">
       <BSlotEditor slot={slot} cycleDay={cycleDay} current={current} cycleDefault={cycleDefault} clash={clash} duties={duties} onSaveToday={onSaveToday} onClose={()=>setExpanded(false)}/>
+      <div className="bs-note-area"><ReliefRow rec={note} onPatch={reliefPatch}/></div>
       <div className="bs-note-area">
         <label className="fl" style={{fontSize:"var(--fs-micro)"}}>Notes <SvH saveStatus={noteSs}/></label>
         <AInp data={note} field="notes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Notes for this slot today" multi rows={2}/>
@@ -2906,7 +3004,7 @@ function SearchOverlay({engOf,onGo,onClose}){
       if(k.slice(0,5)==="note:"){
         const rest=k.slice(5),ci=rest.lastIndexOf(":");if(ci<0)continue;
         const dkey=rest.slice(0,ci),pid=rest.slice(ci+1),n=storageGet(k);if(!n)continue;
-        const hit=[["subject",n.subject],["notes",n.notes],["resources",n.resources],["nextTime",n.nextTime]].find(f=>f[1]&&f[1].toLowerCase().includes(term));
+        const hit=[["subject",n.subject],["notes",n.notes],["resources",n.resources],["nextTime",n.nextTime],["reliefFor",n.reliefFor],["reliefNote",n.reliefNote]].find(f=>f[1]&&f[1].toLowerCase().includes(term));
         if(!hit)continue;
         // Each lesson is labelled through the engine for its own year: a 2026 lesson keeps its
         // 2026 class while you work in 2027. A year that is not configured gives no label.

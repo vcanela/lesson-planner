@@ -6,6 +6,25 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.11.0 — 2026-11-28
+
+### Relief
+- **Record relief where it happens.** A **Relief** button on every period (non-contact included) and every break slot: in Day View, in a break slot's editor (Day View and Week View), and in the Week and Class quick editors. Pressing it opens **Covering** (the class you covered, e.g. 10ENG3) and an optional note (teacher, room, how it went). Both save when you leave them or press Enter. Press Relief again to take it off; what you typed is kept in case you turn it back on.
+- **A cancelled lesson keeps its story.** Relief sits alongside the rest of the slot, so a lesson marked No lesson (with its reason) that you were then used for relief in reads as both.
+- **Where it shows.** Week View marks it with a small **R** (beside **NL** when both apply) and says "relief" to a screen reader; Day View rows and break slots read "Relief · 10ENG3"; Term View's hover card lists it; Class View lesson rows show it.
+- **The relief log.** Class View has a **Relief** chip after your classes, with this year's total on it. It lists every relief in the chosen term (or all terms), newest first, each opening that day when clicked, with totals, how many came out of your own cancelled lessons, and tallies by period, cycle day, weekday, subject covered and year level. Subject and year come from the class code (10ENG3 is English, Year 10); anything else counts as "not given".
+- **Export CSV** downloads the list for a spreadsheet: date, term, week, weekday, cycle day, slot, class covered, subject, year level, own lesson cancelled, own class, note.
+- Relief is a record, not planning: it changes no count, streak or XP. Search also finds the class covered and the note.
+- Guide: a new "Relief" section under Planning Your Lessons.
+
+### Implementation
+- A slot's `note:` record gains `relief`, `reliefFor` and `reliefNote` (in `BACKUP_SCHEMA.md`); `isEmptyRecord` counts them as content. Break slots already had `note:` records for their notes.
+- Core: `RELIEF_ORDER` (the slots in day order), `slotName`, `reliefSubject` (year and subject from a code), `reliefEntries(eng, read)` (one year's relief with term, week of term, cycle day, slot and whether your own lesson was cancelled) and `reliefCsv`. UI: `ReliefRow` (one control for all five places; saves on leaving a box, on Enter or Esc, and on unmount), `ReliefTag`, `ReliefLog`.
+- Term View now reads non-contact periods' records too, for the hover card.
+- Tests: a unit group (subject from a code; entries in day order with term, week and cycle day; a cancelled lesson keeps its class; CSV header, row and quoting; a relief alone is a real record) and a smoke group (relief on a non-contact period with the class covered; on a break slot; on a cancelled lesson in Week View, keeping its No lesson and reason; the Week cells and an unchanged count; the Relief chip's list and tallies; the log's legibility). 341 assertions.
+
+---
+
 ## 3.10.3 — 2026-11-20
 
 ### Fixed
