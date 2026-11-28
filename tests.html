@@ -1046,6 +1046,15 @@ async function runSmoke(){
     await step(D,"(finished again for the legibility sweep)",()=>{D.key("s");return waitFor(()=>D.view()==="Setup").then(()=>{
         const row=D.qa(".fin-row").find(r=>r.parentElement.querySelector('input.mn')&&r.parentElement.querySelector('input.mn').value==="13CHM1");D.type(row.querySelector('input[type="date"]'),"2026-08-18")})},
       ()=>D.qa(".fin-row").some(r=>r.textContent.includes("Still teaching")));
+    // 3.12.2: a meeting in a finished class's period reads as your own time; the class stays marked.
+    const finCell=()=>D.q('.pb[aria-label^="P5, 13CHM1, Wed, 19 Aug, finished"]');
+    await step(D,"a finished period's editor asks what's on instead",()=>{D.key("w");return waitFor(finCell).then(c=>{D.focus(c);D.key("Enter",c)})},
+      ()=>{const i=D.q(".qe input");return i&&/What's on instead/.test(i.placeholder)});
+    await step(D,"a meeting there shows plainly in the cell, still marked Fin",()=>{const i=D.q(".qe input");D.type(i,"Meeting with HoD");D.key("Enter",i)},
+      ()=>{const c=D.q('.pb[aria-label^="P5, 13CHM1, Wed, 19 Aug, finished, Meeting with HoD"]');return c&&c.querySelector(".pb-sub").textContent==="Meeting with HoD"&&c.querySelector(".pb-mark").textContent==="Fin"&&c.querySelector(".pb-marks span")&&/line-through/.test(c.querySelector(".pb-top .mn").style.textDecoration)});
+    await step(D,"…and it doesn't count as a lesson",null,()=>/3\s*\/\s*14/.test(D.text()));
+    await step(D,"Day View shows Finished · the meeting",()=>{D.key("d");return waitFor(()=>D.view()==="Day")},
+      ()=>{const r=D.q('.pr[aria-label^="P5, 13CHM1, finished, Meeting with HoD"]');return r&&r.textContent.includes("Finished \u00B7 Meeting with HoD")});
 
     // Legibility (3.2.1). Every view in every display mode on the fixture's theme, then the two
     // light modes on the other four themes, whose accents are the colours most likely to fail.

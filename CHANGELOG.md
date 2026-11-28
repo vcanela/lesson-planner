@@ -6,6 +6,15 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.12.2 — 2026-11-28
+
+### Meetings in a finished class's periods
+- **What you write in a finished class's period reads as your own time.** A meeting typed in the topic box now shows at normal strength: Week View's cell shows it with the usual dot (the struck code, hatch and Fin mark stay); Day View shows *Finished · Meeting with HoD*; Term View's hover card shows *Finished · …*; the week export shows `P3 … 12PHY1 (finished): Meeting with HoD`. An empty finished period stays quiet as before. No lesson periods are unchanged.
+- The topic box in a finished period asks "What's on instead" (Week and Class quick editors, Day View).
+- Nothing new is stored, and a meeting there never counts as a lesson.
+- Guide: *Finishing a class* describes using the periods for meetings.
+- Tests: a smoke check that a finished period's editor asks what's on instead, the meeting shows in the cell still marked Fin and struck through, the count is unchanged, and Day View shows *Finished · the meeting*. The legibility sweep now covers that text. 370 assertions.
+
 ## 3.12.1 — 2026-11-28
 
 ### Custom bell times fold away
