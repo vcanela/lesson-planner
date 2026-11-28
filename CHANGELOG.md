@@ -6,6 +6,13 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.12.1 — 2026-11-28
+
+### Custom bell times fold away
+- **The custom times panel folds to one line.** *Hide times* folds it once the times are set, so Day View's lessons sit straight under the bell buttons; *Edit times* opens it again. Pressing Custom opens it; arriving on a day that already has custom times shows it folded. An overlap warning still shows while folded. The fold is screen state only: nothing new is saved or synced.
+- Guide: the Custom bell times entry describes the fold.
+- Tests: the custom bell times smoke group checks Hide folds and keeps the warning, Edit reopens, a revisit starts folded, and Custom opens it. 366 assertions.
+
 ## 3.12.0 — 2026-11-28
 
 ### Custom bell times

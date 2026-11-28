@@ -1005,12 +1005,17 @@ async function runSmoke(){
     await step(D,"a changed time shows in the day at once",()=>{D.type(timeIn("P3","s"),"11:00");D.type(timeIn("P4","s"),"11:50");D.type(timeIn("P4","e"),"12:40")},
       ()=>rowText("P3").includes("11:00")&&rowText("P4").includes("11:50")&&dm().bellTimes.P4.e==="12:40");
     await step(D,"times out of order are flagged, not blocked",()=>D.type(timeIn("P4","s"),"11:30"),()=>/P4 starts before P3 ends/.test(D.q(".cbells").textContent));
+    await step(D,"Hide times folds the panel to one line, and the warning stays",()=>D.qa(".cbells button").find(b=>b.textContent==="Hide times").click(),
+      ()=>D.q(".cbells.folded")&&!timeIn("P3","s")&&/P4 starts before P3 ends/.test(D.q(".cbells").textContent));
+    await step(D,"Edit times opens it again",()=>D.qa(".cbells button").find(b=>b.textContent==="Edit times").click(),()=>!D.q(".cbells.folded")&&timeIn("P3","s"));
     D.type(timeIn("P4","s"),"11:50");
     await step(D,"Class View shows the custom times for that lesson",()=>{D.key("c");return waitFor(()=>D.q('[role=button][aria-label^="12PHY1"]')).then(ch=>D.key("Enter",ch))},
       ()=>D.qa(".cv").some(r=>/19 Aug/.test(r.getAttribute("aria-label")||"")&&r.textContent.includes("11:50\u201312:40")));
-    await step(D,"Auto goes back to the usual times, and keeps the custom ones",()=>{D.key("d");return waitFor(()=>D.view()==="Day").then(()=>bellBtn("Auto").click())},
+    await step(D,"coming back to a day with custom times, the panel starts folded",()=>{D.key("d");return waitFor(()=>D.view()==="Day")},
+      ()=>D.q(".cbells.folded")&&!timeIn("P3","s"));
+    await step(D,"Auto goes back to the usual times, and keeps the custom ones",()=>bellBtn("Auto").click(),
       ()=>!D.q(".cbells")&&rowText("P3").includes("11:10")&&dm().bellTimes&&dm().bellTimes.P3.s==="11:00");
-    await step(D,"Custom brings them back",()=>bellBtn("Custom").click(),()=>rowText("P3").includes("11:00"));
+    await step(D,"Custom brings them back, with the panel open",()=>bellBtn("Custom").click(),()=>rowText("P3").includes("11:00")&&timeIn("P3","s"));
     bellBtn("Auto").click();
 
     G("Smoke: panels");

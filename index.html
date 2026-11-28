@@ -224,6 +224,8 @@ textarea,input,button,select{font-family:var(--font-sans)}
 .bs-not-today{font-size:var(--fs-nano);color:var(--text-muted);font-style:italic;white-space:nowrap}
 .cbells{padding:12px 14px;margin-bottom:12px}
 .cbells-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.cbells.folded .cbells-head{margin-bottom:0}
+.cbells.folded .bs-clash-banner{margin-top:8px}
 .cbells-grid{display:grid;grid-template-columns:minmax(84px,auto) minmax(0,120px) auto minmax(0,120px);gap:4px 6px;align-items:center;justify-content:start}
 .cbells-grid .inp{padding:3px 6px;font-size:var(--fs-caption);width:100%}
 .cbells-k{font-size:var(--fs-caption);font-weight:600}
@@ -835,7 +837,7 @@ const SCHEMA_VERSION=3;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="3.12.0";
+const APP_VERSION="3.12.1";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -1777,17 +1779,18 @@ function PCard({period,dateKey,cDay,date,initOpen,jump}){
  * ═══════════════════════════════════════════════════════════════════════
  */
 /* CustomBells (3.12.0): Day View's custom bell times. One line per slot in the usual order,
- * start and end, for this date only. A warning, not a block, when they run out of order. */
-function CustomBells({times,onSet,onReset}){
+ * start and end, for this date only. A warning, not a block, when they run out of order.
+ * 3.12.1: folds to its header line (open/onToggle); the warning still shows when folded. */
+function CustomBells({times,onSet,onReset,open,onToggle}){
   const probs=bellProblems(times);
-  return<div className="card cbells np">
-    <div className="cbells-head"><span className="sl">Custom times for this day</span><span style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}><button className="btn btn-sm" onClick={()=>onReset(false)}>Start from standard</button><button className="btn btn-sm" onClick={()=>onReset(true)}>Start from assembly</button></span></div>
-    <div className="cbells-grid">{BELL_ORDER.map(k=>{const t=times[k]||{};return<React.Fragment key={k}>
+  return<div className={"card cbells np"+(open?"":" folded")}>
+    <div className="cbells-head"><span className="sl">Custom times for this day</span><span style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>{open&&<><button className="btn btn-sm" onClick={()=>onReset(false)}>Start from standard</button><button className="btn btn-sm" onClick={()=>onReset(true)}>Start from assembly</button></>}<button className="btn btn-sm btn-ghost" aria-expanded={open} onClick={onToggle}>{open?"Hide times":"Edit times"}</button></span></div>
+    {open&&<div className="cbells-grid">{BELL_ORDER.map(k=>{const t=times[k]||{};return<React.Fragment key={k}>
       <span className={k[0]==="P"?"mn cbells-k":"cbells-k cbells-b"}>{slotName(k)}</span>
       <input type="time" className="inp mn" value={t.s||""} aria-label={`${slotName(k)} starts`} onChange={e=>onSet(k,"s",e.target.value)}/>
       <span className="cbells-to">to</span>
       <input type="time" className="inp mn" value={t.e||""} aria-label={`${slotName(k)} ends`} onChange={e=>onSet(k,"e",e.target.value)}/>
-    </React.Fragment>})}</div>
+    </React.Fragment>})}</div>}
     {probs.length>0&&<div className="bs-clash-banner" role="status">{"\u26A0"} {probs.join("; ")}.</div>}
   </div>}
 function DayView({date,setDate,onBack,metaCache,onMS,fp,gam,onUpdateCfg,cfg}){
@@ -1811,6 +1814,9 @@ function DayView({date,setDate,onBack,metaCache,onMS,fp,gam,onUpdateCfg,cfg}){
   // before/after-school event even when no cycle default exists. Cleared on date change.
   const[forceShow,setForceShow]=useState({});
   useEffect(()=>{setForceShow({})},[dateKey]);
+  // Custom bell times panel (3.12.1): folded when arriving on a day, opened by pressing Custom.
+  const[cbOpen,setCbOpen]=useState(false);
+  useEffect(()=>{setCbOpen(false)},[dateKey]);
   const forceSet=useMemo(()=>{const s=new Set();if(forceShow.B0)s.add("B0");if(forceShow.B3)s.add("B3");return s},[forceShow]);
   // Notes saved for a slot+date count as "content" for the visibility check below,
   // so teachers who type notes without committing a slot value still see the row
@@ -1847,11 +1853,12 @@ function DayView({date,setDate,onBack,metaCache,onMS,fp,gam,onUpdateCfg,cfg}){
         // Custom starts from the times in effect now, so only what differs needs typing. Times
         // already typed for this day are kept when switching away, and come back with Custom.
         if(v==="custom"&&!meta.bellTimes)updateField("bellTimes",dayTimes(cd,date,{timetable:eng.timetableForDate(date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta));
+        if(v==="custom")setCbOpen(true);
         updateField("bells",v);setTimeout(save,0)}}>{lbl}</button>})}
       {(()=>{const cfgR={timetable:eng.timetableForDate(date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]};const overridden=meta.bells==="asm"||meta.bells==="std";const autoAsm=asmBellsForDate(cd,date,cfgR,{...meta,bells:"auto"});const eff=overridden?meta.bells==="asm":autoAsm;return<span style={{fontSize:"var(--fs-nano)",color:overridden||meta.bells==="custom"?"var(--flag)":"var(--text-muted)"}}>{meta.bells==="custom"?"Custom times for this day":overridden?`${eff?"Assembly":"Standard"} (manual)`:autoAsm?"Assembly today (FSA)":"Standard"}</span>})()}
     </div>}{meta&&meta.bells==="custom"&&<CustomBells times={dayTimes(cd,date,{timetable:eng.timetableForDate(date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta)}
       onSet={(k,f,v)=>{const bt={...(meta.bellTimes||{})};bt[k]={...(bt[k]||{}),[f]:v};updateField("bellTimes",bt);setTimeout(save,0)}}
-      onReset={isAsm=>{updateField("bellTimes",bellTable(isAsm));setTimeout(save,0)}}/>}{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH saveStatus={saveStatus}/></label><AInp data={meta} field="dayNotes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Meetings, reminders, duty" multi rows={2}/></div>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>
+      onReset={isAsm=>{updateField("bellTimes",bellTable(isAsm));setTimeout(save,0)}} open={cbOpen} onToggle={()=>setCbOpen(o=>!o)}/>}{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH saveStatus={saveStatus}/></label><AInp data={meta} field="dayNotes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Meetings, reminders, duty" multi rows={2}/></div>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>
   {!hasB0&&<div style={{padding:"6px 12px",borderBottom:"1px solid var(--border)"}}><button className="btn-add btn-sm" onClick={()=>setForceShow(s=>({...s,B0:true}))}>+ Before school</button></div>}
   {slots.map(s=>{
     if(s.type==="period")return<PCard key={`${dateKey}-${s.id}`} period={s} dateKey={dateKey} cDay={cd} date={date} initOpen={fp===s.id} jump={jump&&jump.pid===s.id?jump.t:0}/>;
