@@ -219,6 +219,9 @@ textarea,input,button,select{font-family:var(--font-sans)}
 .relief-mark{font-size:var(--fs-nano);font-weight:700}
 .relief-chip{background:var(--surface);color:var(--text);border:1px dashed var(--border-strong);padding:3px 12px;border-radius:var(--radius-sm);font-size:var(--fs-body);font-weight:700;cursor:pointer;outline-offset:2px;display:inline-flex;align-items:center;gap:6px}
 .relief-chip-n{font-size:var(--fs-nano);background:var(--accent);color:var(--on-accent);border-radius:var(--radius-xs);padding:0 5px}
+.bs-off{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:center;min-width:0}
+.bs-chip-off{background:transparent;color:var(--text-muted);border:1px dashed var(--border-strong);text-decoration:line-through;font-weight:500}
+.bs-not-today{font-size:var(--fs-nano);color:var(--text-muted);font-style:italic;white-space:nowrap}
 .relief-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
 .relief-card{padding:12px 14px}
 .relief-bar{display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:var(--fs-caption)}
@@ -553,22 +556,29 @@ function valEq(a,b){if(!a&&!b)return true;if(!a||!b)return false;if(a.t!==b.t)re
 // buildSlots (DayView) and the WeekView cell logic so the precedence is identical
 // everywhere. Returns { value, isOverride, clash } where:
 //   value      - the chip value to render, or null if free.
-//   isOverride - per-date override exists and differs from the cycle default.
+//   base       - what the slot usually holds on this date, with no per-date change: the
+//                weekly activity if one falls here, otherwise the cycle default (3.11.1;
+//                before that, overrides were compared with the cycle default alone, so
+//                "Free" on a weekly activity's slot looked like no change and was dropped).
+//   baseSrc    - "weekly" or "cycle", where base came from.
+//   isOverride - a per-date change exists and differs from base.
+//   cancelled  - that change is "free today" on a slot that usually holds something.
 //   clash      - a weekly activity is displacing a non-null cycle default.
 function resolveSlot(slotCode,cycleDay,date,cfg,daymeta){
   const overrides=(daymeta&&daymeta.overrides)||{};
   const day=(cfg&&cfg.timetable&&cfg.timetable[cycleDay])||{};
   const cyc=day[slotCode]||null;
-  if(slotCode in overrides){
-    const v=overrides[slotCode];
-    return{value:v,isOverride:!valEq(v,cyc),clash:false};
-  }
+  let base=cyc,baseSrc="cycle",clash=false;
   if(date&&cfg&&Array.isArray(cfg.weeklyEvents)){
     const wd=date.getDay();
     const ev=cfg.weeklyEvents.find(e=>e.weekday===wd&&e.slot===slotCode&&e.text&&e.text.trim());
-    if(ev)return{value:{t:"activity",tx:ev.text.trim()},isOverride:false,clash:cyc!==null};
+    if(ev){base={t:"activity",tx:ev.text.trim()};baseSrc="weekly";clash=cyc!==null}
   }
-  return{value:cyc,isOverride:false,clash:false};
+  if(slotCode in overrides){
+    const v=overrides[slotCode];
+    return{value:v,base,baseSrc,isOverride:!valEq(v,base),cancelled:v===null&&base!==null,clash:false};
+  }
+  return{value:base,base,baseSrc,isOverride:false,cancelled:false,clash};
 }
 // asmBellsForDate: whether the shifted ("assembly") bell schedule applies on a
 // date. A per-date override (daymeta.bells = "asm" | "std") wins. Otherwise it
@@ -598,11 +608,12 @@ function buildSlots(cycleDay,daymeta,cfg,date,forceShow,hasSlotNote){
   const period=pid=>({type:"period",id:pid,label:pid,start:T[pid.toLowerCase()].s,end:T[pid.toLowerCase()].e});
   const bslot=code=>{
     const r=resolveSlot(code,cycleDay,date,cfg,daymeta);const t=Tb[code];
+    const ext={base:r.base,baseSrc:r.baseSrc,cancelled:r.cancelled};
     if(r.value===null){
-      if((code==="B0"||code==="B3")&&!isForced(code)&&!noted(code))return null;
-      return{type:"gap",id:"gap-"+code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e,isOverride:r.isOverride,clash:r.clash,forced:isForced(code)};
+      if((code==="B0"||code==="B3")&&!isForced(code)&&!noted(code)&&!r.cancelled)return null;
+      return{type:"gap",id:"gap-"+code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e,isOverride:r.isOverride,clash:r.clash,forced:isForced(code),...ext};
     }
-    return{type:"bslot",id:code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e,value:r.value,isOverride:r.isOverride,clash:r.clash};
+    return{type:"bslot",id:code,code,label:BSLOT_LABELS[code],start:t.s,end:t.e,value:r.value,isOverride:r.isOverride,clash:r.clash,...ext};
   };
   const out=[];
   let s;
@@ -801,7 +812,7 @@ const SCHEMA_VERSION=3;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="3.11.0";
+const APP_VERSION="3.11.1";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -1779,10 +1790,12 @@ function DayView({date,setDate,onBack,metaCache,onMS,fp,gam,onUpdateCfg,cfg}){
   // in-memory ref/state; we call save() after so the daymeta lands in localStorage
   // and the gist sync fires.
   const setOverride=(slotCode,value)=>{
-    const cyc=((eng.timetableForDate(date)||{})[cd]||{})[slotCode]||null;
+    // A change equal to what the slot usually holds is no change; anything else, "free"
+    // included, is kept for this date.
+    const usual=resolveSlot(slotCode,cd,date,{timetable:eng.timetableForDate(date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta).base;
     const cur=(meta&&meta.overrides)||{};
     const next={...cur};
-    if(valEq(value,cyc))delete next[slotCode];
+    if(valEq(value,usual))delete next[slotCode];
     else next[slotCode]=value;
     updateField("overrides",next);
     setTimeout(save,0);
@@ -1803,7 +1816,7 @@ function DayView({date,setDate,onBack,metaCache,onMS,fp,gam,onUpdateCfg,cfg}){
     const code=s.code;
     const cyc=((eng.timetableForDate(date)||{})[cd]||{})[code]||null;
     const current=s.type==="bslot"?s.value:null;
-    return<BSlotRow key={`${dateKey}-${code}`} slot={s} dateKey={dateKey} cycleDay={cd} current={current} cycleDefault={cyc} isOverride={!!s.isOverride} clash={!!s.clash} duties={duties} onSaveToday={v=>setOverride(code,v)} handleFocus={handleFocus} handleBlur={handleBlur} initOpen={!!s.forced}/>;
+    return<BSlotRow key={`${dateKey}-${code}`} slot={s} dateKey={dateKey} cycleDay={cd} date={date} current={current} cycleDefault={cyc} isOverride={!!s.isOverride} clash={!!s.clash} duties={duties} onSaveToday={v=>setOverride(code,v)} handleFocus={handleFocus} handleBlur={handleBlur} initOpen={!!s.forced}/>;
   })}
   {!hasB3&&<div style={{padding:"6px 12px",borderTop:"1px solid var(--border)"}}><button className="btn-add btn-sm" onClick={()=>setForceShow(s=>({...s,B3:true}))}>+ After school</button></div>}
 </div><ReflectionsPanel meta={meta} updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} saveStatus={saveStatus} date={date} save={save}/></>}
@@ -1928,14 +1941,14 @@ function buildWkTxt(style,days,wl,wkLabel,sum,metaCache,eng,wNotes,cfg){
     const r=resolveSlot(code,cd,d,{timetable:tt,weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta);
     const note=storageGet(`note:${key}:${code}`);
     const hasNote=!!(note&&(note.subject||note.notes||note.status==="nl"));
-    if(!r.value&&!hasNote)return"";
+    if(!r.value&&!hasNote&&!r.cancelled)return"";
     const t=(asm?BSLOT_T_ASM:BSLOT_T_STD)[code];
     const timeStr=t.e?`${t.s}–${t.e}`:t.s;
     const lbl=`${BSLOT_LABELS[code]} (${timeStr})`;
     // Only show the value suffix when there is an actual value. describeValue(null)
     // returns "free" which is meaningful in the editor banner but reads oddly here
     // when the row exists purely because of notes.
-    const suffix=r.value?` — ${describeValue(r.value)}`:"";
+    const suffix=r.value?` — ${describeValue(r.value)}`:r.cancelled?` — ${describeValue(r.base)} (not today)`:"";
     let line="";
     if(style==="md"){line+=`- **${lbl}**${suffix}\n`;if(note&&note.notes)line+=`  - Notes: ${note.notes}\n`}
     else if(style==="org"){line+=`- ${lbl}${suffix}\n`;if(note&&note.notes)line+=`  Notes: ${note.notes}\n`}
@@ -2114,7 +2127,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
     // (e.g. typed straight into the textarea after clicking + Before school)
     // expects the row to persist on revisit even if they did not commit a value.
     const hasCellNote=(x,code)=>{const n=storageGet(`note:${x.k}:${code}`);return!!(n&&(n.subject||n.notes||n.status==="nl"))};
-    const bRowVisible=code=>dd.some(x=>x.sch&&!x.isZ&&(resolveBSlot(x,code)!==null||hasCellNote(x,code)));
+    const bRowVisible=code=>dd.some(x=>x.sch&&!x.isZ&&(resolveBSlot(x,code)!==null||slotFor(x,code).cancelled||hasCellNote(x,code)));
     const bSlotRow=code=>{
       const r=navRow++;
       cells.push(<div key={`l${code}`} className="wk-blabel"><div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",lineHeight:1.05}}>{BSLOT_LABELS[code].split(" ").map((w,wi)=><span key={wi}>{w}</span>)}</div></div>);
@@ -2132,8 +2145,9 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
           const r=e.currentTarget.getBoundingClientRect();
           setBsEdit({date:x.d,dateKey:x.k,cycleDay:x.cd,slotCode:code,anchor:{top:r.top,left:r.left,bottom:r.bottom,right:r.right,width:r.width,height:r.height}});
         };
-        cells.push(<div key={ck} className={`wk-bcell${isEmpty?" empty-hatch":""}${x.isT?" today":""}`} onClick={handleClick} role="button" data-nav={`${r}-${i}`} tabIndex={nav.r===r&&nav.c===i?0:-1} onFocus={()=>setNav({r,c:i})} onKeyDown={navKey(r,i,handleClick)} aria-haspopup="dialog" aria-label={`${BSLOT_LABELS[code]}, ${fmtS(x.d)}, ${isEmpty?"empty":describeValue(v)}${ov?", override":""}${cl?", clash":""}${isEmpty&&hasNote?", has notes":""}${bRel?", relief":""}, edit`}>
+        cells.push(<div key={ck} className={`wk-bcell${isEmpty?" empty-hatch":""}${x.isT?" today":""}`} onClick={handleClick} role="button" data-nav={`${r}-${i}`} tabIndex={nav.r===r&&nav.c===i?0:-1} onFocus={()=>setNav({r,c:i})} onKeyDown={navKey(r,i,handleClick)} aria-haspopup="dialog" aria-label={`${BSLOT_LABELS[code]}, ${fmtS(x.d)}, ${sl.cancelled?bsName(sl.base)+", not today":isEmpty?"empty":describeValue(v)}${ov?", override":""}${cl?", clash":""}${isEmpty&&hasNote?", has notes":""}${bRel?", relief":""}, edit`}>
           {v&&<BSlotChip value={v} duties={duties}/>}
+          {sl.cancelled&&<BSlotOff value={sl.base}/>}
           {bRel&&<span className="relief-mark" title="Relief">R</span>}
           {ov&&<span className="bs-override-dot" title="Override"/>}
           {cl&&<span className="bs-clash" title="Weekly activity is hiding the cycle default for this slot. Open the editor to see what the cycle has scheduled.">{"⚠"}</span>}
@@ -2211,7 +2225,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
       const saveToday=v=>{
         const cur=(metaCache[dateKey]||emptyMeta()).overrides||{};
         const next={...cur};
-        if(valEq(v,cyc))delete next[code];
+        if(valEq(v,r.base))delete next[code];
         else next[code]=v;
         updateMeta(dateKey,{overrides:next});
       };
@@ -2225,7 +2239,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
       return<>
         <div onClick={()=>setBsEdit(null)} aria-hidden="true" style={{position:"fixed",inset:0,zIndex:299}}/>
         <div className="wk-overlay" role="dialog" aria-modal="true" aria-label={`Edit ${BSLOT_LABELS[bsEdit.slotCode]}, ${fmtS(bsEdit.date)}`} style={{top,left,width:W}} onClick={e=>e.stopPropagation()}>
-          <BSlotEditor slot={slot} cycleDay={cd} current={current} cycleDefault={cyc} clash={clash} duties={duties} onSaveToday={saveToday} onClose={()=>setBsEdit(null)}/>
+          <BSlotEditor slot={slot} cycleDay={cd} current={current} cycleDefault={cyc} usual={r.base} usualSrc={r.baseSrc} date={bsEdit.date} cancelled={r.cancelled} clash={clash} duties={duties} onSaveToday={saveToday} onClose={()=>setBsEdit(null)}/>
           <div className="bs-note-area"><ReliefRow rec={storageGet(`note:${bsEdit.dateKey}:${bsEdit.slotCode}`)||emptyNote()} onPatch={p=>{const k=`note:${bsEdit.dateKey}:${bsEdit.slotCode}`;writeRecord(k,{...(storageGet(k)||emptyNote()),...p});setNR(r=>r+1);if(window._plannerSync)window._plannerSync()}}/></div>
         </div>
       </>;
@@ -2542,13 +2556,21 @@ function describeValue(v){
  * or "D{cd}" (cycle default). No auto-save: the staged value lives only in
  * editor state until one of the two save buttons is pressed.
  */
-function BSlotEditor({slot,cycleDay,current,cycleDefault,clash,duties,onSaveToday,onClose}){
+// The short name of a slot value, for "Usually …", Restore and a cancelled slot.
+const bsName=v=>v&&v.t==="activity"?v.tx:describeValue(v);
+// A cancelled slot (3.11.1): what it usually holds, struck through, and "not today".
+const BSlotOff=({value})=><span className="bs-off"><span className="bs-chip bs-chip-off">{bsName(value)}</span><span className="bs-not-today">not today</span></span>;
+const WD_LONG=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+function BSlotEditor({slot,cycleDay,current,cycleDefault,usual,usualSrc,date,cancelled,clash,duties,onSaveToday,onClose}){
+  // `usual` is what the slot holds with no change for this date (a weekly activity, else the
+  // cycle default). Older callers without it fall back to the cycle default.
+  if(usual===undefined)usual=cycleDefault;
   const[staged,setStaged]=useState(current);
   const[view,setView]=useState("main");
   const[actText,setActText]=useState(staged&&staged.t==="activity"?staged.tx:"");
   const isB1=slot.code==="B1a"||slot.code==="B1b";
   const hasDuties=(duties||[]).length>0;
-  const stagedDiffersFromDefault=!valEq(staged,cycleDefault);
+  const stagedDiffersFromDefault=!valEq(staged,usual);
   const stagedDiffersFromCurrent=!valEq(staged,current);
   const renderMain=()=><div className="bs-edit-options">
     {isB1&&Object.entries(B1_TYPES).map(([k,t])=>{
@@ -2574,13 +2596,16 @@ function BSlotEditor({slot,cycleDay,current,cycleDefault,clash,duties,onSaveToda
   </div>;
   return<>
     <h4>{slot.label}</h4>
-    <div className="bs-row-default">Cycle default · D{cycleDay}: <strong>{describeValue(cycleDefault)}</strong></div>
+    <div className="bs-row-default">Usually {"\u00B7"} {usualSrc==="weekly"&&date?`${WD_LONG[date.getDay()]}s, weekly activity`:`cycle Day ${cycleDay}`}: <strong>{bsName(usual)}</strong></div>
     {clash&&<div className="bs-clash-banner">{"⚠"} A weekly activity is showing today instead of the cycle default ({describeValue(cycleDefault)}). The cycle default still applies on other dates.</div>}
     {view==="main"&&renderMain()}
     {view==="duty"&&renderDuty()}
     {view==="activity"&&renderActivity()}
-    {stagedDiffersFromDefault&&<div className="bs-override-banner">{"⚠"} Differs from cycle default ({describeValue(cycleDefault)})</div>}
+    {stagedDiffersFromDefault&&<div className="bs-override-banner">{"⚠"} Differs from usual ({bsName(usual)})</div>}
     <div className="bs-save-row">
+      {usual!==null&&(cancelled
+        ?<button className="btn-ghost" style={{marginRight:"auto"}} onClick={()=>{onSaveToday(usual);onClose()}}>Restore {bsName(usual)}</button>
+        :<button className="btn-ghost btn-danger" style={{marginRight:"auto"}} onClick={()=>{onSaveToday(null);onClose()}}>Not today</button>)}
       <button className="bs-cancel" onClick={onClose}>Cancel</button>
       <button className="bs-save-today" disabled={!stagedDiffersFromCurrent} onClick={()=>{onSaveToday(staged);onClose()}}>Save today</button>
     </div>
@@ -2590,7 +2615,7 @@ function BSlotEditor({slot,cycleDay,current,cycleDefault,clash,duties,onSaveToda
  * override dot (if applicable). Expanded swaps in the inline BSlotEditor
  * plus a notes textarea backed by note:<date>:<slotCode>.
  */
-function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,clash,duties,onSaveToday,handleFocus,handleBlur,initOpen}){
+function BSlotRow({slot,dateKey,cycleDay,date,current,cycleDefault,isOverride,clash,duties,onSaveToday,handleFocus,handleBlur,initOpen}){
   const[expanded,setExpanded]=useState(!!initOpen);
   const noteKey=`note:${dateKey}:${slot.code}`;
   const as=useAutoSave(noteKey,emptyNote());
@@ -2598,11 +2623,12 @@ function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,clash,d
   const reliefPatch=p=>{Object.entries(p).forEach(([k,v])=>updateField(k,v));setTimeout(as.save,0)};
   const hasNote=!!(note&&note.notes&&note.notes.trim());
   const isGap=!current;
-  const summary=<div className={`bs-row${isGap?" gap":""}`} onClick={()=>setExpanded(e=>!e)} role="button" tabIndex={0} aria-expanded={expanded} aria-label={`${slot.label}, ${current?"set":"free"}${hasNote?", has notes":""}${note&&note.relief?", relief":""}, ${expanded?"collapse":"expand"}`} onKeyDown={kAct(()=>setExpanded(e=>!e))}>
+  const summary=<div className={`bs-row${isGap?" gap":""}`} onClick={()=>setExpanded(e=>!e)} role="button" tabIndex={0} aria-expanded={expanded} aria-label={`${slot.label}, ${slot.cancelled?bsName(slot.base)+", not today":current?"set":"free"}${hasNote?", has notes":""}${note&&note.relief?", relief":""}, ${expanded?"collapse":"expand"}`} onKeyDown={kAct(()=>setExpanded(e=>!e))}>
     <span className="bs-row-time mn">{slot.start}{slot.end?"–"+slot.end:""}</span>
     <span className="bs-row-label">{slot.label}</span>
     {current&&<BSlotChip value={current} duties={duties}/>}
-    {isOverride&&<span className="bs-override-dot" title="Override (different from cycle default)"/>}
+    {slot.cancelled&&<BSlotOff value={slot.base}/>}
+    {isOverride&&<span className="bs-override-dot" title="Changed for today"/>}
     {clash&&<span className="bs-clash" title="Weekly activity is hiding the cycle default for this slot. Expand the row for details.">{"⚠"}</span>}
     <ReliefTag rec={note}/>
     {hasNote&&<span title="Has notes" style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)"}}><Icon n="note"/></span>}
@@ -2611,7 +2637,7 @@ function BSlotRow({slot,dateKey,cycleDay,current,cycleDefault,isOverride,clash,d
   return<>
     {summary}
     <div className="bs-row-editor">
-      <BSlotEditor slot={slot} cycleDay={cycleDay} current={current} cycleDefault={cycleDefault} clash={clash} duties={duties} onSaveToday={onSaveToday} onClose={()=>setExpanded(false)}/>
+      <BSlotEditor slot={slot} cycleDay={cycleDay} current={current} cycleDefault={cycleDefault} usual={slot.base} usualSrc={slot.baseSrc} date={date} cancelled={!!slot.cancelled} clash={clash} duties={duties} onSaveToday={onSaveToday} onClose={()=>setExpanded(false)}/>
       <div className="bs-note-area"><ReliefRow rec={note} onPatch={reliefPatch}/></div>
       <div className="bs-note-area">
         <label className="fl" style={{fontSize:"var(--fs-micro)"}}>Notes <SvH saveStatus={noteSs}/></label>

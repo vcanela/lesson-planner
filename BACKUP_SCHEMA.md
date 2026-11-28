@@ -205,7 +205,7 @@ Optional. One per date that has any per-day metadata.
 }
 ```
 
-- `overrides` is a map from B-slot code to value. An entry there beats the cycle default for that date only.
+- `overrides` is a map from B-slot code to value. An entry there beats the weekly activity and the cycle default for that date only. A `null` value means "free today": on a slot that usually holds something (a weekly activity, else the cycle default) it records that it was called off, and the planner shows it struck through as "not today" (3.11.1). An entry equal to the slot's usual value is never stored.
 - `day0label` is the teacher-friendly name for a Day 0 event (e.g. "EOTC trip"). Empty for normal days.
 
 ## Worked minimal example

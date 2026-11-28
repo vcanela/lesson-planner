@@ -246,6 +246,14 @@ try{
     const wed=new Date(2026,7,5); // Wednesday, no weekly event matches
     const rCyc=C.resolveSlot("B1a",3,wed,cfg,{overrides:{}});
     eq("falls back to cycle default when nothing else applies",rCyc.value,fsa);
+    // 3.11.1: a slot's usual value includes its weekly activity, so "free today" on a weekly
+    // activity's slot is a real change (it used to be compared with the empty cycle default).
+    const rOff=C.resolveSlot("B2a",3,tue,cfg,{overrides:{B2a:null}});
+    assert("free today on a weekly activity cancels it",rOff.value===null&&rOff.cancelled===true&&rOff.isOverride===true);
+    eq("…and still knows what it usually is",[rOff.baseSrc,rOff.base&&rOff.base.tx].join("|"),"weekly|Notices");
+    const rSame=C.resolveSlot("B2a",3,tue,cfg,{overrides:{B2a:{t:"activity",tx:"Notices"}}});
+    assert("a change equal to the weekly activity is not an override",rSame.isOverride===false&&rSame.cancelled===false);
+    assert("free today on a slot that is usually free is not a cancellation",C.resolveSlot("B2a",3,wed,cfg,{overrides:{B2a:null}}).cancelled===false);
   }
 
   // ══ asmBellsForDate ══════════════════════════════════════════════════════════
@@ -951,6 +959,24 @@ async function runSmoke(){
     await step(D,"Class View's Relief chip lists all three with tallies",()=>{D.key("c");return waitFor(()=>D.q(".relief-chip")).then(ch=>D.key("Enter",ch))},
       ()=>{const t=D.text();return/3 in Term 3/.test(t)&&D.qa(".cv").length===3&&t.includes("10ENG3")&&t.includes("9MAT2")&&t.includes("Class not recorded")&&t.includes("Your 10SCI2 was cancelled")&&t.includes("By subject covered")&&D.q("button")&&D.qa("button").some(b=>b.textContent.includes("Export CSV"))});
     {const bad=contrastFailures(D);assert("the relief log is legible",!bad.length,bad.slice(0,6).join("\n"))}
+
+    // 3.11.1: a weekly activity can be called off for one day. The fixture has Science club in
+    // "after 4" on Wednesdays.
+    G("Smoke: weekly activity not today");
+    const after4=()=>D.q('.bs-row[aria-label^="after 4"]');
+    const ov=()=>(JSON.parse(D.win.localStorage.getItem("daymeta:2026-7-19")||"{}").overrides)||{};
+    const btnIn=(root,txt)=>D.qa(root+" button").find(b=>b.textContent.trim().startsWith(txt));
+    await step(D,"the editor says what the slot usually holds",()=>{D.key("d");return waitFor(()=>D.view()==="Day").then(()=>{D.key(".");return sleep(60)}).then(()=>{after4().click();return waitFor(()=>D.q(".bs-row-editor .bs-row-default"))})},
+      ()=>/Usually · Wednesdays, weekly activity: Science club/.test(D.q(".bs-row-editor .bs-row-default").textContent));
+    await step(D,"Not today calls it off for this date, and the row still shows it, struck through",()=>btnIn(".bs-row-editor","Not today").click(),
+      ()=>("B2a" in ov())&&ov().B2a===null&&/Science club, not today/.test(after4().getAttribute("aria-label")));
+    await step(D,"Restore brings it back",()=>{after4().click();return waitFor(()=>btnIn(".bs-row-editor","Restore")).then(b=>b.click())},
+      ()=>!("B2a" in ov())&&!/not today/.test(after4().getAttribute("aria-label")));
+    await step(D,"in Week View, Free then Save today now calls it off too (it used to do nothing)",()=>{D.key("w");return waitFor(()=>D.view()==="Week").then(()=>{
+        D.q('.wk-bcell[aria-label^="after 4, Wed, 19 Aug"]').click();return waitFor(()=>D.q(".wk-overlay"))}).then(()=>{btnIn(".wk-overlay .bs-edit-options","Free").click();return sleep(30)}).then(()=>btnIn(".wk-overlay","Save today").click())},
+      ()=>ov().B2a===null&&/Science club, not today/.test(D.q('.wk-bcell[aria-label^="after 4, Wed, 19 Aug"]').getAttribute("aria-label")));
+    await step(D,"…and its Restore undoes it",()=>{D.q('.wk-bcell[aria-label^="after 4, Wed, 19 Aug"]').click();return waitFor(()=>btnIn(".wk-overlay","Restore")).then(b=>b.click())},
+      ()=>!("B2a" in ov()));
 
     G("Smoke: panels");
     await step(D,"? opens the shortcuts list",()=>D.key("?"),()=>D.text().includes("Keyboard shortcuts"));

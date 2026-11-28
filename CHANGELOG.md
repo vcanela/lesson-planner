@@ -6,6 +6,23 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.11.1 — 2026-11-28
+
+### Fixed
+- **A weekly activity couldn't be called off for one day.** Picking *Free* and *Save today* on, say, Wednesday's "after 4" meeting did nothing. The planner compared your change with the slot's cycle default, which was empty, so "free" looked like no change and nothing was saved; the weekly activity showed again. Changes are now compared with what the slot *usually* holds that day: the weekly activity where there is one, otherwise the cycle default. Free plus Save today now calls it off, with the orange "changed" dot.
+- **"Differs from cycle default (free)"** is gone from a weekly activity's editor. The editor now says what the slot usually holds and where that comes from ("Usually · Wednesdays, weekly activity: Tuakana teina", or "Usually · cycle Day 3: Chapel"), and warns "Differs from usual" only when you change it.
+
+### Added
+- **Not today.** A one-tap button in a break slot's editor (Day View and Week View) whenever the slot usually holds something: a weekly activity, a duty or a morning structure. Like *No lesson*, it keeps the record: the slot still shows what was scheduled, struck through, with "not today" (Day View rows, Week View cells, the week export), and its row stays visible even in the before- and after-school slots. The slot's Notes box holds the reason, and Relief can still be marked there. **Restore** brings it back.
+- Guide: the break slots section explains "usually", Not today and Restore.
+
+### Implementation
+- `resolveSlot` now also returns `base` (what the slot usually holds), `baseSrc` ("weekly" or "cycle") and `cancelled` (a "free today" override on a slot whose base is not empty); `isOverride` compares with `base`. Both save paths (Day View's `setOverride`, Week View's popup) drop an override equal to `base` instead of to the cycle default. A `null` override was already valid stored data, so nothing about storage changes (`BACKUP_SCHEMA.md` now documents it).
+- `buildSlots` keeps a cancelled before- or after-school slot's row, and Week View keeps a break row with a cancelled slot. UI: `BSlotOff` (the struck-through chip and "not today"), `bsName`, Not today and Restore in `BSlotEditor`.
+- Tests: four unit checks (free today on a weekly activity cancels it and keeps its base; a change equal to it isn't an override; free on a usually-free slot isn't a cancellation) and a smoke group (the editor's "Usually" line; Not today and the struck-through row; Restore; Free plus Save today in Week View, the reported bug; its Restore). 350 assertions.
+
+---
+
 ## 3.11.0 — 2026-11-28
 
 ### Relief
