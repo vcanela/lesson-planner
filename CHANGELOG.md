@@ -6,6 +6,21 @@ Versioning: MAJOR.MINOR.PATCH — major for breaking changes, minor for new feat
 
 ---
 
+## 3.12.0 — 2026-11-28
+
+### Custom bell times
+- **A fourth bell setting in Day View: Custom.** Auto, Standard and Assembly stay as they were. Custom opens a panel with every slot in the usual order (before school, P1 to P6, the four breaks, after school), each with a start and an end, starting from the times in effect, so only what differs needs typing. *Start from standard* and *Start from assembly* reset it. Times that overlap or run backwards get a warning ("P2 starts before P1 ends") but are never blocked. Only the times change, and only for that date.
+- **Custom times apply everywhere that day appears**: Day View, Class View's lesson times, Week View's class pop-up, the week export, and when a lesson starts asking "How did it go?". The control itself lives only in Day View.
+- Switching back to Auto, Standard or Assembly keeps the custom times, so Custom brings the same times back.
+- Guide: the bell times section describes Custom.
+
+### Implementation
+- Core: `BELL_ORDER`, `bellTable(isAsm)` (one full table keyed by slot code), `dayTimes(cycleDay, date, cfg, daymeta)` (the day's times, custom ones laid over the standard or assembly base) and `periodAt`, plus `bellProblems` for the warning. `buildSlots`, `lessonEnd`, the week export, Week View's class pop-up and Class View all read times through `dayTimes`; the old `bldP` lookup is gone. Daymeta gains `bells: "custom"` and `bellTimes` (in `BACKUP_SCHEMA.md`).
+- UI: `CustomBells`, the panel. `RELIEF_ORDER` is now `BELL_ORDER`, the same slot order.
+- Tests: a unit group (custom times replace only what was typed; all twelve slots present; ignored unless Custom; assembly still shifts the base; "How did it go?" waits for the custom end bell; in-order times raise no warning; an overlap is named) and a smoke group (Custom opens the panel from today's times; a changed time shows at once; an overlap is flagged; Class View shows the custom times; Auto goes back and keeps them; Custom brings them back). 363 assertions.
+
+---
+
 ## 3.11.1 — 2026-11-28
 
 ### Fixed

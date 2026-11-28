@@ -76,7 +76,7 @@ async function loadCore(ls){
     "NOTE_KEY_RE,META_KEY_RE,GC_HORIZON_MS,toDateKey,storageGet,storageSet,emptyNote,emptyMeta,normalizeMeta,getAllData,"+
     "flagLines,hasFlag,flagCount,hexAlpha,"+
     "SCHEMA_VERSION,yearsOf,flattenYear,pickYear,putYear,upgradeConfig,mergeConfig,writeConfig,sharedPart,stepSchoolDay,"+
-    "buildYearDraft,yearHasNotes,WENT,wentLabel,lessonEnd,askFrom,canReflect,lessonAsks,lastTimeNote,lastYearNote,toTeach,isPlanned,reliefSubject,reliefEntries,reliefCsv,slotName};");
+    "buildYearDraft,yearHasNotes,WENT,wentLabel,lessonEnd,askFrom,canReflect,lessonAsks,lastTimeNote,lastYearNote,toTeach,isPlanned,reliefSubject,reliefEntries,reliefCsv,slotName,dayTimes,bellTable,bellProblems,BELL_ORDER};");
   return factory(ls,stub,stub);
 }
 // fresh isolated core+storage for tests that write to localStorage
@@ -358,6 +358,22 @@ try{
     eq("…with the slot named and the note quoted",csv[2],'2026-10-21,4,1,Wed,D1,P3,10ENG3,ENG,10,no,,"for JB, room 12"');
     eq("a break slot reads as its label",csv[3].split(",")[5],"after 2");
     eq("a relief alone is a real record, not an empty note",C.isEmptyRecord("note:2026-9-22:B1a",{relief:true}),false);
+  }
+
+  G("Custom bell times (dayTimes / bellProblems)");
+  {
+    const cfg={timetable:{3:{}},weeklyEvents:[]},wed=new Date(2026,7,19);
+    const custom={bells:"custom",bellTimes:{P3:{s:"11:00",e:"11:45"}}};
+    const t=C.dayTimes(3,wed,cfg,custom);
+    eq("custom times replace only what was typed",[t.P3.s,t.P3.e,t.P1.s,t.B1a.s].join(" "),"11:00 11:45 08:30 10:20");
+    eq("every slot is there, in the usual order",C.BELL_ORDER.filter(k=>t[k]).length,12);
+    eq("typed times are ignored unless Custom is chosen",C.dayTimes(3,wed,cfg,{bells:"std",bellTimes:custom.bellTimes}).P3.s,"11:10");
+    eq("assembly still shifts the base",C.dayTimes(3,wed,cfg,{bells:"asm"}).P1.e,"09:20");
+    const e=C.makeDateEngine({cycleDays:1,anchor:{date:"2026-08-17",day:1},terms:[{n:3,start:"2026-07-27",end:"2026-09-25"}],holidays:[],dayZeros:[],timetable:{1:{P3:"9SCI1"}},classes:[{code:"9SCI1",colour:"#C5D9C0"}]});
+    const end=C.lessonEnd(e,wed,1,"P3",custom);
+    eq("How did it go? waits for the custom end bell",end&&`${end.getHours()}:${end.getMinutes()}`,"11:45");
+    eq("times in order raise no warning",C.bellProblems(C.bellTable(false)).length,0);
+    eq("an overlap is named",C.bellProblems({...C.bellTable(false),P4:{s:"11:30",e:"12:55"}}).join("; "),"P4 starts before P3 ends");
   }
 
   // ══ FLAGS ══════════════════════════════════════════════════════════════════
@@ -977,6 +993,25 @@ async function runSmoke(){
       ()=>ov().B2a===null&&/Science club, not today/.test(D.q('.wk-bcell[aria-label^="after 4, Wed, 19 Aug"]').getAttribute("aria-label")));
     await step(D,"…and its Restore undoes it",()=>{D.q('.wk-bcell[aria-label^="after 4, Wed, 19 Aug"]').click();return waitFor(()=>btnIn(".wk-overlay","Restore")).then(b=>b.click())},
       ()=>!("B2a" in ov()));
+
+    // 3.12.0: custom bell times for one day, in Day View; they reach Class View too.
+    G("Smoke: custom bell times");
+    const dm=()=>JSON.parse(D.win.localStorage.getItem("daymeta:2026-7-19")||"{}");
+    const bellBtn=l=>D.qa("button.tog").find(b=>b.textContent===l);
+    const timeIn=(k,f)=>D.q(`.cbells input[aria-label="${k} ${f==="s"?"starts":"ends"}"]`);
+    const rowText=p=>(D.q(`.pr[aria-label^="${p},"]`)||{}).textContent||"";
+    await step(D,"Custom opens the times panel, starting from today's times",()=>{D.key("d");return waitFor(()=>D.view()==="Day").then(()=>{D.key(".");return sleep(60)}).then(()=>bellBtn("Custom").click())},
+      ()=>D.q(".cbells")&&dm().bells==="custom"&&dm().bellTimes&&dm().bellTimes.P1.s==="08:30"&&timeIn("P3","s").value==="11:10");
+    await step(D,"a changed time shows in the day at once",()=>{D.type(timeIn("P3","s"),"11:00");D.type(timeIn("P4","s"),"11:50");D.type(timeIn("P4","e"),"12:40")},
+      ()=>rowText("P3").includes("11:00")&&rowText("P4").includes("11:50")&&dm().bellTimes.P4.e==="12:40");
+    await step(D,"times out of order are flagged, not blocked",()=>D.type(timeIn("P4","s"),"11:30"),()=>/P4 starts before P3 ends/.test(D.q(".cbells").textContent));
+    D.type(timeIn("P4","s"),"11:50");
+    await step(D,"Class View shows the custom times for that lesson",()=>{D.key("c");return waitFor(()=>D.q('[role=button][aria-label^="12PHY1"]')).then(ch=>D.key("Enter",ch))},
+      ()=>D.qa(".cv").some(r=>/19 Aug/.test(r.getAttribute("aria-label")||"")&&r.textContent.includes("11:50\u201312:40")));
+    await step(D,"Auto goes back to the usual times, and keeps the custom ones",()=>{D.key("d");return waitFor(()=>D.view()==="Day").then(()=>bellBtn("Auto").click())},
+      ()=>!D.q(".cbells")&&rowText("P3").includes("11:10")&&dm().bellTimes&&dm().bellTimes.P3.s==="11:00");
+    await step(D,"Custom brings them back",()=>bellBtn("Custom").click(),()=>rowText("P3").includes("11:00"));
+    bellBtn("Auto").click();
 
     G("Smoke: panels");
     await step(D,"? opens the shortcuts list",()=>D.key("?"),()=>D.text().includes("Keyboard shortcuts"));

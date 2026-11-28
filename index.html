@@ -222,6 +222,13 @@ textarea,input,button,select{font-family:var(--font-sans)}
 .bs-off{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:center;min-width:0}
 .bs-chip-off{background:transparent;color:var(--text-muted);border:1px dashed var(--border-strong);text-decoration:line-through;font-weight:500}
 .bs-not-today{font-size:var(--fs-nano);color:var(--text-muted);font-style:italic;white-space:nowrap}
+.cbells{padding:12px 14px;margin-bottom:12px}
+.cbells-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.cbells-grid{display:grid;grid-template-columns:minmax(84px,auto) minmax(0,120px) auto minmax(0,120px);gap:4px 6px;align-items:center;justify-content:start}
+.cbells-grid .inp{padding:3px 6px;font-size:var(--fs-caption);width:100%}
+.cbells-k{font-size:var(--fs-caption);font-weight:600}
+.cbells-b{font-style:italic;font-weight:500;color:var(--text-secondary)}
+.cbells-to{font-size:var(--fs-micro);color:var(--text-muted)}
 .relief-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
 .relief-card{padding:12px 14px}
 .relief-bar{display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:var(--fs-caption)}
@@ -516,12 +523,6 @@ const FLAG_LINE_RE=/^[ \t]*!+[ \t]*(\S.*)$/;
 const flagLines=t=>String(t==null?"":t).split("\n").map(l=>FLAG_LINE_RE.exec(l)).filter(Boolean).map(m=>m[1].trim());
 const hasFlag=t=>flagLines(t).length>0;
 const flagCount=n=>n?flagLines(n.subject).length+flagLines(n.notes).length:0;
-// bldP: per-period start/end timings for the six teaching periods. Three call sites
-// (plain-text export, WeekView spotHits, ClassView lessons) use it as a point-lookup
-// `bldP(isAsm).find(p=>p.id===pid)` for one period at a time. The cosmetic break
-// entries (mt1/mt2/l) that were here in v1 have been removed; DayView now drives its
-// render from buildSlots and the remaining callers never look them up.
-function bldP(isAsm){const T=isAsm?ASM_T:STD_T;return[{id:"P1",label:"P1",start:T.p1.s,end:T.p1.e},{id:"P2",label:"P2",start:T.p2.s,end:T.p2.e},{id:"P3",label:"P3",start:T.p3.s,end:T.p3.e},{id:"P4",label:"P4",start:T.p4.s,end:T.p4.e},{id:"P5",label:"P5",start:T.p5.s,end:T.p5.e},{id:"P6",label:"P6",start:T.p6.s,end:T.p6.e}]}
 // isAsmDay: true if this cycle day has an FSA (Full School Assembly) value in either
 // of its B1 slots. Derived directly from the timetable so the user does not need to
 // tick a separate flag — assembly = whichever cycle day they put FSA in.
@@ -537,6 +538,30 @@ const BSLOT_T_ASM={B0:{s:"08:00",e:"08:30"},B1a:{s:"10:10",e:"10:50"},B1b:{s:"10
 const BSLOT_LABELS={B0:"before school",B1a:"after 2",B1b:"before 3",B2a:"after 4",B2b:"before 5",B3:"after school"};
 // valEq: equality for B-slot values. Two nulls are equal; otherwise compare type and payload.
 function valEq(a,b){if(!a&&!b)return true;if(!a||!b)return false;if(a.t!==b.t)return false;return a.t==="activity"?a.tx===b.tx:a.c===b.c}
+/* Bell times (3.12.0). A day's times come from the standard or assembly tables (Auto, Standard
+ * and Assembly pick between them), or, when daymeta.bells is "custom", from daymeta.bellTimes:
+ * the same slots in the same order, with times typed for that date. Every place that shows or
+ * uses a time goes through dayTimes, so custom times apply everywhere that day appears.
+ * bellTable gives one full table, keyed by slot code (B0, P1 … P6, B1a … B3) as {s, e}. */
+const BELL_ORDER=["B0","P1","P2","B1a","B1b","P3","P4","B2a","B2b","P5","P6","B3"];
+function bellTable(isAsm){const T=isAsm?ASM_T:STD_T,Tb=isAsm?BSLOT_T_ASM:BSLOT_T_STD,o={};
+  ["P1","P2","P3","P4","P5","P6"].forEach(p=>{const t=T[p.toLowerCase()];o[p]={s:t.s,e:t.e}});
+  Object.keys(Tb).forEach(k=>{o[k]={s:Tb[k].s,e:Tb[k].e}});return o}
+function dayTimes(cycleDay,date,cfg,daymeta){
+  const dm=daymeta||(date?storageGet(`daymeta:${toDateKey(date)}`):null);
+  const base=bellTable(asmBellsForDate(cycleDay,date,cfg,dm));
+  if(!(dm&&dm.bells==="custom"&&dm.bellTimes))return base;
+  const o={};BELL_ORDER.forEach(k=>{o[k]={...base[k],...(dm.bellTimes[k]||{})}});return o}
+// One period's times as {id, label, start, end}, for the places that look up a single period.
+const periodAt=(pid,cycleDay,date,cfg,daymeta)=>{const t=dayTimes(cycleDay,date,cfg,daymeta)[pid];return t?{id:pid,label:pid,start:t.s,end:t.e}:null};
+// Where the times run out of order: a slot that ends before it starts, or starts before the
+// previous one ends. A warning only; an odd day may really be like that.
+function bellProblems(times){const out=[];let prev=null;
+  BELL_ORDER.forEach(k=>{const t=times[k];if(!t)return;
+    if(t.s&&t.e&&t.e<t.s)out.push(`${slotName(k)} ends before it starts`);
+    if(prev&&prev.t.e&&t.s&&t.s<prev.t.e)out.push(`${slotName(k)} starts before ${slotName(prev.k)} ends`);
+    prev={k,t}});
+  return out}
 /* buildSlots: ordered renderable slot list for one date.
  *
  * Returns an array of:
@@ -600,14 +625,12 @@ function asmBellsForDate(cycleDay,date,cfg,daymeta){
 // have been typed for that slot+date even though no value was committed. Lets
 // teachers persist a slot just by writing notes, without clicking Activity first.
 function buildSlots(cycleDay,daymeta,cfg,date,forceShow,hasSlotNote){
-  const useAsm=asmBellsForDate(cycleDay,date,cfg,daymeta);
-  const T=useAsm?ASM_T:STD_T;
-  const Tb=useAsm?BSLOT_T_ASM:BSLOT_T_STD;
+  const tm=dayTimes(cycleDay,date,cfg,daymeta);
   const isForced=code=>forceShow&&forceShow.has&&forceShow.has(code);
   const noted=code=>!!(hasSlotNote&&hasSlotNote(code));
-  const period=pid=>({type:"period",id:pid,label:pid,start:T[pid.toLowerCase()].s,end:T[pid.toLowerCase()].e});
+  const period=pid=>({type:"period",id:pid,label:pid,start:tm[pid].s,end:tm[pid].e});
   const bslot=code=>{
-    const r=resolveSlot(code,cycleDay,date,cfg,daymeta);const t=Tb[code];
+    const r=resolveSlot(code,cycleDay,date,cfg,daymeta);const t=tm[code];
     const ext={base:r.base,baseSrc:r.baseSrc,cancelled:r.cancelled};
     if(r.value===null){
       if((code==="B0"||code==="B3")&&!isForced(code)&&!noted(code)&&!r.cancelled)return null;
@@ -812,7 +835,7 @@ const SCHEMA_VERSION=3;
 // APP_VERSION is the human-facing release string shown in the header footer. It tracks the
 // CHANGELOG's latest entry and is independent of SCHEMA_VERSION (which only changes when the
 // stored data shape changes). Bump this on every release.
-const APP_VERSION="3.11.1";
+const APP_VERSION="3.12.0";
 // getAllData: collect everything that should be exported or pushed to the gist.
 // Includes notes, daymeta, the config, and a fresh _meta timestamp + version stamp.
 // The timestamp is consumed by checkSyncConflict on the receiving end.
@@ -1257,11 +1280,10 @@ const normalizeMeta=v=>({...emptyMeta(),...(v||{})});
  * answered; it just doesn't ask. A rating is not planning: coverage and XP ignore it. */
 const WENT=[["good","Went well"],["mixed","Mixed"],["rough","Rough"]];
 const wentLabel=v=>(WENT.find(w=>w[0]===v)||[])[1]||"";
-// lessonEnd: when a period's end bell rings on a date, on that day's bells (standard or
-// assembly). dm is the day's daymeta when the caller has it; otherwise it is read.
+// lessonEnd: when a period's end bell rings on a date, on that day's bells (standard,
+// assembly or custom). dm is the day's daymeta when the caller has it; otherwise it is read.
 function lessonEnd(eng,date,cd,pid,dm){
-  const T=asmBellsForDate(cd,date,{timetable:eng.timetableForDate(date),weeklyEvents:[]},dm)?ASM_T:STD_T;
-  const p=T[String(pid).toLowerCase()];if(!p)return null;
+  const p=dayTimes(cd,date,{timetable:eng.timetableForDate(date),weeklyEvents:[]},dm)[pid];if(!p||!p.e)return null;
   const[h,m]=p.e.split(":").map(Number);const d=new Date(date);d.setHours(h,m,0,0);return d}
 const askFrom=now=>{const d=new Date(now);d.setHours(0,0,0,0);d.setDate(d.getDate()-(d.getDay()+6)%7);return d};
 const canReflect=(cc,note,end,now)=>!!(cc&&cc!=="nc"&&end&&end<=now&&!(note&&note.status==="nl"));
@@ -1273,7 +1295,7 @@ const isPlanned=n=>!!(n&&(n.subject||n.notes));
  * class covered, e.g. 10ENG3) and `reliefNote`, alongside whatever else the slot holds, so a
  * cancelled lesson keeps its No lesson and its reason. A record, not planning: no count or XP
  * changes. reliefEntries lists one year's relief in day order; read(key) returns a record. */
-const RELIEF_ORDER=["B0","P1","P2","B1a","B1b","P3","P4","B2a","B2b","P5","P6","B3"];
+const RELIEF_ORDER=BELL_ORDER;
 const slotName=code=>BSLOT_LABELS[code]||code;
 const reliefSubject=code=>{const m=/^\s*(\d{1,2})\s*([A-Za-z]+)/.exec(String(code||""));return m?{year:m[1],subject:m[2].toUpperCase()}:{year:"",subject:""}};
 function reliefEntries(eng,read){const out=[];if(!eng)return out;
@@ -1754,6 +1776,20 @@ function PCard({period,dateKey,cDay,date,initOpen,jump}){
  * Week View's "Full detail" link).
  * ═══════════════════════════════════════════════════════════════════════
  */
+/* CustomBells (3.12.0): Day View's custom bell times. One line per slot in the usual order,
+ * start and end, for this date only. A warning, not a block, when they run out of order. */
+function CustomBells({times,onSet,onReset}){
+  const probs=bellProblems(times);
+  return<div className="card cbells np">
+    <div className="cbells-head"><span className="sl">Custom times for this day</span><span style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}><button className="btn btn-sm" onClick={()=>onReset(false)}>Start from standard</button><button className="btn btn-sm" onClick={()=>onReset(true)}>Start from assembly</button></span></div>
+    <div className="cbells-grid">{BELL_ORDER.map(k=>{const t=times[k]||{};return<React.Fragment key={k}>
+      <span className={k[0]==="P"?"mn cbells-k":"cbells-k cbells-b"}>{slotName(k)}</span>
+      <input type="time" className="inp mn" value={t.s||""} aria-label={`${slotName(k)} starts`} onChange={e=>onSet(k,"s",e.target.value)}/>
+      <span className="cbells-to">to</span>
+      <input type="time" className="inp mn" value={t.e||""} aria-label={`${slotName(k)} ends`} onChange={e=>onSet(k,"e",e.target.value)}/>
+    </React.Fragment>})}</div>
+    {probs.length>0&&<div className="bs-clash-banner" role="status">{"\u26A0"} {probs.join("; ")}.</div>}
+  </div>}
 function DayView({date,setDate,onBack,metaCache,onMS,fp,gam,onUpdateCfg,cfg}){
   // ⌥1 to ⌥6 (3.10.0): open that period with the cursor in its first field.
   const[jump,setJump]=useState(null);
@@ -1807,9 +1843,15 @@ function DayView({date,setDate,onBack,metaCache,onMS,fp,gam,onUpdateCfg,cfg}){
     :isZ?<div className="card" style={{padding:18,marginBottom:14,borderColor:"var(--dz-border)",background:"var(--dz-bg)"}}><div className="hd" style={{fontSize:"var(--fs-emph)",color:"var(--dz-text)",fontWeight:600,marginBottom:12}}>Day 0 {"\u2014"} No class structure</div>{meta&&<div style={{display:"grid",gap:10}} onFocus={handleFocus} onBlur={handleBlur}><div><label className="fl">Label / Activity <SvH saveStatus={saveStatus}/></label><AInp data={meta} field="day0label" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="e.g. Orientation, EOTC"/></div><div><label className="flb">Notes</label><AInp data={meta} field="dayNotes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Notes" multi rows={3}/></div></div>}</div>
     :<>{meta&&<div className="np" style={{display:"flex",alignItems:"center",gap:6,marginBottom:12,flexWrap:"wrap"}}>
       <span style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)"}}>Bell times</span>
-      {[["auto","Auto"],["std","Standard"],["asm","Assembly"]].map(([v,lbl])=>{const cur=(meta.bells==="asm"||meta.bells==="std")?meta.bells:"auto";const active=cur===v;return<button className="tog tog-sm" aria-pressed={active} key={v} onClick={()=>{updateField("bells",v);setTimeout(save,0)}}>{lbl}</button>})}
-      {(()=>{const cfgR={timetable:eng.timetableForDate(date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]};const overridden=meta.bells==="asm"||meta.bells==="std";const autoAsm=asmBellsForDate(cd,date,cfgR,{...meta,bells:"auto"});const eff=overridden?meta.bells==="asm":autoAsm;return<span style={{fontSize:"var(--fs-nano)",color:overridden?"var(--flag)":"var(--text-muted)"}}>{overridden?`${eff?"Assembly":"Standard"} (manual)`:autoAsm?"Assembly today (FSA)":"Standard"}</span>})()}
-    </div>}{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH saveStatus={saveStatus}/></label><AInp data={meta} field="dayNotes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Meetings, reminders, duty" multi rows={2}/></div>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>
+      {[["auto","Auto"],["std","Standard"],["asm","Assembly"],["custom","Custom"]].map(([v,lbl])=>{const cur=["asm","std","custom"].includes(meta.bells)?meta.bells:"auto";const active=cur===v;return<button className="tog tog-sm" aria-pressed={active} key={v} onClick={()=>{
+        // Custom starts from the times in effect now, so only what differs needs typing. Times
+        // already typed for this day are kept when switching away, and come back with Custom.
+        if(v==="custom"&&!meta.bellTimes)updateField("bellTimes",dayTimes(cd,date,{timetable:eng.timetableForDate(date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta));
+        updateField("bells",v);setTimeout(save,0)}}>{lbl}</button>})}
+      {(()=>{const cfgR={timetable:eng.timetableForDate(date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]};const overridden=meta.bells==="asm"||meta.bells==="std";const autoAsm=asmBellsForDate(cd,date,cfgR,{...meta,bells:"auto"});const eff=overridden?meta.bells==="asm":autoAsm;return<span style={{fontSize:"var(--fs-nano)",color:overridden||meta.bells==="custom"?"var(--flag)":"var(--text-muted)"}}>{meta.bells==="custom"?"Custom times for this day":overridden?`${eff?"Assembly":"Standard"} (manual)`:autoAsm?"Assembly today (FSA)":"Standard"}</span>})()}
+    </div>}{meta&&meta.bells==="custom"&&<CustomBells times={dayTimes(cd,date,{timetable:eng.timetableForDate(date),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta)}
+      onSet={(k,f,v)=>{const bt={...(meta.bellTimes||{})};bt[k]={...(bt[k]||{}),[f]:v};updateField("bellTimes",bt);setTimeout(save,0)}}
+      onReset={isAsm=>{updateField("bellTimes",bellTable(isAsm));setTimeout(save,0)}}/>}{meta&&<div className="card" style={{padding:14,marginBottom:14}}><label className="fl">Day Notes / Meetings <SvH saveStatus={saveStatus}/></label><AInp data={meta} field="dayNotes" updateField={updateField} handleFocus={handleFocus} handleBlur={handleBlur} ph="Meetings, reminders, duty" multi rows={2}/></div>}<div className="card" style={{overflow:"hidden",marginBottom:14}}>
   {!hasB0&&<div style={{padding:"6px 12px",borderBottom:"1px solid var(--border)"}}><button className="btn-add btn-sm" onClick={()=>setForceShow(s=>({...s,B0:true}))}>+ Before school</button></div>}
   {slots.map(s=>{
     if(s.type==="period")return<PCard key={`${dateKey}-${s.id}`} period={s} dateKey={dateKey} cDay={cd} date={date} initOpen={fp===s.id} jump={jump&&jump.pid===s.id?jump.t:0}/>;
@@ -1942,7 +1984,7 @@ function buildWkTxt(style,days,wl,wkLabel,sum,metaCache,eng,wNotes,cfg){
     const note=storageGet(`note:${key}:${code}`);
     const hasNote=!!(note&&(note.subject||note.notes||note.status==="nl"));
     if(!r.value&&!hasNote&&!r.cancelled)return"";
-    const t=(asm?BSLOT_T_ASM:BSLOT_T_STD)[code];
+    const t=dayTimes(cd,d,{timetable:tt,weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta)[code];
     const timeStr=t.e?`${t.s}–${t.e}`:t.s;
     const lbl=`${BSLOT_LABELS[code]} (${timeStr})`;
     // Only show the value suffix when there is an actual value. describeValue(null)
@@ -1968,7 +2010,7 @@ function buildWkTxt(style,days,wl,wkLabel,sum,metaCache,eng,wNotes,cfg){
     const pLine=pi=>{
       const pid="P"+(pi+1);
       const cls=eng.classAt(d,cd,pid);const n=wNotes[`${key}:${pid}`];
-      const per=bldP(asmBellsForDate(cd,d,{timetable:eng.timetableForDate(d),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta)).find(p=>p.id===pid);
+      const per=periodAt(pid,cd,d,{timetable:eng.timetableForDate(d),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]},meta);
       const lbl=`P${pi+1} (${per?per.start+"\u2013"+per.end:""})`;
       const nlTag=n&&n.status==="nl"?" \u2014 No lesson":cls!=="nc"&&eng.classFinished(cls,d)?" \u2014 Finished":"";
       if(cls==="nc"){
@@ -2199,7 +2241,7 @@ function WeekView({base,setBase,onDet,metaCache,updateMeta,gam,onUpdateCfg,cfg})
   },[days,today,metaCache,wNotes,eng,duties,gam,nav,qe]);
 
   const flags=useMemo(()=>{const fl=[];days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;const key=toDateKey(d);eng.PIDS.forEach(pid=>{const n=wNotes[`${key}:${pid}`];if(!n)return;const items=[...flagLines(n.subject),...flagLines(n.notes)];if(!items.length)return;const cls=eng.classAt(d,cd,pid);items.forEach(text=>fl.push({date:d,pid,cls,text}))})});return fl},[days,wNotes]);
-  const spotHits=useMemo(()=>{if(!spot)return[];const h=[];days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{if(eng.classAt(d,cd,pid)===spot){const per=bldP(asmBellsForDate(cd,d,{timetable:eng.timetableForDate(d),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]})).find(p=>p.id===pid);h.push({d,per,cd})}})});return h},[spot,days]);
+  const spotHits=useMemo(()=>{if(!spot)return[];const h=[];days.forEach(d=>{const cd=eng.cycleDayFor(d);if(!cd||cd===0)return;eng.PIDS.forEach(pid=>{if(eng.classAt(d,cd,pid)===spot){const per=periodAt(pid,cd,d,{timetable:eng.timetableForDate(d),weeklyEvents:(cfg&&cfg.weeklyEvents)||[]});h.push({d,per,cd})}})});return h},[spot,days]);
 
   return<div>
     <div className="np" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10,marginTop:10,flexWrap:"wrap"}}><div style={{display:"flex",alignItems:"center",gap:7}}><Btn onClick={()=>setBase(d=>addD(d,-7))} style={{padding:"4px 10px"}}>{"\u2039"}</Btn><div style={{textAlign:"center",width:"190px",flexShrink:0}}><div style={{fontSize:"var(--fs-body)",color:"var(--text-secondary)"}}>{wl}</div><div className="hd" style={{fontSize:"var(--fs-caption)",color:"var(--accent)",fontWeight:600}}>{wkLabel}</div></div><Btn onClick={()=>setBase(d=>addD(d,7))} style={{padding:"4px 10px"}}>{"\u203A"}</Btn></div><Btn onClick={()=>setBase(getPlanMon(today))} style={{padding:"4px 10px",fontSize:"var(--fs-caption)"}}>Today</Btn></div>
@@ -2379,7 +2421,7 @@ function ClassView({onDet,gam,years,year,onYear}){
     {head}
     <div style={{marginBottom:14}}><div className="mn" style={{fontSize:"var(--fs-title)",fontWeight:600,color:clr.tx}}><span style={{background:clr.bg,padding:"2px 10px",borderRadius:"var(--radius-sm)"}}>{sel}</span></div>{(clr.desc||clr.course)&&<div style={{fontSize:"var(--fs-body)",color:"var(--text-secondary)",marginTop:4}}>{clr.desc}{clr.course&&<span className="mn" title="Course: links this class with the same course in other years" style={{fontSize:"var(--fs-caption)",color:"var(--text-muted)",marginLeft:clr.desc?8:0}}>course {clr.course}</span>}</div>}<div style={{fontSize:"var(--fs-caption)",color:"var(--text-secondary)",marginTop:4}}>{toT.length} lessons {"\u00B7"} <strong className="mn" style={{color:planned===toT.length?"var(--success)":"var(--text)"}}>{planned} planned</strong> {"\u00B7"} {toT.length-planned} empty{notT>0&&<span> {"\u00B7"} {notT} not taught</span>}{flagged>0&&<span style={{color:"var(--flag)",marginLeft:6}}>{"\u2691"} {flagged}</span>}</div></div>
     {shiftMsg&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 12px",marginBottom:10,borderRadius:"var(--radius-sm)",background:"var(--surface)",border:`1px solid ${shiftMsg.err?"var(--error)":"var(--border)"}`,fontSize:"var(--fs-caption)",color:shiftMsg.err?"var(--error)":"var(--text-secondary)"}}><span style={{flex:1,minWidth:120}}>{shiftMsg.text}</span>{shiftUndo&&!shiftMsg.err&&<button className="btn-a btn-sm" onClick={undoShift}>Undo</button>}<button className="btn-x" onClick={()=>{setShiftMsg(null);setShiftUndo(null)}}>{"✕"}</button></div>}
-    <div className="card" style={{overflow:"hidden"}}>{lessons.map((l,i)=>{const ld=new Date(l.date);ld.setHours(0,0,0,0);const isT=ld.toDateString()===today.toDateString(),isPast=ld<today,isNl=l.notes.status==="nl",fin=!isNl&&eng.classFinished(sel,l.date),empty=!l.notes.subject&&!l.notes.notes&&!isNl&&!fin,fl=hasFlag(l.notes.notes)||hasFlag(l.notes.subject),isN=i===nxtI&&!isT,per=bldP(asmBellsForDate(l.cd,l.date,{timetable:eng.timetableForDate(l.date),weeklyEvents:[]})).find(p=>p.id===l.pid),isEd=qe&&qe.i===i;
+    <div className="card" style={{overflow:"hidden"}}>{lessons.map((l,i)=>{const ld=new Date(l.date);ld.setHours(0,0,0,0);const isT=ld.toDateString()===today.toDateString(),isPast=ld<today,isNl=l.notes.status==="nl",fin=!isNl&&eng.classFinished(sel,l.date),empty=!l.notes.subject&&!l.notes.notes&&!isNl&&!fin,fl=hasFlag(l.notes.notes)||hasFlag(l.notes.subject),isN=i===nxtI&&!isT,per=periodAt(l.pid,l.cd,l.date,{timetable:eng.timetableForDate(l.date),weeklyEvents:[]}),isEd=qe&&qe.i===i;
       return<React.Fragment key={i}>
         {(()=>{const wkDays=getWDs(l.date);const tw=eng.termWkN(wkDays);const prevL=lessons[i-1];const ptw=prevL?eng.termWkN(getWDs(prevL.date)):null;const show=tw&&(!ptw||ptw.wk!==tw.wk||ptw.tn!==tw.tn);return show?<div style={{padding:"6px 12px",background:"var(--surface)",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:6}}><span className="hd" style={{fontSize:"var(--fs-caption)",fontWeight:600,color:"var(--accent)"}}>Week {tw.wk}</span><span style={{fontSize:"var(--fs-nano)",color:"var(--text-muted)"}}>Term {tw.tn}</span></div>:null})()}
         <div ref={i===nxtI?todayRef:undefined} className={`cv${empty?" empty":""}`} role="button" tabIndex={0} aria-expanded={!!isEd} aria-label={`Lesson ${i+1}, ${fmtS(l.date)}${isT?", today":""}, Day ${l.cd} ${per?per.label:l.pid}, ${isNl?"no lesson":fin?"finished":fl?"flagged":empty?"empty":`planned: ${l.notes.subject||"no topic"}`}, ${isEd?"close":"open"} quick editor`} onKeyDown={kAct(()=>{isEd?setQE(null):oQE(i,l)})} onMouseDown={()=>{qeAtMouseDownRef.current=qe}} onClick={()=>{const wasOpen=qeAtMouseDownRef.current;qeAtMouseDownRef.current=null;if(wasOpen&&wasOpen.i===i){setQE(null)}else{oQE(i,l)}}} style={{background:isT?"var(--today-bg)":isN?"var(--surface-open)":"transparent",borderLeft:isT?"3px solid var(--today-border)":isN?"3px solid var(--accent)":"3px solid transparent"}}>

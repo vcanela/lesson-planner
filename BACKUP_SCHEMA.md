@@ -207,6 +207,8 @@ Optional. One per date that has any per-day metadata.
 
 - `overrides` is a map from B-slot code to value. An entry there beats the weekly activity and the cycle default for that date only. A `null` value means "free today": on a slot that usually holds something (a weekly activity, else the cycle default) it records that it was called off, and the planner shows it struck through as "not today" (3.11.1). An entry equal to the slot's usual value is never stored.
 - `day0label` is the teacher-friendly name for a Day 0 event (e.g. "EOTC trip"). Empty for normal days.
+- `bells` is optional: `"std"` or `"asm"` forces standard or assembly bell times for the date, `"custom"` uses `bellTimes` (3.12.0); absent or anything else is Auto (assembly times when the day has a Full School Assembly).
+- `bellTimes` is optional (3.12.0): the date's custom times, a map from slot code (`B0`, `P1`…`P6`, `B1a`, `B1b`, `B2a`, `B2b`, `B3`) to `{ "s": "HH:MM", "e": "HH:MM" }`, used only while `bells` is `"custom"`. It is kept when switching back to Auto, Standard or Assembly, so Custom brings the same times back. A slot missing from it takes the standard or assembly time.
 
 ## Worked minimal example
 
